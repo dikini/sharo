@@ -56,3 +56,13 @@ Example:
 - At the start of any docs/spec/plan task, run `scripts/doc-lint.sh --changed --strict-new`.
 - Run `scripts/doc-lint.sh --changed --strict-new` before committing documentation changes.
 - Enable hooks once per clone with `scripts/install-hooks.sh`.
+
+## Policy Enforcement (Machine Checks)
+
+- Install local hooks once per clone: `scripts/install-hooks.sh`.
+- Local `pre-commit` enforces:
+  - `CHANGELOG.md` is staged for task-completion commits
+  - Rust policy (`edition = 2024`, `rust-version >= 1.93`) when `Cargo.toml` exists
+  - docs lint for changed files (`scripts/doc-lint.sh --changed --strict-new`)
+- Local `commit-msg` enforces Conventional Commits.
+- CI (`.github/workflows/policy-checks.yml`) re-checks docs lint, Rust policy, conventional commits, and changelog updates over push/PR commit range.

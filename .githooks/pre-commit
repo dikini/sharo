@@ -4,4 +4,6 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
+scripts/check-changelog-staged.sh
+scripts/check-rust-policy.sh
 scripts/doc-lint.sh --changed --strict-new

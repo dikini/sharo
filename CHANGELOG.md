@@ -41,3 +41,19 @@ The format is based on Common Changelog:
   - `.githooks/pre-commit` runs docs lint for changed files
   - `scripts/install-hooks.sh` sets `core.hooksPath` to `.githooks`
 - Updated `AGENTS.md` with deterministic template and lint workflow guidance.
+- Added machine-enforced policy checks:
+  - `scripts/check-conventional-commit.sh`
+  - `scripts/check-changelog-staged.sh`
+  - `scripts/check-rust-policy.sh`
+- Added local `commit-msg` hook and extended local `pre-commit` hook to enforce:
+  - conventional commit messages
+  - changelog staging
+  - Rust policy
+  - docs lint for changed files
+- Added CI workflow `.github/workflows/policy-checks.yml` to enforce policy checks on `push` and `pull_request`.
+
+### Changed
+
+- Improved Rust policy version comparison logic in `scripts/check-rust-policy.sh` to use semantic version component comparison.
+- Updated `scripts/install-hooks.sh` to mark policy check scripts executable during hook installation.
+- Updated `AGENTS.md` with a dedicated machine-enforcement section (local hooks + CI expectations).

@@ -1,0 +1,68 @@
+name: policy-checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+
+      - name: Enforce Rust policy
+        run: scripts/check-rust-policy.sh
+
+      - name: Run docs lint (strict profile)
+        run: scripts/doc-lint.sh --strict-new
+
+      - name: Resolve commit range
+        id: range
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            RANGE="origin/${{ github.base_ref }}...${{ github.sha }}"
+          else
+            BEFORE="${{ github.event.before }}"
+            if [[ "$BEFORE" == "0000000000000000000000000000000000000000" ]]; then
+              RANGE="${{ github.sha }}^!"
+            else
+              RANGE="$BEFORE...${{ github.sha }}"
+            fi
+          fi
+          echo "range=$RANGE" >> "$GITHUB_OUTPUT"
+          echo "Using range: $RANGE"
+
+      - name: Enforce Conventional Commits in range
+        run: |
+          set -euo pipefail
+          range="${{ steps.range.outputs.range }}"
+          commits="$(git rev-list --no-merges "$range")"
+          if [[ -z "$commits" ]]; then
+            echo "No non-merge commits in range."
+            exit 0
+          fi
+          while IFS= read -r sha; do
+            tmp="$(mktemp)"
+            git log -1 --pretty=%B "$sha" | head -n1 > "$tmp"
+            echo "Checking $sha: $(cat "$tmp")"
+            scripts/check-conventional-commit.sh "$tmp"
+            rm -f "$tmp"
+          done <<< "$commits"
+
+      - name: Enforce changelog update in range
+        run: |
+          set -euo pipefail
+          range="${{ steps.range.outputs.range }}"
+          if git diff --name-only "$range" | grep -qx "CHANGELOG.md"; then
+            echo "CHANGELOG.md updated in range."
+            exit 0
+          fi
+          echo "policy-check failed: CHANGELOG.md must be updated in this push/PR range." >&2
+          exit 1
