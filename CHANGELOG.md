@@ -75,3 +75,8 @@ The format is based on Common Changelog:
 - Extended local and CI policy enforcement with sync manifest checks.
 - Updated `AGENTS.md` with staged sync protocol guidance and required commands.
 - Updated `docs/specs/mvp.md` assumptions to align with canonical repo policy and explicit sync protocol.
+- Marked completion evidence checklists in `docs/plans/2026-03-04-vault-sync-protocol-plan.md` as done.
+- Resolved `docs/specs/vault-sync-protocol.md` open questions with explicit MVP decisions:
+  - all-or-nothing promotion policy
+  - manual-only push-back retries
+  - shell-level manifest checks as MVP schema authority

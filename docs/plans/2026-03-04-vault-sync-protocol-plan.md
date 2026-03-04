@@ -29,30 +29,30 @@ Template-Profile: tdd-strict-v1
 
 **Preconditions**
 
-- [ ] `docs/specs/vault-sync-protocol.md` exists and is active.
-- [ ] Canonical source policy in `AGENTS.md` remains unchanged.
+- [x] `docs/specs/vault-sync-protocol.md` exists and is active.
+- [x] Canonical source policy in `AGENTS.md` remains unchanged.
 
 **Invariants**
 
-- [ ] Manifest field names must match the spec.
-- [ ] Evidence file must reference both request and manifest.
-- [ ] No vault access is required for this task.
+- [x] Manifest field names must match the spec.
+- [x] Evidence file must reference both request and manifest.
+- [x] No vault access is required for this task.
 
 **Postconditions**
 
-- [ ] Reusable templates exist for manifest and evidence files.
-- [ ] Artifact usage instructions are documented in `docs/sync/README.md`.
+- [x] Reusable templates exist for manifest and evidence files.
+- [x] Artifact usage instructions are documented in `docs/sync/README.md`.
 
 **Tests (must exist before implementation)**
 
 Unit:
-- [ ] `manifest_template_contains_required_keys`
+- [x] `manifest_template_contains_required_keys`
 
 Property:
-- [ ] `template_roundtrip_preserves_required_key_set`
+- [x] `template_roundtrip_preserves_required_key_set`
 
 Integration:
-- [ ] `doc_lint_passes_for_new_sync_docs`
+- [x] `doc_lint_passes_for_new_sync_docs`
 
 **Red Phase (required before code changes)**
 
@@ -78,11 +78,11 @@ Re-run: `scripts/doc-lint.sh --changed --strict-new`
 
 **Completion Evidence**
 
-- [ ] Preconditions satisfied
-- [ ] Invariants preserved
-- [ ] Postconditions met
-- [ ] Unit, property, and integration tests passing
-- [ ] CHANGELOG.md updated
+- [x] Preconditions satisfied
+- [x] Invariants preserved
+- [x] Postconditions met
+- [x] Unit, property, and integration tests passing
+- [x] CHANGELOG.md updated
 
 ### Task 2: Add Manifest Validator Script
 
@@ -96,31 +96,31 @@ Re-run: `scripts/doc-lint.sh --changed --strict-new`
 
 **Preconditions**
 
-- [ ] Manifest template exists from Task 1.
-- [ ] Script execution style matches existing shell tooling.
+- [x] Manifest template exists from Task 1.
+- [x] Script execution style matches existing shell tooling.
 
 **Invariants**
 
-- [ ] Missing required fields must fail closed.
-- [ ] Validator must not call external vault APIs.
-- [ ] Validation behavior must be deterministic on the same input.
+- [x] Missing required fields must fail closed.
+- [x] Validator must not call external vault APIs.
+- [x] Validation behavior must be deterministic on the same input.
 
 **Postconditions**
 
-- [ ] Manifest checker exits non-zero on malformed manifests.
-- [ ] Pre-commit and CI run the checker when sync artifacts are changed.
+- [x] Manifest checker exits non-zero on malformed manifests.
+- [x] Pre-commit and CI run the checker when sync artifacts are changed.
 
 **Tests (must exist before implementation)**
 
 Unit:
-- [ ] `check_sync_manifest_fails_missing_sync_id`
-- [ ] `check_sync_manifest_fails_missing_hash`
+- [x] `check_sync_manifest_fails_missing_sync_id`
+- [x] `check_sync_manifest_fails_missing_hash`
 
 Property:
-- [ ] `check_sync_manifest_is_idempotent`
+- [x] `check_sync_manifest_is_idempotent`
 
 Integration:
-- [ ] `policy_checks_runs_manifest_validation_on_changed_sync_artifacts`
+- [x] `policy_checks_runs_manifest_validation_on_changed_sync_artifacts`
 
 **Red Phase (required before code changes)**
 
@@ -146,11 +146,11 @@ Re-run: `scripts/check-sync-manifest.sh --path docs/sync/sync-manifest.template.
 
 **Completion Evidence**
 
-- [ ] Preconditions satisfied
-- [ ] Invariants preserved
-- [ ] Postconditions met
-- [ ] Unit, property, and integration tests passing
-- [ ] CHANGELOG.md updated
+- [x] Preconditions satisfied
+- [x] Invariants preserved
+- [x] Postconditions met
+- [x] Unit, property, and integration tests passing
+- [x] CHANGELOG.md updated
 
 ### Task 3: Add Staged Sync Runner (Repo-Local)
 
@@ -163,31 +163,31 @@ Re-run: `scripts/check-sync-manifest.sh --path docs/sync/sync-manifest.template.
 
 **Preconditions**
 
-- [ ] Manifest validator exists and passes.
-- [ ] Sync spec invariants are approved.
+- [x] Manifest validator exists and passes.
+- [x] Sync spec invariants are approved.
 
 **Invariants**
 
-- [ ] Runner must enforce stage order (`pull -> validate -> promote`).
-- [ ] Runner must block `push-back` unless explicit direction is `repo->vault`.
-- [ ] Runner must never mutate canonical files on `--dry-run`.
+- [x] Runner must enforce stage order (`pull -> validate -> promote`).
+- [x] Runner must block `push-back` unless explicit direction is `repo->vault`.
+- [x] Runner must never mutate canonical files on `--dry-run`.
 
 **Postconditions**
 
-- [ ] Runner supports dry-run with deterministic output.
-- [ ] Runner records per-item status transitions in manifest/evidence files.
+- [x] Runner supports dry-run with deterministic output.
+- [x] Runner records per-item status transitions in manifest/evidence files.
 
 **Tests (must exist before implementation)**
 
 Unit:
-- [ ] `sync_check_rejects_invalid_stage_order`
-- [ ] `sync_check_blocks_push_back_without_direction`
+- [x] `sync_check_rejects_invalid_stage_order`
+- [x] `sync_check_blocks_push_back_without_direction`
 
 Property:
-- [ ] `dry_run_is_non_mutating`
+- [x] `dry_run_is_non_mutating`
 
 Integration:
-- [ ] `sync_check_dry_run_with_example_manifest_reports_expected_transitions`
+- [x] `sync_check_dry_run_with_example_manifest_reports_expected_transitions`
 
 **Red Phase (required before code changes)**
 
@@ -213,11 +213,11 @@ Re-run: `scripts/sync-check.sh --dry-run --manifest docs/sync/examples/valid.man
 
 **Completion Evidence**
 
-- [ ] Preconditions satisfied
-- [ ] Invariants preserved
-- [ ] Postconditions met
-- [ ] Unit, property, and integration tests passing
-- [ ] CHANGELOG.md updated
+- [x] Preconditions satisfied
+- [x] Invariants preserved
+- [x] Postconditions met
+- [x] Unit, property, and integration tests passing
+- [x] CHANGELOG.md updated
 
 ### Task 4: Policy Integration and MVP Cross-References
 
@@ -231,30 +231,30 @@ Re-run: `scripts/sync-check.sh --dry-run --manifest docs/sync/examples/valid.man
 
 **Preconditions**
 
-- [ ] Tasks 1-3 completed.
-- [ ] Existing policy hooks are passing.
+- [x] Tasks 1-3 completed.
+- [x] Existing policy hooks are passing.
 
 **Invariants**
 
-- [ ] Canonical source of truth remains repo `main`.
-- [ ] External sync remains explicit and non-implicit.
-- [ ] Policy checks remain lightweight and shell-first.
+- [x] Canonical source of truth remains repo `main`.
+- [x] External sync remains explicit and non-implicit.
+- [x] Policy checks remain lightweight and shell-first.
 
 **Postconditions**
 
-- [ ] Governance and MVP docs reference the sync protocol and runner.
-- [ ] Policy checks include sync-specific validation in CI and hooks.
+- [x] Governance and MVP docs reference the sync protocol and runner.
+- [x] Policy checks include sync-specific validation in CI and hooks.
 
 **Tests (must exist before implementation)**
 
 Unit:
-- [ ] `agents_policy_section_mentions_sync_manifest_and_evidence`
+- [x] `agents_policy_section_mentions_sync_manifest_and_evidence`
 
 Property:
-- [ ] `policy_checks_do_not_depend_on_external_vault_access`
+- [x] `policy_checks_do_not_depend_on_external_vault_access`
 
 Integration:
-- [ ] `full_policy_check_path_passes_with_valid_sync_artifacts`
+- [x] `full_policy_check_path_passes_with_valid_sync_artifacts`
 
 **Red Phase (required before code changes)**
 
@@ -280,8 +280,8 @@ Re-run: `scripts/doc-lint.sh --changed --strict-new`
 
 **Completion Evidence**
 
-- [ ] Preconditions satisfied
-- [ ] Invariants preserved
-- [ ] Postconditions met
-- [ ] Unit, property, and integration tests passing
-- [ ] CHANGELOG.md updated
+- [x] Preconditions satisfied
+- [x] Invariants preserved
+- [x] Postconditions met
+- [x] Unit, property, and integration tests passing
+- [x] CHANGELOG.md updated

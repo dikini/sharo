@@ -236,7 +236,7 @@ Integration:
 - Result: canonical file validated, then pushed to vault with evidence.
 3. Mixed batch with one invalid staged file:
 - Validation fails for one item.
-- Promotion is blocked for whole operation or failed subset (policy-configured), with explicit failure records.
+- Promotion is blocked for the whole operation in MVP (all-or-nothing), with explicit failure records.
 
 ## Verification
 
@@ -252,11 +252,11 @@ Integration:
 - Overly strict validation on non-canonical staged paths can block useful sync workflows.
 - Partial push-back failure can leave repo and vault diverged unless evidence records include per-item status.
 
-## Open Questions
+## Decisions (Resolved 2026-03-04)
 
-- Should promotion be all-or-nothing for a sync batch, or item-granular?
-- Should failed push-back retry be automatic or always explicit/manual?
-- Should manifest schema live as JSON Schema or shell-level key checks for MVP?
+- Promotion policy: all-or-nothing for MVP batches. Any failed item blocks promotion.
+- Push-back retry policy: explicit/manual only in MVP. No automatic retries.
+- Manifest schema policy: shell-level key and value checks are the MVP authority; JSON Schema is deferred.
 
 ## References
 
