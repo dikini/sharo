@@ -8,3 +8,4 @@ scripts/check-changelog-staged.sh
 scripts/check-rust-policy.sh
 scripts/check-sync-manifest.sh --changed
 scripts/doc-lint.sh --changed --strict-new
+scripts/check-doc-terms.sh --changed

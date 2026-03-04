@@ -75,5 +75,6 @@ Example:
   - `CHANGELOG.md` is staged for task-completion commits
   - Rust policy (`edition = 2024`, `rust-version >= 1.93`) when `Cargo.toml` exists
   - docs lint for changed files (`scripts/doc-lint.sh --changed --strict-new`)
+  - docs terminology checks for changed files (`scripts/check-doc-terms.sh --changed`)
 - Local `commit-msg` enforces Conventional Commits.
-- CI (`.github/workflows/policy-checks.yml`) re-checks docs lint, Rust policy, conventional commits, and changelog updates over push/PR commit range.
+- CI (`.github/workflows/policy-checks.yml`) re-checks docs lint, docs terminology, Rust policy, conventional commits, and changelog updates over push/PR commit range.

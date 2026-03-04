@@ -1,0 +1,8 @@
+# forbidden|||preferred
+# Keep rules literal and specific to avoid noisy false positives.
+
+# Canonical MVP spec path
+/docs/plan/mvp.md|||/docs/specs/mvp.md
+
+# Canonical branch naming
+master branch|||main branch

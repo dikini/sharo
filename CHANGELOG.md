@@ -45,6 +45,7 @@ The format is based on Common Changelog:
   - `scripts/check-conventional-commit.sh`
   - `scripts/check-changelog-staged.sh`
   - `scripts/check-rust-policy.sh`
+  - `scripts/check-doc-terms.sh`
 - Added local `commit-msg` hook and extended local `pre-commit` hook to enforce:
   - conventional commit messages
   - changelog staging
@@ -79,6 +80,7 @@ The format is based on Common Changelog:
 - Updated `scripts/install-hooks.sh` to mark policy check scripts executable during hook installation.
 - Updated `AGENTS.md` with a dedicated machine-enforcement section (local hooks + CI expectations).
 - Extended local and CI policy enforcement with sync manifest checks.
+- Extended local and CI policy enforcement with documentation terminology checks.
 - Updated `AGENTS.md` with staged sync protocol guidance and required commands.
 - Updated `docs/specs/mvp.md` assumptions to align with canonical repo policy and explicit sync protocol.
 - Marked completion evidence checklists in `docs/plans/2026-03-04-vault-sync-protocol-plan.md` as done.

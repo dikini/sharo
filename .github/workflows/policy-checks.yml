@@ -23,6 +23,9 @@ jobs:
       - name: Run docs lint (strict profile)
         run: scripts/doc-lint.sh --strict-new
 
+      - name: Run docs terminology checks
+        run: scripts/check-doc-terms.sh
+
       - name: Resolve commit range
         id: range
         run: |

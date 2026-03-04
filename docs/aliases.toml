@@ -22,8 +22,11 @@
 
 "script:doc-lint" = "scripts/doc-lint.sh"
 "script:check-sync-manifest" = "scripts/check-sync-manifest.sh"
+"script:check-doc-terms" = "scripts/check-doc-terms.sh"
 "script:sync-check" = "scripts/sync-check.sh"
 "script:alias-resolve" = "scripts/alias-resolve.sh"
+
+"terms:rules" = "docs/terms/terminology.rules"
 
 "hook:pre-commit" = ".githooks/pre-commit"
 "hook:commit-msg" = ".githooks/commit-msg"
