@@ -1,0 +1,31 @@
+[aliases]
+"doc:agents" = "AGENTS.md"
+"doc:changelog" = "CHANGELOG.md"
+
+"spec:mvp" = "docs/specs/mvp.md"
+"spec:vault-sync-protocol" = "docs/specs/vault-sync-protocol.md"
+
+"plan:design-note-alignment" = "docs/plans/2026-03-04-design-note-alignment-plan.md"
+"plan:doc-lint-gate" = "docs/plans/2026-03-04-doc-lint-gate-implementation-plan.md"
+"plan:research-note-alignment" = "docs/plans/2026-03-04-research-note-alignment-plan.md"
+"plan:vault-sync-protocol" = "docs/plans/2026-03-04-vault-sync-protocol-plan.md"
+"plan:alias-resolution" = "docs/plans/2026-03-04-alias-resolution-implementation-plan.md"
+
+"template:changelog" = "docs/templates/CHANGELOG.template.md"
+"template:plan" = "docs/templates/plan.template.md"
+"template:spec" = "docs/templates/spec.template.md"
+
+"sync:readme" = "docs/sync/README.md"
+"sync:manifest-template" = "docs/sync/sync-manifest.template.json"
+"sync:evidence-template" = "docs/sync/sync-evidence.template.md"
+"sync:valid-example" = "docs/sync/examples/valid.manifest.json"
+
+"script:doc-lint" = "scripts/doc-lint.sh"
+"script:check-sync-manifest" = "scripts/check-sync-manifest.sh"
+"script:sync-check" = "scripts/sync-check.sh"
+"script:alias-resolve" = "scripts/alias-resolve.sh"
+
+"hook:pre-commit" = ".githooks/pre-commit"
+"hook:commit-msg" = ".githooks/commit-msg"
+
+"ci:policy-checks" = ".github/workflows/policy-checks.yml"

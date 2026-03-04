@@ -66,6 +66,12 @@ The format is based on Common Changelog:
 - Added sync tool verification fixtures and test harness:
   - `scripts/tests/sync/invalid.missing-sync-id.manifest.json`
   - `scripts/tests/test-sync-tools.sh`
+- Added canonical alias tooling for repo artifacts:
+  - `docs/aliases.toml`
+  - `scripts/alias-resolve.sh`
+- Added alias design and implementation planning docs:
+  - `docs/plans/2026-03-04-alias-resolution-design.md`
+  - `docs/plans/2026-03-04-alias-resolution-implementation-plan.md`
 
 ### Changed
 
