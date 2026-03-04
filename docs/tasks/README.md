@@ -42,3 +42,4 @@ This keeps task state deterministic and reduces stale registry entries.
 
 - `TASK-TASKS-REGISTRY-001`: deterministic task registry and machine checks are implemented.
 - `TASK-RUST-WORKSPACE-001`: Rust workspace bootstrap with `sharo-core`, `sharo-cli`, and `sharo-daemon` is implemented.
+- `TASK-VERIFICATION-GATE-001`: Rust-impacting commits are blocked unless `cargo test --workspace` passes.

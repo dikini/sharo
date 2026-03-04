@@ -27,26 +27,26 @@ Template-Profile: tdd-strict-v1
 
 **Preconditions**
 
-- [ ] <required state or dependency>
+- <required state or dependency>
 
 **Invariants**
 
-- [ ] <must remain true during and after task>
+- <must remain true during and after task>
 
 **Postconditions**
 
-- [ ] <observable completion condition>
+- <observable completion condition>
 
 **Tests (must exist before implementation)**
 
 Unit:
-- [ ] <test id or test name>
+- <test id or test name>
 
 Property:
-- [ ] <test id or test name>
+- <test id or test name>
 
 Integration:
-- [ ] <test id or test name>
+- <test id or test name>
 
 **Red Phase (required before code changes)**
 
@@ -70,8 +70,8 @@ Re-run: `<exact command>`
 
 **Completion Evidence**
 
-- [ ] Preconditions satisfied
-- [ ] Invariants preserved
-- [ ] Postconditions met
-- [ ] Unit, property, and integration tests passing
-- [ ] CHANGELOG.md updated
+- Preconditions satisfied
+- Invariants preserved
+- Postconditions met
+- Unit, property, and integration tests passing
+- CHANGELOG.md updated

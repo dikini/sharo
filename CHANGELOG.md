@@ -45,6 +45,7 @@ The format is based on Common Changelog:
   - `scripts/check-conventional-commit.sh`
   - `scripts/check-changelog-staged.sh`
   - `scripts/check-rust-policy.sh`
+  - `scripts/check-rust-tests.sh`
   - `scripts/check-doc-terms.sh`
   - `scripts/check-tasks-registry.sh`
   - `scripts/check-tasks-sync.sh`
@@ -109,3 +110,6 @@ The format is based on Common Changelog:
   - converted `docs/specs/vault-sync-protocol.md` requirement checklists to plain bullets
   - updated `docs/templates/spec.template.md` to use plain bullets for Preconditions/Invariants/Postconditions/Tests
 - Updated `scripts/check-rust-policy.sh` to validate workspace member crate manifests (`edition=2024`, `rust-version>=1.93`) and support `--path` for deterministic testing.
+- Updated `docs/templates/plan.template.md` to use plain bullets instead of checkboxes to reduce plan-state staleness.
+- Extended local and CI policy enforcement with fail-closed Rust workspace test gating.
+- Added a REQUIRED fast-feedback loop policy in `AGENTS.md` with MUST-level local check cadence for docs, tasks, and Rust edits.

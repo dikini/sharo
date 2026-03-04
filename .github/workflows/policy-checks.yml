@@ -20,6 +20,9 @@ jobs:
       - name: Enforce Rust policy
         run: scripts/check-rust-policy.sh
 
+      - name: Run Rust workspace tests
+        run: scripts/check-rust-tests.sh --all
+
       - name: Run docs lint (strict profile)
         run: scripts/doc-lint.sh --strict-new
 

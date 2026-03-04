@@ -26,6 +26,7 @@
 "script:check-sync-manifest" = "scripts/check-sync-manifest.sh"
 "script:check-doc-terms" = "scripts/check-doc-terms.sh"
 "script:check-rust-policy" = "scripts/check-rust-policy.sh"
+"script:check-rust-tests" = "scripts/check-rust-tests.sh"
 "script:check-tasks-registry" = "scripts/check-tasks-registry.sh"
 "script:check-tasks-sync" = "scripts/check-tasks-sync.sh"
 "script:sync-check" = "scripts/sync-check.sh"

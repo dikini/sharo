@@ -74,9 +74,32 @@ Example:
 - Local `pre-commit` enforces:
   - `CHANGELOG.md` is staged for task-completion commits
   - Rust policy (`edition = 2024`, `rust-version >= 1.93`) when `Cargo.toml` exists
+  - Rust workspace tests for Rust-impacting changes (`scripts/check-rust-tests.sh --changed`)
   - docs lint for changed files (`scripts/doc-lint.sh --changed --strict-new`)
   - docs terminology checks for changed files (`scripts/check-doc-terms.sh --changed`)
   - task registry validity (`scripts/check-tasks-registry.sh`)
   - task registry sync for changed specs/plans/scripts (`scripts/check-tasks-sync.sh --changed`)
 - Local `commit-msg` enforces Conventional Commits.
-- CI (`.github/workflows/policy-checks.yml`) re-checks docs lint, docs terminology, task registry validity/sync, Rust policy, conventional commits, and changelog updates over push/PR commit range.
+- CI (`.github/workflows/policy-checks.yml`) re-checks docs lint, docs terminology, task registry validity/sync, Rust policy, Rust workspace tests, conventional commits, and changelog updates over push/PR commit range.
+
+## Fast Feedback Loop (REQUIRED)
+
+To catch problems at the earliest possible moment, contributors **MUST** run checks immediately after each relevant edit batch, not only at commit time.
+
+1. Docs/spec/plan/task edits:
+  - `scripts/doc-lint.sh --changed --strict-new`
+  - `scripts/check-doc-terms.sh --changed`
+  - `scripts/check-tasks-registry.sh`
+  - `scripts/check-tasks-sync.sh --changed`
+
+2. First Rust-impacting edit in a batch:
+  - `scripts/check-rust-policy.sh`
+  - `scripts/check-rust-tests.sh --changed`
+
+3. Every subsequent Rust edit batch:
+  - `scripts/check-rust-tests.sh --changed`
+
+4. Before commit:
+  - contributors **MUST** have green local checks already; pre-commit is an enforcement gate, not the first feedback loop.
+
+Skipping this loop is a policy violation because it delays failure detection and increases rework.

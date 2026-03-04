@@ -4,3 +4,4 @@ TASK-RESEARCH-LINT-001,tooling,Research citation/reference verifier,docs/tasks/R
 TASK-IPC-TRANSPORT-001,runtime,Real CLI-daemon IPC transport,docs/tasks/README.md,deferred,post_bootstrap_vertical_slice,Replace stub client path with concrete transport after bootstrap baseline
 TASK-TASKS-REGISTRY-001,policy,Deterministic task registry and checks,docs/tasks/README.md,done,,Implemented csv registry plus validation and stale-sync hooks
 TASK-RUST-WORKSPACE-001,runtime,Rust workspace bootstrap,docs/tasks/README.md,done,,Implemented root workspace and baseline daemon/cli/core crates
+TASK-VERIFICATION-GATE-001,policy,Pre-commit Rust test gate,docs/tasks/README.md,done,,Added rust test gate in pre-commit and CI for rust-impacting changes
