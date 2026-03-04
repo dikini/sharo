@@ -32,26 +32,26 @@ Template-Profile: tdd-strict-v1
 
 **Preconditions**
 
-- [ ] <required state or dependency>
+- <required state or dependency>
 
 **Invariants**
 
-- [ ] <must remain true during and after task>
+- <must remain true during and after task>
 
 **Postconditions**
 
-- [ ] <observable completion condition>
+- <observable completion condition>
 
 **Tests (must exist before implementation)**
 
 Unit:
-- [ ] <test id or test name>
+- <test id or test name>
 
 Property:
-- [ ] <test id or test name>
+- <test id or test name>
 
 Integration:
-- [ ] <test id or test name>
+- <test id or test name>
 
 ## Scenarios
 

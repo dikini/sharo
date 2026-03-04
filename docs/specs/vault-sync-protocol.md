@@ -85,146 +85,146 @@ Define a deterministic, fail-closed sync protocol between non-canonical Knot vau
 
 **Preconditions**
 
-- [ ] Explicit sync request exists with source, target, direction, and scope.
-- [ ] Staging workspace path for `sync_id` exists or can be created.
+- Explicit sync request exists with source, target, direction, and scope.
+- Staging workspace path for `sync_id` exists or can be created.
 
 **Invariants**
 
-- [ ] `I1 Canonical Authority`
-- [ ] `I2 Explicit Scope`
-- [ ] `I3 Staged-Only Import`
+- `I1 Canonical Authority`
+- `I2 Explicit Scope`
+- `I3 Staged-Only Import`
 
 **Postconditions**
 
-- [ ] Staged files are present for each requested item.
-- [ ] Manifest entries are created with required fields and `status=pulled`.
+- Staged files are present for each requested item.
+- Manifest entries are created with required fields and `status=pulled`.
 
 **Tests (must exist before implementation)**
 
 Unit:
-- [ ] `pull_manifest_requires_mandatory_fields`
-- [ ] `pull_rejects_missing_scope`
+- `pull_manifest_requires_mandatory_fields`
+- `pull_rejects_missing_scope`
 
 Property:
-- [ ] `pull_hash_is_stable_for_identical_content`
+- `pull_hash_is_stable_for_identical_content`
 
 Integration:
-- [ ] `pull_get_note_to_stage_creates_manifest_items`
+- `pull_get_note_to_stage_creates_manifest_items`
 
 ### Task 2: Validate Stage
 
 **Preconditions**
 
-- [ ] Task 1 postconditions met.
-- [ ] All staged files referenced by manifest exist.
+- Task 1 postconditions met.
+- All staged files referenced by manifest exist.
 
 **Invariants**
 
-- [ ] `I4 Validation Gate`
-- [ ] `I6 Fail Closed`
+- `I4 Validation Gate`
+- `I6 Fail Closed`
 
 **Postconditions**
 
-- [ ] Validation results are recorded per staged item.
-- [ ] Any failed validation sets item status to `failed` and blocks promotion.
+- Validation results are recorded per staged item.
+- Any failed validation sets item status to `failed` and blocks promotion.
 
 **Tests (must exist before implementation)**
 
 Unit:
-- [ ] `validate_blocks_on_missing_manifest_field`
-- [ ] `validate_blocks_on_broken_links`
+- `validate_blocks_on_missing_manifest_field`
+- `validate_blocks_on_broken_links`
 
 Property:
-- [ ] `validate_is_idempotent_for_unchanged_stage`
+- `validate_is_idempotent_for_unchanged_stage`
 
 Integration:
-- [ ] `validate_runs_doc_lint_on_staged_docs_and_records_status`
+- `validate_runs_doc_lint_on_staged_docs_and_records_status`
 
 ### Task 3: Promote Stage
 
 **Preconditions**
 
-- [ ] Task 2 postconditions met with no failed items.
-- [ ] Destination canonical paths are within repo scope.
+- Task 2 postconditions met with no failed items.
+- Destination canonical paths are within repo scope.
 
 **Invariants**
 
-- [ ] `I1 Canonical Authority`
-- [ ] `I4 Validation Gate`
-- [ ] `I5 Hash Continuity`
+- `I1 Canonical Authority`
+- `I4 Validation Gate`
+- `I5 Hash Continuity`
 
 **Postconditions**
 
-- [ ] Canonical files are updated from stage.
-- [ ] Manifest status for promoted items is `promoted`.
+- Canonical files are updated from stage.
+- Manifest status for promoted items is `promoted`.
 
 **Tests (must exist before implementation)**
 
 Unit:
-- [ ] `promote_rejects_unvalidated_item`
-- [ ] `promote_rejects_hash_mismatch`
+- `promote_rejects_unvalidated_item`
+- `promote_rejects_hash_mismatch`
 
 Property:
-- [ ] `promote_preserves_content_hash`
+- `promote_preserves_content_hash`
 
 Integration:
-- [ ] `promote_stage_to_docs_updates_repo_files`
+- `promote_stage_to_docs_updates_repo_files`
 
 ### Task 4: Push-Back Stage (Optional)
 
 **Preconditions**
 
-- [ ] Direction is explicitly `repo->vault`.
-- [ ] Canonical source files are validated and current.
+- Direction is explicitly `repo->vault`.
+- Canonical source files are validated and current.
 
 **Invariants**
 
-- [ ] `I2 Explicit Scope`
-- [ ] `I4 Validation Gate`
-- [ ] `I8 Non-Destructive External`
+- `I2 Explicit Scope`
+- `I4 Validation Gate`
+- `I8 Non-Destructive External`
 
 **Postconditions**
 
-- [ ] Vault update operations are executed only for requested scope.
-- [ ] Manifest marks successful items `pushed_back`.
+- Vault update operations are executed only for requested scope.
+- Manifest marks successful items `pushed_back`.
 
 **Tests (must exist before implementation)**
 
 Unit:
-- [ ] `push_back_blocks_without_explicit_direction`
-- [ ] `push_back_blocks_without_validated_source`
+- `push_back_blocks_without_explicit_direction`
+- `push_back_blocks_without_validated_source`
 
 Property:
-- [ ] `push_back_request_scope_is_closed_under_manifest`
+- `push_back_request_scope_is_closed_under_manifest`
 
 Integration:
-- [ ] `push_back_replace_note_updates_expected_note_ids_only`
+- `push_back_replace_note_updates_expected_note_ids_only`
 
 ### Task 5: Evidence and Audit
 
 **Preconditions**
 
-- [ ] At least one prior stage completed.
+- At least one prior stage completed.
 
 **Invariants**
 
-- [ ] `I7 Evidence Completeness`
+- `I7 Evidence Completeness`
 
 **Postconditions**
 
-- [ ] One sync evidence note exists for the `sync_id`.
-- [ ] Evidence references exact sync request and manifest paths.
+- One sync evidence note exists for the `sync_id`.
+- Evidence references exact sync request and manifest paths.
 
 **Tests (must exist before implementation)**
 
 Unit:
-- [ ] `evidence_requires_manifest_ref_and_sync_request_ref`
+- `evidence_requires_manifest_ref_and_sync_request_ref`
 
 Property:
-- [ ] `evidence_is_append_only_per_sync_id`
+- `evidence_is_append_only_per_sync_id`
 
 Integration:
-- [ ] `sync_report_generation_matches_manifest_outcomes`
+- `sync_report_generation_matches_manifest_outcomes`
 
 ## Scenarios
 

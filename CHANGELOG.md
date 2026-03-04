@@ -80,3 +80,6 @@ The format is based on Common Changelog:
   - all-or-nothing promotion policy
   - manual-only push-back retries
   - shell-level manifest checks as MVP schema authority
+- Updated strict spec formatting to reduce ambiguity between normative requirements and task tracking:
+  - converted `docs/specs/vault-sync-protocol.md` requirement checklists to plain bullets
+  - updated `docs/templates/spec.template.md` to use plain bullets for Preconditions/Invariants/Postconditions/Tests
