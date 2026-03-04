@@ -9,3 +9,5 @@ scripts/check-rust-policy.sh
 scripts/check-sync-manifest.sh --changed
 scripts/doc-lint.sh --changed --strict-new
 scripts/check-doc-terms.sh --changed
+scripts/check-tasks-registry.sh
+scripts/check-tasks-sync.sh --changed

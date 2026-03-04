@@ -76,5 +76,7 @@ Example:
   - Rust policy (`edition = 2024`, `rust-version >= 1.93`) when `Cargo.toml` exists
   - docs lint for changed files (`scripts/doc-lint.sh --changed --strict-new`)
   - docs terminology checks for changed files (`scripts/check-doc-terms.sh --changed`)
+  - task registry validity (`scripts/check-tasks-registry.sh`)
+  - task registry sync for changed specs/plans/scripts (`scripts/check-tasks-sync.sh --changed`)
 - Local `commit-msg` enforces Conventional Commits.
-- CI (`.github/workflows/policy-checks.yml`) re-checks docs lint, docs terminology, Rust policy, conventional commits, and changelog updates over push/PR commit range.
+- CI (`.github/workflows/policy-checks.yml`) re-checks docs lint, docs terminology, task registry validity/sync, Rust policy, conventional commits, and changelog updates over push/PR commit range.

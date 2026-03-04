@@ -23,10 +23,14 @@
 "script:doc-lint" = "scripts/doc-lint.sh"
 "script:check-sync-manifest" = "scripts/check-sync-manifest.sh"
 "script:check-doc-terms" = "scripts/check-doc-terms.sh"
+"script:check-tasks-registry" = "scripts/check-tasks-registry.sh"
+"script:check-tasks-sync" = "scripts/check-tasks-sync.sh"
 "script:sync-check" = "scripts/sync-check.sh"
 "script:alias-resolve" = "scripts/alias-resolve.sh"
+"script:tasks" = "scripts/tasks.sh"
 
 "terms:rules" = "docs/terms/terminology.rules"
+"tasks:registry" = "docs/tasks/tasks.csv"
 
 "hook:pre-commit" = ".githooks/pre-commit"
 "hook:commit-msg" = ".githooks/commit-msg"

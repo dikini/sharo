@@ -46,6 +46,8 @@ The format is based on Common Changelog:
   - `scripts/check-changelog-staged.sh`
   - `scripts/check-rust-policy.sh`
   - `scripts/check-doc-terms.sh`
+  - `scripts/check-tasks-registry.sh`
+  - `scripts/check-tasks-sync.sh`
 - Added local `commit-msg` hook and extended local `pre-commit` hook to enforce:
   - conventional commit messages
   - changelog staging
@@ -70,6 +72,10 @@ The format is based on Common Changelog:
 - Added canonical alias tooling for repo artifacts:
   - `docs/aliases.toml`
   - `scripts/alias-resolve.sh`
+- Added deterministic task registry tooling:
+  - `docs/tasks/README.md`
+  - `docs/tasks/tasks.csv`
+  - `scripts/tasks.sh`
 - Added alias design and implementation planning docs:
   - `docs/plans/2026-03-04-alias-resolution-design.md`
   - `docs/plans/2026-03-04-alias-resolution-implementation-plan.md`
@@ -81,6 +87,7 @@ The format is based on Common Changelog:
 - Updated `AGENTS.md` with a dedicated machine-enforcement section (local hooks + CI expectations).
 - Extended local and CI policy enforcement with sync manifest checks.
 - Extended local and CI policy enforcement with documentation terminology checks.
+- Extended local and CI policy enforcement with task registry validity and sync checks.
 - Updated `AGENTS.md` with staged sync protocol guidance and required commands.
 - Updated `docs/specs/mvp.md` assumptions to align with canonical repo policy and explicit sync protocol.
 - Marked completion evidence checklists in `docs/plans/2026-03-04-vault-sync-protocol-plan.md` as done.

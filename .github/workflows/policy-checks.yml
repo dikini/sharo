@@ -26,6 +26,9 @@ jobs:
       - name: Run docs terminology checks
         run: scripts/check-doc-terms.sh
 
+      - name: Validate task registry
+        run: scripts/check-tasks-registry.sh
+
       - name: Resolve commit range
         id: range
         run: |
@@ -44,6 +47,9 @@ jobs:
 
       - name: Enforce sync manifest policy in range
         run: scripts/check-sync-manifest.sh --range "${{ steps.range.outputs.range }}"
+
+      - name: Enforce task registry sync in range
+        run: scripts/check-tasks-sync.sh --range "${{ steps.range.outputs.range }}"
 
       - name: Enforce Conventional Commits in range
         run: |
