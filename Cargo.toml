@@ -1,0 +1,7 @@
+[workspace]
+members = [
+  "crates/sharo-core",
+  "crates/sharo-cli",
+  "crates/sharo-daemon",
+]
+resolver = "2"

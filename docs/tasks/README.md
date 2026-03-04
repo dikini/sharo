@@ -36,7 +36,9 @@ This keeps task state deterministic and reduces stale registry entries.
 
 - `TASK-KNOT-DIFF-001`: live repo↔Knot content diff checker, blocked by Knot CLI API stability.
 - `TASK-RESEARCH-LINT-001`: research citation/reference verifier automation, blocked by Knot-side workflow readiness.
+- `TASK-IPC-TRANSPORT-001`: replace stub client path with real CLI↔daemon IPC transport after vertical-slice stabilization.
 
 ## Completed Bootstrap
 
 - `TASK-TASKS-REGISTRY-001`: deterministic task registry and machine checks are implemented.
+- `TASK-RUST-WORKSPACE-001`: Rust workspace bootstrap with `sharo-core`, `sharo-cli`, and `sharo-daemon` is implemented.
