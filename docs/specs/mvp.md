@@ -1219,8 +1219,8 @@ Every enrichment must answer:
 ## 23. Assumptions and Defaults
 
 - canonical local path: `docs/specs/mvp.md`
-- canonical vault note path: `sharo/planning/mvp.md`
-- both artifacts contain the same content
+- vault path is non-canonical and may diverge unless an explicit sync is requested
+- explicit repo-vault sync should follow `docs/specs/vault-sync-protocol.md`
 - CLI is the first operator surface
 - all architecture parts are present in MVP
 - the runtime is a thin vertical slice, not a broad assistant

@@ -1,0 +1,19 @@
+{
+  "request_ref": "docs/sync/requests/2026-03-04-example-request.md",
+  "direction": "vault->repo",
+  "intent": "research",
+  "created_at_utc": "2026-03-04T00:00:00Z",
+  "updated_at_utc": "2026-03-04T00:00:00Z",
+  "items": [
+    {
+      "item_id": "item-001",
+      "direction": "vault->repo",
+      "source_ref": "knot://sharo/research/example-note.md",
+      "staged_path": "tmp/vault-stage/sync-20260304-001/example-note.md",
+      "canonical_path": "docs/research/example-note.md",
+      "hash_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "status": "pulled",
+      "timestamp_utc": "2026-03-04T00:00:00Z"
+    }
+  ]
+}

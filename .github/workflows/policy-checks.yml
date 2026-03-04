@@ -39,6 +39,9 @@ jobs:
           echo "range=$RANGE" >> "$GITHUB_OUTPUT"
           echo "Using range: $RANGE"
 
+      - name: Enforce sync manifest policy in range
+        run: scripts/check-sync-manifest.sh --range "${{ steps.range.outputs.range }}"
+
       - name: Enforce Conventional Commits in range
         run: |
           set -euo pipefail

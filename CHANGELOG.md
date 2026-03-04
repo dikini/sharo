@@ -51,9 +51,27 @@ The format is based on Common Changelog:
   - Rust policy
   - docs lint for changed files
 - Added CI workflow `.github/workflows/policy-checks.yml` to enforce policy checks on `push` and `pull_request`.
+- Added sync protocol docs for staged repo-vault operations without direct vault CLI:
+  - `docs/specs/vault-sync-protocol.md`
+  - `docs/plans/2026-03-04-vault-sync-protocol-plan.md`
+- Added Task 1 sync artifacts for staged protocol execution:
+  - `docs/sync/README.md`
+  - `docs/sync/sync-manifest.template.json`
+  - `docs/sync/sync-evidence.template.md`
+- Updated `docs/specs/vault-sync-protocol.md` references to include sync artifact templates.
+- Added sync manifest validator and staged sync runner:
+  - `scripts/check-sync-manifest.sh`
+  - `scripts/sync-check.sh`
+  - `docs/sync/examples/valid.manifest.json`
+- Added sync tool verification fixtures and test harness:
+  - `scripts/tests/sync/invalid.missing-sync-id.manifest.json`
+  - `scripts/tests/test-sync-tools.sh`
 
 ### Changed
 
 - Improved Rust policy version comparison logic in `scripts/check-rust-policy.sh` to use semantic version component comparison.
 - Updated `scripts/install-hooks.sh` to mark policy check scripts executable during hook installation.
 - Updated `AGENTS.md` with a dedicated machine-enforcement section (local hooks + CI expectations).
+- Extended local and CI policy enforcement with sync manifest checks.
+- Updated `AGENTS.md` with staged sync protocol guidance and required commands.
+- Updated `docs/specs/mvp.md` assumptions to align with canonical repo policy and explicit sync protocol.

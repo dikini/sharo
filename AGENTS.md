@@ -26,6 +26,17 @@
   - scope of files/notes to sync
 - No implicit mirroring between repo and non-repo paths is allowed.
 
+## Staged Sync Protocol
+
+- For explicit repo-vault sync tasks, use staged protocol artifacts in `docs/sync/`.
+- Every sync operation should include:
+  - one manifest file derived from `docs/sync/sync-manifest.template.json`
+  - one evidence note derived from `docs/sync/sync-evidence.template.md`
+- Validate sync manifests before completion:
+  - `scripts/check-sync-manifest.sh --changed`
+- Dry-run staged sync checks before external updates:
+  - `scripts/sync-check.sh --dry-run --manifest <manifest>`
+
 ## Documentation Usage (`docs/`)
 
 - `docs/specs/` stores canonical specifications (source of truth for behavior and invariants).
