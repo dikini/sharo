@@ -18,3 +18,10 @@ The format is based on Common Changelog:
 - Added planning docs:
   - `docs/plans/2026-03-04-design-note-alignment-plan.md`
   - `docs/plans/2026-03-04-research-note-alignment-plan.md`
+  - `docs/plans/2026-03-04-doc-lint-gate-implementation-plan.md`
+- Updated project governance in `AGENTS.md`:
+  - canonical source is `git main`
+  - non-repo sync requires explicit, unambiguous request (source, target, direction, scope)
+- Added lightweight docs quality gate script:
+  - `scripts/doc-lint.sh`
+  - includes evergreen checks and temporary regression guard policy metadata

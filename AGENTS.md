@@ -14,6 +14,18 @@
 - The project uses Conventional Commits v1.0.0: <https://www.conventionalcommits.org/en/v1.0.0/>.
 - Commit messages **MUST** conform to the Conventional Commits specification.
 
+## Canonical Source and Sync Policy
+
+- The `git main` branch in this repository is the single source of truth.
+- Any path outside this repository (including Knot vault paths) is non-canonical.
+- Sync to or from non-repo paths **MUST** be explicitly requested for each task.
+- Sync requests **MUST** be unambiguous and include:
+  - exact source path
+  - exact target path
+  - direction of sync
+  - scope of files/notes to sync
+- No implicit mirroring between repo and non-repo paths is allowed.
+
 ## Documentation Usage (`docs/`)
 
 - `docs/specs/` stores canonical specifications (source of truth for behavior and invariants).
