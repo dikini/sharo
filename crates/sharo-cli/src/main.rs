@@ -1,11 +1,29 @@
-use clap::{Parser, Subcommand};
+use std::path::PathBuf;
+
+use clap::{Parser, Subcommand, ValueEnum};
 use sharo_core::client::{RuntimeClient, StubClient};
-use sharo_core::protocol::{SubmitTaskRequest, TaskStatusRequest};
+use sharo_core::protocol::{
+    DaemonRequest, DaemonResponse, SubmitTaskRequest, TaskStatusRequest,
+};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::UnixStream;
+
+const DEFAULT_SOCKET_PATH: &str = "/tmp/sharo-daemon.sock";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum Transport {
+    Ipc,
+    Stub,
+}
 
 #[derive(Debug, Parser)]
 #[command(name = "sharo")]
 #[command(about = "Sharo CLI")]
 struct Cli {
+    #[arg(long, value_enum, default_value_t = Transport::Ipc)]
+    transport: Transport,
+    #[arg(long, default_value = DEFAULT_SOCKET_PATH)]
+    socket_path: PathBuf,
     #[command(subcommand)]
     command: Command,
 }
@@ -24,14 +42,19 @@ enum Command {
     },
 }
 
-fn run_with_client(client: &impl RuntimeClient, cli: Cli) {
-    match cli.command {
+fn run_stub(client: &impl RuntimeClient, cli: &Cli) {
+    match &cli.command {
         Command::Submit { goal, session_id } => {
-            let response = client.submit(&SubmitTaskRequest { session_id, goal });
+            let response = client.submit(&SubmitTaskRequest {
+                session_id: session_id.clone(),
+                goal: goal.clone(),
+            });
             println!("task_id={} state={:?}", response.task_id, response.state);
         }
         Command::Status { task_id } => {
-            let response = client.status(&TaskStatusRequest { task_id });
+            let response = client.status(&TaskStatusRequest {
+                task_id: task_id.clone(),
+            });
             println!(
                 "task_id={} state={:?} summary={}",
                 response.task_id, response.state, response.summary
@@ -40,7 +63,87 @@ fn run_with_client(client: &impl RuntimeClient, cli: Cli) {
     }
 }
 
-fn main() {
+async fn send_ipc(socket_path: &PathBuf, request: &DaemonRequest) -> Result<DaemonResponse, String> {
+    let stream = UnixStream::connect(socket_path)
+        .await
+        .map_err(|error| format!("connect_failed path={} error={}", socket_path.display(), error))?;
+    let (reader, mut writer) = stream.into_split();
+
+    let payload = serde_json::to_string(request)
+        .map_err(|error| format!("request_serialize_failed error={}", error))?;
+    writer
+        .write_all(payload.as_bytes())
+        .await
+        .map_err(|error| format!("request_write_failed error={}", error))?;
+    writer
+        .write_all(b"\n")
+        .await
+        .map_err(|error| format!("request_write_failed error={}", error))?;
+
+    let mut reader = BufReader::new(reader);
+    let mut line = String::new();
+    reader
+        .read_line(&mut line)
+        .await
+        .map_err(|error| format!("response_read_failed error={}", error))?;
+
+    if line.trim().is_empty() {
+        return Err("empty_response".to_string());
+    }
+
+    serde_json::from_str::<DaemonResponse>(line.trim())
+        .map_err(|error| format!("response_parse_failed error={}", error))
+}
+
+async fn run_ipc(cli: &Cli) -> Result<(), String> {
+    match &cli.command {
+        Command::Submit { goal, session_id } => {
+            let request = DaemonRequest::Submit(SubmitTaskRequest {
+                session_id: session_id.clone(),
+                goal: goal.clone(),
+            });
+            match send_ipc(&cli.socket_path, &request).await? {
+                DaemonResponse::Submit(response) => {
+                    println!("task_id={} state={:?}", response.task_id, response.state);
+                    Ok(())
+                }
+                DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
+                other => Err(format!("unexpected_response={:?}", other)),
+            }
+        }
+        Command::Status { task_id } => {
+            let request = DaemonRequest::Status(TaskStatusRequest {
+                task_id: task_id.clone(),
+            });
+            match send_ipc(&cli.socket_path, &request).await? {
+                DaemonResponse::Status(response) => {
+                    println!(
+                        "task_id={} state={:?} summary={}",
+                        response.task_id, response.state, response.summary
+                    );
+                    Ok(())
+                }
+                DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
+                other => Err(format!("unexpected_response={:?}", other)),
+            }
+        }
+    }
+}
+
+#[tokio::main]
+async fn main() {
     let cli = Cli::parse();
-    run_with_client(&StubClient, cli);
+
+    let result = match cli.transport {
+        Transport::Stub => {
+            run_stub(&StubClient, &cli);
+            Ok(())
+        }
+        Transport::Ipc => run_ipc(&cli).await,
+    };
+
+    if let Err(error) = result {
+        eprintln!("sharo_cli_error={}", error);
+        std::process::exit(1);
+    }
 }

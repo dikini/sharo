@@ -1,7 +1,7 @@
 id,type,title,source,status,blocked_by,notes
 TASK-KNOT-DIFF-001,tooling,Live repo-vault diff checker,docs/tasks/README.md,deferred,knot_cli_stability,Await stable Knot CLI commands for deterministic cross-store diffs
 TASK-RESEARCH-LINT-001,tooling,Research citation/reference verifier,docs/tasks/README.md,deferred,knot_workflow_readiness,Implement addendum existence and marker consistency checks when Knot workflow stabilizes
-TASK-IPC-TRANSPORT-001,runtime,Real CLI-daemon IPC transport,docs/tasks/README.md,deferred,post_bootstrap_vertical_slice,Replace stub client path with concrete transport after bootstrap baseline
+TASK-IPC-TRANSPORT-001,runtime,Real CLI-daemon IPC transport,docs/tasks/README.md,done,,Implemented Unix socket JSON transport between CLI and daemon
 TASK-TASKS-REGISTRY-001,policy,Deterministic task registry and checks,docs/tasks/README.md,done,,Implemented csv registry plus validation and stale-sync hooks
 TASK-RUST-WORKSPACE-001,runtime,Rust workspace bootstrap,docs/tasks/README.md,done,,Implemented root workspace and baseline daemon/cli/core crates
 TASK-VERIFICATION-GATE-001,policy,Pre-commit Rust test gate,docs/tasks/README.md,done,,Added rust test gate in pre-commit and CI for rust-impacting changes

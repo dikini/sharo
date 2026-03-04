@@ -5,6 +5,7 @@
 "spec:mvp" = "docs/specs/mvp.md"
 "spec:vault-sync-protocol" = "docs/specs/vault-sync-protocol.md"
 "spec:rust-workspace-bootstrap" = "docs/specs/rust-workspace-bootstrap.md"
+"spec:ipc-transport" = "docs/specs/ipc-transport.md"
 
 "plan:design-note-alignment" = "docs/plans/2026-03-04-design-note-alignment-plan.md"
 "plan:doc-lint-gate" = "docs/plans/2026-03-04-doc-lint-gate-implementation-plan.md"
@@ -12,6 +13,7 @@
 "plan:vault-sync-protocol" = "docs/plans/2026-03-04-vault-sync-protocol-plan.md"
 "plan:alias-resolution" = "docs/plans/2026-03-04-alias-resolution-implementation-plan.md"
 "plan:rust-workspace-bootstrap" = "docs/plans/2026-03-04-rust-workspace-bootstrap-plan.md"
+"plan:ipc-transport" = "docs/plans/2026-03-05-ipc-transport-plan.md"
 
 "template:changelog" = "docs/templates/CHANGELOG.template.md"
 "template:plan" = "docs/templates/plan.template.md"

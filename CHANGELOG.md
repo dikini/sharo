@@ -92,6 +92,9 @@ The format is based on Common Changelog:
   - `docs/plans/2026-03-04-rust-workspace-bootstrap-plan.md`
 - Added Rust policy script tests:
   - `scripts/tests/test-rust-policy.sh`
+- Added IPC transport spec and plan artifacts:
+  - `docs/specs/ipc-transport.md`
+  - `docs/plans/2026-03-05-ipc-transport-plan.md`
 
 ### Changed
 
@@ -116,3 +119,4 @@ The format is based on Common Changelog:
 - Extended local and CI policy enforcement with fail-closed Rust workspace test gating.
 - Added a REQUIRED fast-feedback loop policy in `AGENTS.md` with MUST-level local check cadence for docs, tasks, and Rust edits.
 - Added single-command fast-feedback workflow with marker freshness enforcement before commit.
+- Replaced stub-only CLI runtime path with real Unix socket IPC transport between `sharo-cli` and `sharo-daemon`, while keeping explicit `--transport stub` fallback.

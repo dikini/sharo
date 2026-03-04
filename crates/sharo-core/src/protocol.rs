@@ -32,3 +32,16 @@ pub struct TaskStatusResponse {
     pub state: TaskState,
     pub summary: String,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DaemonRequest {
+    Submit(SubmitTaskRequest),
+    Status(TaskStatusRequest),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DaemonResponse {
+    Submit(SubmitTaskResponse),
+    Status(TaskStatusResponse),
+    Error { message: String },
+}
