@@ -25,3 +25,19 @@ The format is based on Common Changelog:
 - Added lightweight docs quality gate script:
   - `scripts/doc-lint.sh`
   - includes evergreen checks and temporary regression guard policy metadata
+- Added deterministic docs scaffolding and start workflow:
+  - `scripts/doc-new.sh`
+  - `scripts/doc-start.sh`
+- Added templates for core artifacts in `docs/templates/`:
+  - `CHANGELOG.template.md`
+  - `spec.template.md`
+  - `plan.template.md`
+  - `README.md`
+- Extended docs linting:
+  - supports `--changed`, `--path`, and `--strict-new` modes
+  - enforces strict-template structure for `Template-Profile: tdd-strict-v1`
+  - enforces strict profile marker on new specs/plans when `--strict-new` is used
+- Added hook tooling:
+  - `.githooks/pre-commit` runs docs lint for changed files
+  - `scripts/install-hooks.sh` sets `core.hooksPath` to `.githooks`
+- Updated `AGENTS.md` with deterministic template and lint workflow guidance.

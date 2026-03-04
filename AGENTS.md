@@ -38,3 +38,21 @@ Example:
 1. Update or read the MVP spec at `docs/specs/mvp.md`.
 2. Create an implementation/alignment plan at `docs/plans/2026-03-04-<topic>-plan.md`.
 3. Execute work against that plan and keep spec/plan references in sync.
+
+## Templates and TDD Planning
+
+- Reuse templates from `docs/templates/` when creating new docs:
+  - `spec.template.md` for new specs
+  - `plan.template.md` for new plans
+  - `CHANGELOG.template.md` when initializing changelog structure
+- Create new specs/plans via `scripts/doc-new.sh` (or `scripts/doc-start.sh`).
+- Specs and plans should use `Template-Profile: tdd-strict-v1` unless explicitly waived.
+- Under the strict profile, each task should include:
+  - Preconditions
+  - Invariants
+  - Postconditions
+  - Tests defined before implementation (`Unit`, `Property`, `Integration`)
+  - Red/Green phases and completion evidence
+- At the start of any docs/spec/plan task, run `scripts/doc-lint.sh --changed --strict-new`.
+- Run `scripts/doc-lint.sh --changed --strict-new` before committing documentation changes.
+- Enable hooks once per clone with `scripts/install-hooks.sh`.
