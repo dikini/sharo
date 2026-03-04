@@ -46,6 +46,8 @@ The format is based on Common Changelog:
   - `scripts/check-changelog-staged.sh`
   - `scripts/check-rust-policy.sh`
   - `scripts/check-rust-tests.sh`
+  - `scripts/check-fast-feedback.sh`
+  - `scripts/check-fast-feedback-marker.sh`
   - `scripts/check-doc-terms.sh`
   - `scripts/check-tasks-registry.sh`
   - `scripts/check-tasks-sync.sh`
@@ -113,3 +115,4 @@ The format is based on Common Changelog:
 - Updated `docs/templates/plan.template.md` to use plain bullets instead of checkboxes to reduce plan-state staleness.
 - Extended local and CI policy enforcement with fail-closed Rust workspace test gating.
 - Added a REQUIRED fast-feedback loop policy in `AGENTS.md` with MUST-level local check cadence for docs, tasks, and Rust edits.
+- Added single-command fast-feedback workflow with marker freshness enforcement before commit.

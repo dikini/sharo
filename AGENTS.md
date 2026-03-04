@@ -87,19 +87,16 @@ Example:
 To catch problems at the earliest possible moment, contributors **MUST** run checks immediately after each relevant edit batch, not only at commit time.
 
 1. Docs/spec/plan/task edits:
-  - `scripts/doc-lint.sh --changed --strict-new`
-  - `scripts/check-doc-terms.sh --changed`
-  - `scripts/check-tasks-registry.sh`
-  - `scripts/check-tasks-sync.sh --changed`
+  - `scripts/check-fast-feedback.sh`
 
 2. First Rust-impacting edit in a batch:
-  - `scripts/check-rust-policy.sh`
-  - `scripts/check-rust-tests.sh --changed`
+  - `scripts/check-fast-feedback.sh`
 
 3. Every subsequent Rust edit batch:
-  - `scripts/check-rust-tests.sh --changed`
+  - `scripts/check-fast-feedback.sh`
 
 4. Before commit:
-  - contributors **MUST** have green local checks already; pre-commit is an enforcement gate, not the first feedback loop.
+  - contributors **MUST** have a fresh fast-feedback marker from `scripts/check-fast-feedback.sh`.
+  - pre-commit rejects commits when `scripts/check-fast-feedback.sh` was not run on the current tree state.
 
 Skipping this loop is a policy violation because it delays failure detection and increases rework.
