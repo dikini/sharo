@@ -215,3 +215,6 @@ The format is based on Common Changelog:
   - serialize daemon error envelopes through `DaemonResponse` instead of manual JSON interpolation
   - reject oversized IPC request frames with explicit `request_too_large` error
   - persist store state atomically via temp-file write and rename to reduce crash-corruption risk
+- Clarified platform support for daemon persistence:
+  - `sharo-daemon` store implementation now explicitly requires Unix targets
+  - non-Unix builds fail fast at compile time instead of providing unmaintained fallback behavior

@@ -8,6 +8,9 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(not(unix))]
+compile_error!("sharo-daemon store persistence currently supports unix targets only");
+
 use serde::{Deserialize, Serialize};
 use sharo_core::protocol::{
     ApprovalSummary, ArtifactSummary, ListPendingApprovalsResponse, ResolveApprovalResponse,
@@ -132,29 +135,6 @@ impl Store {
             })?;
             fs::set_permissions(&self.path, fs::Permissions::from_mode(0o600))
                 .map_err(|e| format!("store_chmod_failed path={} error={}", self.path.display(), e))
-        }
-        #[cfg(not(unix))]
-        {
-            {
-                let mut file = fs::OpenOptions::new()
-                    .create_new(true)
-                    .write(true)
-                    .open(&tmp_path)
-                    .map_err(|e| format!("store_open_failed path={} error={}", tmp_path.display(), e))?;
-                file.write_all(data.as_bytes()).map_err(|e| {
-                    format!("store_write_failed path={} error={}", tmp_path.display(), e)
-                })?;
-                file.sync_all()
-                    .map_err(|e| format!("store_sync_failed path={} error={}", tmp_path.display(), e))?;
-            }
-            fs::rename(&tmp_path, &self.path).map_err(|e| {
-                format!(
-                    "store_rename_failed src={} dst={} error={}",
-                    tmp_path.display(),
-                    self.path.display(),
-                    e
-                )
-            })
         }
     }
 
