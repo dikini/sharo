@@ -250,3 +250,8 @@ The format is based on Common Changelog:
   - `TASK-KERNEL-IMPL-001`
   - `TASK-KERNEL-IMPL-002`
   - `TASK-KERNEL-IMPL-003`
+- Added daemon TOML runtime configuration support for model connector selection:
+  - `sharo-daemon start --config-path <path>` now loads `[model]` options from TOML
+  - default config lookup path is `~/.config/sharo/daemon.toml` when `--config-path` is omitted
+  - supports provider selection for `deterministic`, `openai`/OpenAI-compatible providers, and `ollama`
+  - validates connector-critical fields (for example non-zero timeout and required base URL for non-deterministic providers)

@@ -13,8 +13,10 @@ use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 
 mod store;
+mod config;
 mod kernel;
-use kernel::DaemonKernelRuntime;
+use config::{default_daemon_config_path, load_daemon_config};
+use kernel::{DaemonKernelRuntime, KernelRuntimeConfig};
 use store::Store;
 
 const DEFAULT_SOCKET_PATH: &str = "/tmp/sharo-daemon.sock";
@@ -39,11 +41,18 @@ enum DaemonCommand {
         #[arg(long, default_value = DEFAULT_STORE_PATH)]
         store_path: PathBuf,
         #[arg(long)]
+        config_path: Option<PathBuf>,
+        #[arg(long)]
         serve_once: bool,
     },
 }
 
-fn handle_request(request: DaemonRequest, client: &impl RuntimeClient, store: &mut Store) -> DaemonResponse {
+fn handle_request(
+    request: DaemonRequest,
+    client: &impl RuntimeClient,
+    store: &mut Store,
+    kernel_config: &KernelRuntimeConfig,
+) -> DaemonResponse {
     match request {
         DaemonRequest::Submit(submit) => DaemonResponse::Submit(client.submit(&submit)),
         DaemonRequest::Status(status) => DaemonResponse::Status(client.status(&TaskStatusRequest {
@@ -54,7 +63,7 @@ fn handle_request(request: DaemonRequest, client: &impl RuntimeClient, store: &m
             Err(message) => DaemonResponse::Error { message },
         },
         DaemonRequest::SubmitTask(payload) => {
-            let mut kernel = DaemonKernelRuntime::new(store);
+            let mut kernel = DaemonKernelRuntime::new(store, kernel_config);
             match kernel.submit_task(KernelSubmitInput { request: payload }) {
                 Ok(response) => DaemonResponse::SubmitTask(response.response),
                 Err(message) => DaemonResponse::Error { message },
@@ -79,7 +88,7 @@ fn handle_request(request: DaemonRequest, client: &impl RuntimeClient, store: &m
             DaemonResponse::ListPendingApprovals(store.list_pending_approvals())
         }
         DaemonRequest::ResolveApproval(payload) => {
-            let mut kernel = DaemonKernelRuntime::new(store);
+            let mut kernel = DaemonKernelRuntime::new(store, kernel_config);
             match kernel.resolve_approval(KernelApprovalInput {
                 approval_id: payload.approval_id,
                 decision: payload.decision,
@@ -91,7 +100,12 @@ fn handle_request(request: DaemonRequest, client: &impl RuntimeClient, store: &m
     }
 }
 
-async fn handle_stream(stream: UnixStream, client: &impl RuntimeClient, store: &mut Store) {
+async fn handle_stream(
+    stream: UnixStream,
+    client: &impl RuntimeClient,
+    store: &mut Store,
+    kernel_config: &KernelRuntimeConfig,
+) {
     let (mut reader, mut writer) = stream.into_split();
     let mut bytes = Vec::new();
 
@@ -158,7 +172,7 @@ async fn handle_stream(stream: UnixStream, client: &impl RuntimeClient, store: &
     };
 
     let response = match serde_json::from_str::<DaemonRequest>(line.trim()) {
-        Ok(request) => handle_request(request, client, store),
+        Ok(request) => handle_request(request, client, store, kernel_config),
         Err(error) => DaemonResponse::Error {
             message: format!("invalid request: {error}"),
         },
@@ -189,6 +203,7 @@ async fn main() {
             once,
             socket_path,
             store_path,
+            config_path,
             serve_once,
         } => {
             println!("daemon_started");
@@ -219,6 +234,21 @@ async fn main() {
                     std::process::exit(1);
                 }
             };
+            let resolved_config_path = config_path.or_else(default_daemon_config_path);
+            let daemon_config = match load_daemon_config(resolved_config_path.as_deref()) {
+                Ok(cfg) => cfg,
+                Err(message) => {
+                    eprintln!("daemon_error=config_load_failed message={}", message);
+                    std::process::exit(1);
+                }
+            };
+            let kernel_config = match KernelRuntimeConfig::from_model_config(&daemon_config.model) {
+                Ok(cfg) => cfg,
+                Err(message) => {
+                    eprintln!("daemon_error=config_invalid message={}", message);
+                    std::process::exit(1);
+                }
+            };
 
             let client = StubClient;
 
@@ -233,7 +263,7 @@ async fn main() {
                             }
                         };
 
-                        handle_stream(stream, &client, &mut store).await;
+                        handle_stream(stream, &client, &mut store, &kernel_config).await;
 
                         if serve_once {
                             break;
