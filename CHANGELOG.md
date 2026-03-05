@@ -330,3 +330,6 @@ The format is based on Common Changelog:
   - pool policy now includes `scale_up_queue_threshold`, `scale_down_idle_ms`, and `cooldown_ms`
   - pool scales up under queue pressure and scales down on idle while respecting min/max worker bounds
   - added daemon unit tests for scale-up, scale-down, and bounds invariants
+- Fixed adaptive pool scaling edge cases:
+  - removed startup `Instant` subtraction path that could panic on extremely large cooldown values
+  - made pending-job accounting race-safe by incrementing before enqueue with rollback on enqueue failure

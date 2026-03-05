@@ -67,7 +67,11 @@ impl BlockingPool {
             rx,
             pending_jobs: AtomicUsize::new(0),
             active_workers: AtomicUsize::new(0),
-            last_scale_event: Mutex::new(Instant::now() - Duration::from_millis(policy.cooldown_ms)),
+            last_scale_event: Mutex::new(
+                Instant::now()
+                    .checked_sub(Duration::from_millis(policy.cooldown_ms))
+                    .unwrap_or_else(Instant::now),
+            ),
         });
 
         let pool = Self { tx, state };
@@ -87,14 +91,20 @@ impl BlockingPool {
             let _ = result_tx.send(work());
         });
 
+        self.state.pending_jobs.fetch_add(1, Ordering::SeqCst);
         match self.tx.try_send(job) {
             Ok(()) => {
-                self.state.pending_jobs.fetch_add(1, Ordering::SeqCst);
                 self.maybe_scale_up();
                 Ok(TaskHandle { rx: result_rx })
             }
-            Err(TrySendError::Full(_)) => Err(PoolError::Overloaded),
-            Err(TrySendError::Disconnected(_)) => Err(PoolError::Disconnected),
+            Err(TrySendError::Full(_)) => {
+                self.state.pending_jobs.fetch_sub(1, Ordering::SeqCst);
+                Err(PoolError::Overloaded)
+            }
+            Err(TrySendError::Disconnected(_)) => {
+                self.state.pending_jobs.fetch_sub(1, Ordering::SeqCst);
+                Err(PoolError::Disconnected)
+            }
         }
     }
 
@@ -264,7 +274,7 @@ mod tests {
             queue_capacity: 32,
             scale_up_queue_threshold: 1,
             scale_down_idle_ms: 5_000,
-            cooldown_ms: 5_000,
+            cooldown_ms: 1,
         });
         assert_eq!(pool.current_worker_count(), 1);
 
@@ -294,7 +304,7 @@ mod tests {
             queue_capacity: 32,
             scale_up_queue_threshold: 1,
             scale_down_idle_ms: 80,
-            cooldown_ms: 10,
+            cooldown_ms: 1,
         });
 
         let _ = pool.execute_with_result(|| 42_u64).expect("initial job");
@@ -329,5 +339,37 @@ mod tests {
         let workers = pool.current_worker_count();
         assert!(workers >= policy.min_threads);
         assert!(workers <= policy.max_threads);
+    }
+
+    #[test]
+    fn large_cooldown_does_not_panic_on_startup() {
+        let _pool = BlockingPool::new(PoolPolicy {
+            min_threads: 1,
+            max_threads: 2,
+            queue_capacity: 8,
+            scale_up_queue_threshold: 1,
+            scale_down_idle_ms: 100,
+            cooldown_ms: u64::MAX,
+        });
+    }
+
+    #[test]
+    fn fast_jobs_do_not_underflow_pending_counter() {
+        let pool = BlockingPool::new(PoolPolicy {
+            min_threads: 1,
+            max_threads: 2,
+            queue_capacity: 64,
+            scale_up_queue_threshold: 1,
+            scale_down_idle_ms: 500,
+            cooldown_ms: 10,
+        });
+
+        for _ in 0..200 {
+            let handle = pool.submit(|| 1_u64).expect("submit");
+            assert_eq!(handle.wait().expect("wait"), 1_u64);
+        }
+
+        wait_until(Duration::from_millis(200), || pool.current_worker_count() >= 1);
+        assert!(pool.current_worker_count() <= 2);
     }
 }
