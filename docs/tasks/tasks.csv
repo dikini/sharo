@@ -6,3 +6,4 @@ TASK-TASKS-REGISTRY-001,policy,Deterministic task registry and checks,docs/tasks
 TASK-RUST-WORKSPACE-001,runtime,Rust workspace bootstrap,docs/tasks/README.md,done,,Implemented root workspace and baseline daemon/cli/core crates
 TASK-VERIFICATION-GATE-001,policy,Pre-commit Rust test gate,docs/tasks/README.md,done,,Added rust test gate in pre-commit and CI for rust-impacting changes
 TASK-FAST-FEEDBACK-001,policy,Fast feedback wrapper and marker gate,docs/tasks/README.md,done,,Added single-command feedback loop and pre-commit marker freshness enforcement
+TASK-BATS-TESTS-001,tooling,Bats-based shell test harness migration,docs/tasks/README.md,done,,Added pinned bats installer unified runner and migrated script tests to .bats

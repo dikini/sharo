@@ -33,11 +33,13 @@ This keeps task state deterministic and reduces stale registry entries.
 - Validate sync gating (changed files): `scripts/check-tasks-sync.sh --changed`
 - Run Knot diff check: `scripts/check-knot-diff.sh --mapping docs/tasks/knot-diff-mapping.csv`
 - Run research reference check: `scripts/check-research-references.sh --registry docs/tasks/research-reference-rules.csv`
+- Run shell tests (Bats): `scripts/run-shell-tests.sh --all`
 
 ## Completed Tooling Items
 
 - `TASK-KNOT-DIFF-001`: implemented read-only repo↔Knot mapping diff checker using normalized content hashes.
 - `TASK-RESEARCH-LINT-001`: implemented registry-driven research citation/addendum verifier with marker and path checks.
+- `TASK-BATS-TESTS-001`: migrated shell-script test harnesses to `bats-core` with deterministic installer and unified runner.
 
 ## Tooling Inputs
 

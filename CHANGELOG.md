@@ -102,6 +102,12 @@ The format is based on Common Changelog:
   - `scripts/tests/test-knot-tooling.sh`
   - `docs/tasks/knot-diff-mapping.csv`
   - `docs/tasks/research-reference-rules.csv`
+- Added deterministic shell-test tooling based on `bats-core`:
+  - `scripts/install-bats.sh`
+  - `scripts/run-shell-tests.sh`
+  - `scripts/tests/test-sync-tools.bats`
+  - `scripts/tests/test-rust-policy.bats`
+  - `scripts/tests/test-knot-tooling.bats`
 
 ### Changed
 
@@ -129,3 +135,5 @@ The format is based on Common Changelog:
 - Replaced stub-only CLI runtime path with real Unix socket IPC transport between `sharo-cli` and `sharo-daemon`, while keeping explicit `--transport stub` fallback.
 - Updated fast-feedback policy runner to include Knot diff and research reference checks.
 - Updated task registry/docs to mark `TASK-KNOT-DIFF-001` and `TASK-RESEARCH-LINT-001` complete.
+- Updated fast-feedback and CI policy checks to run the unified Bats shell-test runner.
+- Updated task registry/docs to record `TASK-BATS-TESTS-001` completion.

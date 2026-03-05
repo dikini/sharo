@@ -62,6 +62,11 @@ fi
 scripts/check-sync-manifest.sh --changed
 scripts/check-knot-diff.sh --mapping docs/tasks/knot-diff-mapping.csv
 scripts/check-research-references.sh --registry docs/tasks/research-reference-rules.csv
+if [[ "$mode" == "all" ]]; then
+  scripts/run-shell-tests.sh --all
+else
+  scripts/run-shell-tests.sh --changed
+fi
 
 if [[ "$write_marker" == true ]]; then
   {

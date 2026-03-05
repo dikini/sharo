@@ -32,7 +32,7 @@ This directory defines canonical repo artifacts for explicit staged sync operati
 - Execute staged protocol dry run:
   - `scripts/sync-check.sh --dry-run --manifest docs/sync/examples/valid.manifest.json`
 - Run sync tool checks:
-  - `scripts/tests/test-sync-tools.sh`
+  - `scripts/run-shell-tests.sh --all`
 
 ## Required References Per Sync
 
