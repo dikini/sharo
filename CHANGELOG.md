@@ -14,6 +14,10 @@ The format is based on Common Changelog:
   - Rust language, edition 2024, and minimum Rust version 1.93.
   - Common Changelog and Conventional Commits requirements.
   - Documentation workflow for `docs/specs` and `docs/plans`.
+- Added live OpenAI smoke verification artifacts:
+  - `docs/plans/2026-03-05-openai-live-smoke-plan.md`
+  - `scripts/openai-live-smoke.sh`
+  - `scripts/tests/test-openai-live-smoke.bats`
 - Added MVP specification at `docs/specs/mvp.md`.
 - Added planning docs:
   - `docs/plans/2026-03-04-design-note-alignment-plan.md`
