@@ -133,6 +133,10 @@ The format is based on Common Changelog:
   - `crates/sharo-daemon/tests/coordination_store.rs`
   - `crates/sharo-daemon/tests/scenario_c_overlap.rs`
   - `crates/sharo-cli/tests/coordination_cli.rs`
+- Added Scenario D protocol/CLI completion artifacts for MVP slice 004:
+  - `crates/sharo-core/tests/protocol_surface_tests.rs`
+  - `crates/sharo-cli/tests/cli_surface_tests.rs`
+  - `crates/sharo-daemon/tests/idempotency_and_control.rs`
 
 ### Changed
 
@@ -182,4 +186,8 @@ The format is based on Common Changelog:
 - Marked `TASK-MVP-SLICE-002` as done in task registry.
 - Updated task/read surfaces to include optional coordination summary when overlap conflicts exist.
 - Marked `TASK-MVP-SLICE-003` as done in task registry.
+- Extended protocol with daemon info and task control operations plus explicit mutation acceptance/reason fields.
+- Added CLI `daemon ping`, `task submit --idempotency-key`, and `task cancel` command surface.
+- Added daemon/store semantics for submit idempotency replay and durable task cancellation control.
+- Marked `TASK-MVP-SLICE-004` as done in task registry.
 - Updated `Cargo.lock` to include the `serde` dependency used by `sharo-daemon` runtime store serialization.

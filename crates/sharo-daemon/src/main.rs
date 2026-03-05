@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use sharo_core::client::{RuntimeClient, StubClient};
 use sharo_core::protocol::{
-    DaemonRequest, DaemonResponse, GetArtifactsResponse, GetTaskResponse, GetTraceResponse,
+    DaemonInfoResponse, DaemonRequest, DaemonResponse, GetArtifactsResponse, GetTaskResponse, GetTraceResponse,
     ListPendingApprovalsResponse, RegisterSessionResponse, SubmitTaskOpResponse, TaskStatusRequest,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -51,12 +51,20 @@ fn handle_request(request: DaemonRequest, client: &impl RuntimeClient, store: &m
             Ok(SubmitTaskOpResponse {
                 task_id,
                 task_state,
+                accepted,
+                reason,
                 summary,
             }) => DaemonResponse::SubmitTask(SubmitTaskOpResponse {
                 task_id,
                 task_state,
+                accepted,
+                reason,
                 summary,
             }),
+            Err(message) => DaemonResponse::Error { message },
+        },
+        DaemonRequest::ControlTask(payload) => match store.control_task(&payload.task_id, &payload.action) {
+            Ok(response) => DaemonResponse::ControlTask(response),
             Err(message) => DaemonResponse::Error { message },
         },
         DaemonRequest::GetTask(payload) => match store.get_task(&payload.task_id) {
@@ -86,6 +94,10 @@ fn handle_request(request: DaemonRequest, client: &impl RuntimeClient, store: &m
             Ok(response) => DaemonResponse::ResolveApproval(response),
             Err(message) => DaemonResponse::Error { message },
         },
+        DaemonRequest::DaemonInfo(_) => DaemonResponse::DaemonInfo(DaemonInfoResponse {
+            daemon_state: "ready".to_string(),
+            summary: "daemon reachable".to_string(),
+        }),
     }
 }
 

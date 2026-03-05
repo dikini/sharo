@@ -8,7 +8,7 @@ use sharo_core::coordination::{
 };
 use sharo_core::policy::{ActionClass, PolicyContext, PolicyDecisionKind, PolicyEngine};
 use sharo_core::protocol::{
-    ApprovalSummary, ArtifactSummary, ResolveApprovalResponse, SubmitTaskOpRequest,
+    ApprovalSummary, ArtifactSummary, ControlTaskResponse, ResolveApprovalResponse, SubmitTaskOpRequest,
     SubmitTaskOpResponse, TaskSummary, TraceEventSummary, TraceSummary,
 };
 
@@ -34,6 +34,7 @@ struct PersistedState {
     traces: BTreeMap<String, TraceSummary>,
     artifacts: BTreeMap<String, Vec<ArtifactSummary>>,
     approvals: BTreeMap<String, ApprovalRecord>,
+    submit_idempotency: BTreeMap<String, String>,
     coordination_intents: BTreeMap<String, CoordinationIntentRecord>,
     coordination_claims: BTreeMap<String, CoordinationClaimRecord>,
     coordination_conflicts: BTreeMap<String, CoordinationConflictRecord>,
@@ -55,6 +56,7 @@ impl Default for PersistedState {
             traces: BTreeMap::new(),
             artifacts: BTreeMap::new(),
             approvals: BTreeMap::new(),
+            submit_idempotency: BTreeMap::new(),
             coordination_intents: BTreeMap::new(),
             coordination_claims: BTreeMap::new(),
             coordination_conflicts: BTreeMap::new(),
@@ -143,6 +145,20 @@ impl Store {
     }
 
     pub fn submit_task(&mut self, request: SubmitTaskOpRequest) -> Result<SubmitTaskOpResponse, String> {
+        if let Some(idempotency_key) = request.idempotency_key.as_ref() {
+            if let Some(existing_task_id) = self.state.submit_idempotency.get(idempotency_key) {
+                if let Some(existing_task) = self.state.tasks.get(existing_task_id) {
+                    return Ok(SubmitTaskOpResponse {
+                        task_id: existing_task_id.clone(),
+                        task_state: existing_task.task_state.clone(),
+                        accepted: true,
+                        reason: Some("idempotent_replay".to_string()),
+                        summary: "idempotent_replay".to_string(),
+                    });
+                }
+            }
+        }
+
         let session_id = request
             .session_id
             .unwrap_or_else(|| "session-implicit".to_string());
@@ -337,13 +353,73 @@ impl Store {
         self.state.tasks.insert(task_id.clone(), task);
         self.state.traces.insert(task_id.clone(), trace);
         self.state.artifacts.insert(task_id.clone(), artifacts);
+        if let Some(idempotency_key) = request.idempotency_key {
+            self.state.submit_idempotency.insert(idempotency_key, task_id.clone());
+        }
 
         self.save()?;
 
         Ok(SubmitTaskOpResponse {
             task_id,
             task_state,
+            accepted: true,
+            reason: Some("accepted".to_string()),
             summary: "task admitted".to_string(),
+        })
+    }
+
+    pub fn control_task(&mut self, task_id: &str, action: &str) -> Result<ControlTaskResponse, String> {
+        let task = self
+            .state
+            .tasks
+            .get_mut(task_id)
+            .ok_or_else(|| format!("task_not_found task_id={}", task_id))?;
+
+        let trace = self
+            .state
+            .traces
+            .get_mut(task_id)
+            .ok_or_else(|| format!("trace_not_found task_id={}", task_id))?;
+
+        if action != "cancel" {
+            return Ok(ControlTaskResponse {
+                task_id: task_id.to_string(),
+                task_state: task.task_state.clone(),
+                accepted: false,
+                reason: format!("unsupported_action action={}", action),
+                summary: "control_rejected".to_string(),
+            });
+        }
+
+        if task.task_state == "cancelled" {
+            return Ok(ControlTaskResponse {
+                task_id: task_id.to_string(),
+                task_state: task.task_state.clone(),
+                accepted: true,
+                reason: "idempotent_replay".to_string(),
+                summary: "control_replayed".to_string(),
+            });
+        }
+
+        task.task_state = "cancelled".to_string();
+        task.current_step_summary = "task cancelled by operator".to_string();
+        task.blocking_reason = Some("cancelled_by_operator".to_string());
+
+        let next_seq = trace.events.last().map(|e| e.event_sequence + 1).unwrap_or(1);
+        trace.events.push(TraceEventSummary {
+            event_sequence: next_seq,
+            event_kind: "task_control".to_string(),
+            details: "cancelled_by_operator".to_string(),
+        });
+
+        self.save()?;
+
+        Ok(ControlTaskResponse {
+            task_id: task_id.to_string(),
+            task_state: "cancelled".to_string(),
+            accepted: true,
+            reason: "cancelled_by_operator".to_string(),
+            summary: "control_applied".to_string(),
         })
     }
 

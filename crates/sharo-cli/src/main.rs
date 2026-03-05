@@ -3,9 +3,9 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand, ValueEnum};
 use sharo_core::client::{RuntimeClient, StubClient};
 use sharo_core::protocol::{
-    DaemonRequest, DaemonResponse, GetArtifactsRequest, GetTaskRequest, GetTraceRequest,
-    ListPendingApprovalsRequest, RegisterSessionRequest, ResolveApprovalRequest, SubmitTaskOpRequest,
-    SubmitTaskRequest, TaskStatusRequest,
+    ControlTaskRequest, DaemonInfoRequest, DaemonRequest, DaemonResponse, GetArtifactsRequest, GetTaskRequest,
+    GetTraceRequest, ListPendingApprovalsRequest, RegisterSessionRequest, ResolveApprovalRequest,
+    SubmitTaskOpRequest, SubmitTaskRequest, TaskStatusRequest,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
@@ -62,6 +62,10 @@ enum Command {
         #[command(subcommand)]
         command: ApprovalCommand,
     },
+    Daemon {
+        #[command(subcommand)]
+        command: DaemonCliCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -79,8 +83,14 @@ enum TaskCommand {
         goal: String,
         #[arg(long)]
         session_id: Option<String>,
+        #[arg(long)]
+        idempotency_key: Option<String>,
     },
     Get {
+        #[arg(long)]
+        task_id: String,
+    },
+    Cancel {
         #[arg(long)]
         task_id: String,
     },
@@ -111,6 +121,11 @@ enum ApprovalCommand {
         #[arg(long)]
         decision: String,
     },
+}
+
+#[derive(Debug, Subcommand)]
+enum DaemonCliCommand {
+    Ping,
 }
 
 fn run_stub(client: &impl RuntimeClient, cli: &Cli) {
@@ -218,18 +233,50 @@ async fn run_ipc(cli: &Cli) -> Result<(), String> {
             }
         }
         Command::Task {
-            command: TaskCommand::Submit { goal, session_id },
+            command:
+                TaskCommand::Submit {
+                    goal,
+                    session_id,
+                    idempotency_key,
+                },
         } => {
             let request = DaemonRequest::SubmitTask(SubmitTaskOpRequest {
                 session_id: session_id.clone(),
                 goal: goal.clone(),
-                idempotency_key: None,
+                idempotency_key: idempotency_key.clone(),
             });
             match send_ipc(&cli.socket_path, &request).await? {
                 DaemonResponse::SubmitTask(response) => {
                     println!(
-                        "task_id={} task_state={} summary={}",
-                        response.task_id, response.task_state, response.summary
+                        "task_id={} task_state={} accepted={} reason={} summary={}",
+                        response.task_id,
+                        response.task_state,
+                        response.accepted,
+                        response.reason.as_deref().unwrap_or("-"),
+                        response.summary
+                    );
+                    Ok(())
+                }
+                DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
+                other => Err(format!("unexpected_response={:?}", other)),
+            }
+        }
+        Command::Task {
+            command: TaskCommand::Cancel { task_id },
+        } => {
+            let request = DaemonRequest::ControlTask(ControlTaskRequest {
+                task_id: task_id.clone(),
+                action: "cancel".to_string(),
+            });
+            match send_ipc(&cli.socket_path, &request).await? {
+                DaemonResponse::ControlTask(response) => {
+                    println!(
+                        "task_id={} task_state={} accepted={} reason={} summary={}",
+                        response.task_id,
+                        response.task_state,
+                        response.accepted,
+                        response.reason,
+                        response.summary
                     );
                     Ok(())
                 }
@@ -342,6 +389,19 @@ async fn run_ipc(cli: &Cli) -> Result<(), String> {
                         "approval_id={} task_id={} state={} summary={}",
                         response.approval_id, response.task_id, response.state, response.summary
                     );
+                    Ok(())
+                }
+                DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
+                other => Err(format!("unexpected_response={:?}", other)),
+            }
+        }
+        Command::Daemon {
+            command: DaemonCliCommand::Ping,
+        } => {
+            let request = DaemonRequest::DaemonInfo(DaemonInfoRequest {});
+            match send_ipc(&cli.socket_path, &request).await? {
+                DaemonResponse::DaemonInfo(response) => {
+                    println!("daemon_state={} summary={}", response.daemon_state, response.summary);
                     Ok(())
                 }
                 DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),

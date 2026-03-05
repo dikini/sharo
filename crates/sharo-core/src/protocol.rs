@@ -54,6 +54,23 @@ pub struct SubmitTaskOpRequest {
 pub struct SubmitTaskOpResponse {
     pub task_id: String,
     pub task_state: String,
+    pub accepted: bool,
+    pub reason: Option<String>,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ControlTaskRequest {
+    pub task_id: String,
+    pub action: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ControlTaskResponse {
+    pub task_id: String,
+    pub task_state: String,
+    pub accepted: bool,
+    pub reason: String,
     pub summary: String,
 }
 
@@ -150,16 +167,27 @@ pub struct ResolveApprovalResponse {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DaemonInfoRequest {}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DaemonInfoResponse {
+    pub daemon_state: String,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DaemonRequest {
     Submit(SubmitTaskRequest),
     Status(TaskStatusRequest),
     RegisterSession(RegisterSessionRequest),
     SubmitTask(SubmitTaskOpRequest),
+    ControlTask(ControlTaskRequest),
     GetTask(GetTaskRequest),
     GetTrace(GetTraceRequest),
     GetArtifacts(GetArtifactsRequest),
     ListPendingApprovals(ListPendingApprovalsRequest),
     ResolveApproval(ResolveApprovalRequest),
+    DaemonInfo(DaemonInfoRequest),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -168,10 +196,12 @@ pub enum DaemonResponse {
     Status(TaskStatusResponse),
     RegisterSession(RegisterSessionResponse),
     SubmitTask(SubmitTaskOpResponse),
+    ControlTask(ControlTaskResponse),
     GetTask(GetTaskResponse),
     GetTrace(GetTraceResponse),
     GetArtifacts(GetArtifactsResponse),
     ListPendingApprovals(ListPendingApprovalsResponse),
     ResolveApproval(ResolveApprovalResponse),
+    DaemonInfo(DaemonInfoResponse),
     Error { message: String },
 }

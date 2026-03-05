@@ -11,5 +11,5 @@ TASK-MVP-SLICE-000,planning,MVP roadmap and tracking bootstrap,docs/tasks/README
 TASK-MVP-SLICE-001,runtime,Scenario A read-oriented end-to-end flow,docs/tasks/README.md,done,,Implemented register session submit task get task get trace get artifacts Scenario A path with durable store
 TASK-MVP-SLICE-002,runtime,Scenario B restricted flow with approvals,docs/tasks/README.md,done,,Implemented policy decision engine plus durable approval list/resolve and CLI approval commands
 TASK-MVP-SLICE-003,runtime,Scenario C overlap and coordination records,docs/tasks/README.md,done,,Implemented durable intent/claim/conflict/channel records and overlap visibility in task reads
-TASK-MVP-SLICE-004,runtime,MVP protocol and CLI surface completion,docs/tasks/README.md,planned,,Complete required protocol operations and CLI command surface
+TASK-MVP-SLICE-004,runtime,MVP protocol and CLI surface completion,docs/tasks/README.md,done,,Implemented daemon ping and task control operations plus idempotent submit and CLI command surface coverage
 TASK-MVP-SLICE-005,verification,MVP verification matrix closure,docs/tasks/README.md,planned,,Close all matrix rows with executable tests and recovery hardening
