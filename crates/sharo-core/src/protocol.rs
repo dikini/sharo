@@ -70,6 +70,7 @@ pub struct TaskSummary {
     pub current_step_summary: String,
     pub blocking_reason: Option<String>,
     pub coordination_summary: Option<String>,
+    pub result_preview: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

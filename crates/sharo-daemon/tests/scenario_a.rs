@@ -221,6 +221,8 @@ fn scenario_a_read_task_succeeds_with_verification_artifact() {
             assert_eq!(r.task.task_state, "succeeded");
             assert!(r.task.current_step_summary.contains("read"));
             assert!(r.task.coordination_summary.is_none());
+            let preview = r.task.result_preview.unwrap_or_default();
+            assert!(preview.contains("deterministic-response"));
         }
         other => panic!("unexpected response: {other:?}"),
     }
@@ -379,7 +381,10 @@ fn scenario_b_pending_approval_survives_restart_and_can_be_resolved() {
             task_id: task_id.clone(),
         }),
     ) {
-        DaemonResponse::GetTask(r) => assert_eq!(r.task.task_state, "awaiting_approval"),
+        DaemonResponse::GetTask(r) => {
+            assert_eq!(r.task.task_state, "awaiting_approval");
+            assert!(r.task.result_preview.is_none());
+        }
         other => panic!("unexpected response: {other:?}"),
     }
 
@@ -455,7 +460,11 @@ fn scenario_b_pending_approval_survives_restart_and_can_be_resolved() {
             task_id: task_id.clone(),
         }),
     ) {
-        DaemonResponse::GetTask(r) => assert_eq!(r.task.task_state, "succeeded"),
+        DaemonResponse::GetTask(r) => {
+            assert_eq!(r.task.task_state, "succeeded");
+            let preview = r.task.result_preview.unwrap_or_default();
+            assert!(preview.contains("deterministic-response"));
+        }
         other => panic!("unexpected response: {other:?}"),
     }
 

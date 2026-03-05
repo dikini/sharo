@@ -19,9 +19,15 @@ The format is based on Common Changelog:
   - `scripts/openai-live-smoke.sh`
   - `scripts/tests/test-openai-live-smoke.bats`
 - Added MVP specification at `docs/specs/mvp.md`.
+- Added task result preview planning artifacts:
+  - `docs/plans/2026-03-05-task-result-preview-plan.md`
+  - `TASK-RUNTIME-CONTENT-PREVIEW-001` in `docs/tasks/tasks.csv`
 
 ### Fixed
 
+- Persisted a succeeded-task `result_preview` derived from canonical model output:
+  - successful `task get` protocol records now carry answer preview content
+  - approval-gated tasks keep preview empty until approval transitions them to `succeeded`
 - Hardened `scripts/openai-live-smoke.sh` failure and parsing behavior:
   - preserves `daemon_log` on readiness failure so diagnostics remain available
   - safely strips inline TOML comments before reading `model.auth_env_key`

@@ -10,6 +10,12 @@ setup() {
 }
 
 teardown() {
+  ps -o pid=,command= -u "$USER" \
+    | awk '/sharo-daemon start --socket-path \/tmp\/sharo-openai-live-/ { print $1 }' \
+    | xargs -r kill -9 >/dev/null 2>&1 || true
+  ps -o pid=,command= -u "$USER" \
+    | awk '/fake-daemon.sh start --socket-path \/tmp\/sharo-openai-live-/ { print $1 }' \
+    | xargs -r kill -9 >/dev/null 2>&1 || true
   rm -rf "$TMP_DIR"
 }
 

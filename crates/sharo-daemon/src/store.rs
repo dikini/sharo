@@ -265,6 +265,11 @@ impl Store {
             current_step_summary: "read one context item".to_string(),
             blocking_reason: None,
             coordination_summary: None,
+            result_preview: if invalid_manifest || restricted {
+                None
+            } else {
+                Some(summarize_model_output(model_output_text))
+            },
         };
 
         if invalid_manifest {
@@ -552,6 +557,7 @@ impl Store {
             current_step_summary: "reasoning policy fit failed".to_string(),
             blocking_reason: Some(failure_message.to_string()),
             coordination_summary: None,
+            result_preview: None,
         };
 
         let mut trace = TraceSummary {
@@ -687,6 +693,18 @@ impl Store {
                 task.task_state = "succeeded".to_string();
                 task.current_step_summary = "restricted step approved and completed".to_string();
                 task.blocking_reason = None;
+                if task.result_preview.is_none() {
+                    task.result_preview = self
+                        .state
+                        .artifacts
+                        .get(&task_id)
+                        .and_then(|artifacts| {
+                            artifacts
+                                .iter()
+                                .find(|artifact| artifact.artifact_kind == "model_output")
+                                .map(|artifact| artifact.summary.clone())
+                        });
+                }
             } else {
                 task.task_state = "blocked".to_string();
                 task.current_step_summary = "restricted step denied".to_string();
