@@ -31,11 +31,25 @@ This keeps task state deterministic and reduces stale registry entries.
 - Summary: `scripts/tasks.sh --summary`
 - Validate registry: `scripts/check-tasks-registry.sh`
 - Validate sync gating (changed files): `scripts/check-tasks-sync.sh --changed`
+- Run Knot diff check: `scripts/check-knot-diff.sh --mapping docs/tasks/knot-diff-mapping.csv`
+- Run research reference check: `scripts/check-research-references.sh --registry docs/tasks/research-reference-rules.csv`
 
-## Known Deferred Items
+## Completed Tooling Items
 
-- `TASK-KNOT-DIFF-001`: live repo↔Knot content diff checker, blocked by Knot CLI API stability.
-- `TASK-RESEARCH-LINT-001`: research citation/reference verifier automation, blocked by Knot-side workflow readiness.
+- `TASK-KNOT-DIFF-001`: implemented read-only repo↔Knot mapping diff checker using normalized content hashes.
+- `TASK-RESEARCH-LINT-001`: implemented registry-driven research citation/addendum verifier with marker and path checks.
+
+## Tooling Inputs
+
+- Knot diff mapping: `docs/tasks/knot-diff-mapping.csv`
+  - Header: `canonical_path,knot_path`
+  - `canonical_path` must resolve to a repository file.
+  - `knot_path` is passed to `knot tool get_note`.
+- Research reference registry: `docs/tasks/research-reference-rules.csv`
+  - Header: `note_path,required_markers,required_refs`
+  - `required_markers` uses `;` as a separator.
+  - `required_refs` uses `;` as a separator.
+  - Each listed reference path must both exist and appear verbatim in the note content.
 
 ## Completed Bootstrap
 

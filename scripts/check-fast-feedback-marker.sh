@@ -4,7 +4,8 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
-marker_file=".git/.fast-feedback.ok"
+git_dir="$(git rev-parse --git-dir)"
+marker_file="$git_dir/.fast-feedback.ok"
 
 usage() {
   cat <<'USAGE'

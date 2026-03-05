@@ -6,7 +6,8 @@ cd "$ROOT"
 
 mode="changed"
 write_marker=true
-marker_file=".git/.fast-feedback.ok"
+git_dir="$(git rev-parse --git-dir)"
+marker_file="$git_dir/.fast-feedback.ok"
 
 usage() {
   cat <<'USAGE'
@@ -59,6 +60,8 @@ else
   scripts/check-rust-tests.sh --changed
 fi
 scripts/check-sync-manifest.sh --changed
+scripts/check-knot-diff.sh --mapping docs/tasks/knot-diff-mapping.csv
+scripts/check-research-references.sh --registry docs/tasks/research-reference-rules.csv
 
 if [[ "$write_marker" == true ]]; then
   {
