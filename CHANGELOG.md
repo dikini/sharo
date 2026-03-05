@@ -259,3 +259,8 @@ The format is based on Common Changelog:
   - reasoning now persists model output as `model_output_received` trace events and `model_output` artifacts
   - `sharo trace get` now prints trace events (sequence, kind, details)
   - `sharo artifacts list` now prints each artifact record (id, kind, summary, provenance)
+- Added fixed-point reasoning context design and implementation planning artifact:
+  - `docs/plans/2026-03-05-reasoning-context-fixed-point-loop-plan.md`
+  - defines resolve/compose split, policy-fit fixed-point loop, outward subsystem interfaces, and inward filtering/composition interfaces
+  - clarified adjustment execution as an ordered declarative `AdjustmentPlan` collection with explicit apply semantics and iteration traceability
+  - includes a future-integration note that tool call results are treated as runtime context and must pass the same fit/filter policy pipeline
