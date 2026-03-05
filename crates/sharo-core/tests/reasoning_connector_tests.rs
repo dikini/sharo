@@ -53,6 +53,7 @@ fn id_reasoning_engine_uses_connector_route_decision() {
         .expect("reasoning should succeed");
 
     assert_eq!(outcome.route_decision_details, "local_mock");
+    assert!(outcome.model_output_text.contains("deterministic-response"));
 }
 
 #[test]

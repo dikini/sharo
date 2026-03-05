@@ -149,6 +149,11 @@ fn scenario_a_read_task_succeeds_with_verification_artifact() {
             assert!(r.trace.events.len() >= 3);
             assert_eq!(r.trace.session_id, session_id);
             assert!(r.trace.events.iter().any(|e| e.event_kind == "route_decision"));
+            assert!(
+                r.trace.events
+                    .iter()
+                    .any(|e| e.event_kind == "model_output_received" && e.details.contains("deterministic-response"))
+            );
             assert!(r.trace.events.iter().any(|e| e.event_kind == "binding_created"));
             assert!(
                 r.trace
@@ -173,8 +178,15 @@ fn scenario_a_read_task_succeeds_with_verification_artifact() {
                 .iter()
                 .map(|a: &ArtifactSummary| a.artifact_kind.as_str())
                 .collect();
+            assert!(kinds.contains(&"model_output"));
             assert!(kinds.contains(&"verification_result"));
             assert!(kinds.contains(&"final_result"));
+            assert!(
+                r.artifacts.iter().any(|a| {
+                    a.artifact_kind == "model_output"
+                        && a.summary.contains("deterministic-response")
+                })
+            );
             for artifact in &r.artifacts {
                 assert!(!artifact.produced_by_step_id.is_empty());
                 assert!(artifact.produced_by_trace_event_sequence > 0);

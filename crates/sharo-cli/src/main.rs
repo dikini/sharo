@@ -280,6 +280,12 @@ async fn run_ipc(cli: &Cli) -> Result<(), String> {
                         response.trace.session_id,
                         response.trace.events.len()
                     );
+                    for event in response.trace.events {
+                        println!(
+                            "event_sequence={} event_kind={} details={}",
+                            event.event_sequence, event.event_kind, event.details
+                        );
+                    }
                     Ok(())
                 }
                 DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
@@ -295,6 +301,16 @@ async fn run_ipc(cli: &Cli) -> Result<(), String> {
             match send_ipc(&cli.socket_path, &request).await? {
                 DaemonResponse::GetArtifacts(response) => {
                     println!("task_id={} artifacts={}", task_id, response.artifacts.len());
+                    for artifact in response.artifacts {
+                        println!(
+                            "artifact_id={} artifact_kind={} summary={} produced_by_step_id={} produced_by_trace_event_sequence={}",
+                            artifact.artifact_id,
+                            artifact.artifact_kind,
+                            artifact.summary,
+                            artifact.produced_by_step_id,
+                            artifact.produced_by_trace_event_sequence
+                        );
+                    }
                     Ok(())
                 }
                 DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),

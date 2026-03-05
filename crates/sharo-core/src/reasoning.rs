@@ -14,6 +14,7 @@ pub struct ReasoningInput {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReasoningOutcome {
     pub route_decision_details: String,
+    pub model_output_text: String,
 }
 
 pub trait ReasoningEnginePort {
@@ -46,6 +47,7 @@ impl<C: ModelConnectorPort> ReasoningEnginePort for IdReasoningEngine<C> {
             .map_err(|error| format_connector_error(&error))?;
         Ok(ReasoningOutcome {
             route_decision_details: response.route_label,
+            model_output_text: response.content,
         })
     }
 }

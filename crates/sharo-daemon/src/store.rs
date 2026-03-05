@@ -163,6 +163,7 @@ impl Store {
         request: SubmitTaskOpRequest,
         fallback_session_id: &str,
         route_decision_details: &str,
+        model_output_text: &str,
     ) -> Result<SubmitTaskOpResponse, String> {
         let session_id = request
             .session_id
@@ -247,6 +248,11 @@ impl Store {
                 },
                 TraceEventSummary {
                     event_sequence: 3,
+                    event_kind: "model_output_received".to_string(),
+                    details: summarize_model_output(model_output_text),
+                },
+                TraceEventSummary {
+                    event_sequence: 4,
                     event_kind: "verification_completed".to_string(),
                     details: "postconditions_satisfied".to_string(),
                 },
@@ -336,6 +342,16 @@ impl Store {
                 },
                 produced_by_step_id: step_id.clone(),
                 produced_by_trace_event_sequence: event_sequence_by_kind(&trace, "route_decision"),
+            },
+            ArtifactSummary {
+                artifact_id: format!("artifact-{}-model-output", task_id),
+                artifact_kind: "model_output".to_string(),
+                summary: summarize_model_output(model_output_text),
+                produced_by_step_id: step_id.clone(),
+                produced_by_trace_event_sequence: event_sequence_by_kind(
+                    &trace,
+                    "model_output_received",
+                ),
             },
             ArtifactSummary {
                 artifact_id: format!("artifact-{}-verification", task_id),
@@ -553,6 +569,18 @@ fn event_sequence_by_kind(trace: &TraceSummary, event_kind: &str) -> u64 {
         .find(|e| e.event_kind == event_kind)
         .map(|e| e.event_sequence)
         .unwrap_or(0)
+}
+
+fn summarize_model_output(content: &str) -> String {
+    const LIMIT: usize = 240;
+    let trimmed = content.trim();
+    if trimmed.len() <= LIMIT {
+        return trimmed.to_string();
+    }
+
+    let mut snippet = trimmed.chars().take(LIMIT).collect::<String>();
+    snippet.push_str("...");
+    snippet
 }
 
 impl Store {

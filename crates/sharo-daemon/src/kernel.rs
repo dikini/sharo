@@ -147,6 +147,7 @@ impl KernelPort for DaemonKernelRuntime<'_> {
             input.request,
             &session_id_hint,
             &reasoning.route_decision_details,
+            &reasoning.model_output_text,
         )?;
         Ok(KernelSubmitResult { response })
     }

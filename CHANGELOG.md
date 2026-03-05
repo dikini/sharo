@@ -255,3 +255,7 @@ The format is based on Common Changelog:
   - default config lookup path is `~/.config/sharo/daemon.toml` when `--config-path` is omitted
   - supports provider selection for `deterministic`, `openai`/OpenAI-compatible providers, and `ollama`
   - validates connector-critical fields (for example non-zero timeout and required base URL for non-deterministic providers)
+- Exposed model-generated content in runtime inspection surfaces:
+  - reasoning now persists model output as `model_output_received` trace events and `model_output` artifacts
+  - `sharo trace get` now prints trace events (sequence, kind, details)
+  - `sharo artifacts list` now prints each artifact record (id, kind, summary, provenance)
