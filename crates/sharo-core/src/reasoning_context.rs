@@ -40,10 +40,23 @@ impl ContextState {
     }
 
     pub fn state_hash(&self) -> String {
-        format!(
-            "system={}|persona={}|memory={}|runtime={}|goal={}",
-            self.system, self.persona, self.memory, self.runtime, self.goal
-        )
+        serde_json::to_string(&(
+            self.system.as_str(),
+            self.persona.as_str(),
+            self.memory.as_str(),
+            self.runtime.as_str(),
+            self.goal.as_str(),
+        ))
+        .unwrap_or_else(|_| {
+            format!(
+                "system_len={} persona_len={} memory_len={} runtime_len={} goal_len={}",
+                self.system.len(),
+                self.persona.len(),
+                self.memory.len(),
+                self.runtime.len(),
+                self.goal.len()
+            )
+        })
     }
 }
 

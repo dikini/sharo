@@ -139,6 +139,12 @@ impl KernelPort for DaemonKernelRuntime<'_> {
             .session_id
             .clone()
             .unwrap_or_else(|| "session-implicit".to_string());
+        if let Some(replay) = self
+            .store
+            .replay_by_idempotency(&session_id_hint, input.request.idempotency_key.as_deref())?
+        {
+            return Ok(KernelSubmitResult { response: replay });
+        }
         let turn_id_hint = self.store.next_turn_id_for_session(&session_id_hint);
         let reasoning = self.kernel.reasoning.plan(&ReasoningInput {
             trace_id: format!("trace-{}", task_id_hint),

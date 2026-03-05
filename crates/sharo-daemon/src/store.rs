@@ -89,6 +89,30 @@ impl Store {
             + 1
     }
 
+    pub fn replay_by_idempotency(
+        &self,
+        session_id: &str,
+        idempotency_key: Option<&str>,
+    ) -> Result<Option<SubmitTaskOpResponse>, String> {
+        let Some(key) = idempotency_key else {
+            return Ok(None);
+        };
+        let namespaced = format!("{}:{}", session_id, key);
+        let Some(existing_task_id) = self.state.idempotency_keys.get(&namespaced) else {
+            return Ok(None);
+        };
+        let existing_task = self
+            .state
+            .tasks
+            .get(existing_task_id)
+            .ok_or_else(|| format!("idempotency_task_missing task_id={}", existing_task_id))?;
+        Ok(Some(SubmitTaskOpResponse {
+            task_id: existing_task.task_id.clone(),
+            task_state: existing_task.task_state.clone(),
+            summary: "task replayed by idempotency key".to_string(),
+        }))
+    }
+
     pub fn open(path: impl AsRef<Path>) -> Result<Self, String> {
         let path = path.as_ref().to_path_buf();
         if !path.exists() {
@@ -184,20 +208,8 @@ impl Store {
             .idempotency_key
             .as_deref()
             .map(|key| format!("{}:{}", session_id, key));
-
-        if let Some(idempotency_key) = namespaced_idempotency_key.as_deref() {
-            if let Some(existing_task_id) = self.state.idempotency_keys.get(idempotency_key) {
-                let existing_task = self
-                    .state
-                    .tasks
-                    .get(existing_task_id)
-                    .ok_or_else(|| format!("idempotency_task_missing task_id={}", existing_task_id))?;
-                return Ok(SubmitTaskOpResponse {
-                    task_id: existing_task.task_id.clone(),
-                    task_state: existing_task.task_state.clone(),
-                    summary: "task replayed by idempotency key".to_string(),
-                });
-            }
+        if let Some(replay) = self.replay_by_idempotency(&session_id, request.idempotency_key.as_deref())? {
+            return Ok(replay);
         }
 
         let task_id = format!("task-{:06}", self.state.next_task_id);

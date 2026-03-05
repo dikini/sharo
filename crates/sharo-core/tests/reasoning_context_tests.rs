@@ -80,6 +80,26 @@ fn fit_loop_state_hash_progress_is_monotonic_or_fails() {
 }
 
 #[test]
+fn state_hash_uses_collision_safe_encoding_for_delimiter_rich_values() {
+    let a = ContextState {
+        system: "x|persona=y".to_string(),
+        persona: "z".to_string(),
+        memory: "m".to_string(),
+        runtime: "r".to_string(),
+        goal: "g".to_string(),
+    };
+    let b = ContextState {
+        system: "x".to_string(),
+        persona: "y|persona=z".to_string(),
+        memory: "m".to_string(),
+        runtime: "r".to_string(),
+        goal: "g".to_string(),
+    };
+
+    assert_ne!(a.state_hash(), b.state_hash());
+}
+
+#[test]
 fn id_reasoning_engine_compatibility_with_context_defaults() {
     let input = ReasoningInput {
         trace_id: "trace-task-1".to_string(),

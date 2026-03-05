@@ -283,3 +283,6 @@ The format is based on Common Changelog:
 - Fixed post-review compatibility and turn-scoping regressions:
   - default empty resolved context now preserves goal-only prompt text (no `GOAL:` prefix)
   - kernel now derives `turn_id` from per-session persisted task history instead of hardcoding `1`
+- Fixed follow-up review findings for replay correctness and fit-loop progress detection:
+  - kernel now checks idempotency replay before invoking reasoning, preventing duplicate model/context execution on replay requests
+  - fit-loop state fingerprinting now uses collision-safe JSON encoding instead of delimiter-based concatenation
