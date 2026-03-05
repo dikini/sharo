@@ -319,3 +319,7 @@ The format is based on Common Changelog:
 - Replaced per-request connector thread spawning with bounded worker-pool execution:
   - daemon blocking connectors now submit to shared bounded pool (`worker_count=4`, `queue_capacity=64`)
   - overload/disconnect/worker-failure states are surfaced as explicit connector errors
+- Added configurable connector pool policy surface in daemon config:
+  - new TOML section `[connector_pool]` with `min_threads`, `max_threads`, `queue_capacity`
+  - kernel runtime config now validates pool bounds and queue capacity
+  - pool construction now uses configured policy values

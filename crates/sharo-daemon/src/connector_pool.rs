@@ -1,5 +1,4 @@
 use std::fmt;
-use std::sync::OnceLock;
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 
 #[derive(Debug)]
@@ -90,14 +89,6 @@ impl BlockingPool {
     {
         self.submit(work)?.wait()
     }
-}
-
-const DEFAULT_WORKER_COUNT: usize = 4;
-const DEFAULT_QUEUE_CAPACITY: usize = 64;
-
-pub fn shared_connector_pool() -> &'static BlockingPool {
-    static POOL: OnceLock<BlockingPool> = OnceLock::new();
-    POOL.get_or_init(|| BlockingPool::new(DEFAULT_WORKER_COUNT, DEFAULT_QUEUE_CAPACITY))
 }
 
 #[cfg(test)]

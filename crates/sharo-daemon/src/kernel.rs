@@ -7,8 +7,8 @@ use sharo_core::model_connector::{DeterministicConnector, ModelCapabilityFlags, 
 use sharo_core::model_connectors::{OllamaConnector, OpenAiCompatibleConnector};
 use sharo_core::reasoning::{IdReasoningEngine, ReasoningEnginePort, ReasoningInput};
 
-use crate::config::ModelRuntimeConfig;
-use crate::connector_pool::{PoolError, shared_connector_pool};
+use crate::config::{ConnectorPoolConfig, DaemonConfigFile};
+use crate::connector_pool::{BlockingPool, PoolError};
 use crate::store::Store;
 
 #[derive(Debug, Clone)]
@@ -22,29 +22,32 @@ pub enum ConnectorKind {
 pub struct KernelRuntimeConfig {
     pub connector_kind: ConnectorKind,
     pub profile: ModelProfile,
+    pub connector_pool: ConnectorPoolConfig,
 }
 
 impl KernelRuntimeConfig {
-    pub fn from_model_config(config: &ModelRuntimeConfig) -> Result<Self, String> {
+    pub fn from_daemon_config(config: &DaemonConfigFile) -> Result<Self, String> {
+        let model_config = &config.model;
         let provider = config
+            .model
             .provider
             .as_deref()
             .unwrap_or("deterministic")
             .to_lowercase();
         let profile = ModelProfile {
-            profile_id: config
+            profile_id: model_config
                 .profile_id
                 .clone()
                 .unwrap_or_else(|| format!("{provider}-default")),
             provider_id: provider.clone(),
-            model_id: config
+            model_id: model_config
                 .model_id
                 .clone()
                 .unwrap_or_else(|| "mock".to_string()),
-            base_url: config.base_url.clone(),
-            auth_env_key: config.auth_env_key.clone(),
-            timeout_ms: config.timeout_ms.unwrap_or(1_000),
-            max_retries: config.max_retries.unwrap_or(0),
+            base_url: model_config.base_url.clone(),
+            auth_env_key: model_config.auth_env_key.clone(),
+            timeout_ms: model_config.timeout_ms.unwrap_or(1_000),
+            max_retries: model_config.max_retries.unwrap_or(0),
             capabilities: ModelCapabilityFlags {
                 supports_tools: false,
                 supports_json_mode: false,
@@ -70,20 +73,32 @@ impl KernelRuntimeConfig {
         if profile.timeout_ms == 0 {
             return Err("provider_timeout_invalid timeout_ms=0".to_string());
         }
+        if config.connector_pool.min_threads == 0 {
+            return Err("connector_pool_min_threads_invalid min_threads=0".to_string());
+        }
+        if config.connector_pool.max_threads < config.connector_pool.min_threads {
+            return Err(format!(
+                "connector_pool_bounds_invalid min_threads={} max_threads={}",
+                config.connector_pool.min_threads, config.connector_pool.max_threads
+            ));
+        }
+        if config.connector_pool.queue_capacity == 0 {
+            return Err("connector_pool_queue_capacity_invalid queue_capacity=0".to_string());
+        }
 
         Ok(Self {
             connector_kind,
             profile,
+            connector_pool: config.connector_pool.clone(),
         })
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone)]
 enum DaemonConnector {
-    #[default]
     Deterministic,
-    OpenAiCompatible,
-    Ollama,
+    OpenAiCompatible { pool: BlockingPool },
+    Ollama { pool: BlockingPool },
 }
 
 impl sharo_core::model_connector::ModelConnectorPort for DaemonConnector {
@@ -95,24 +110,28 @@ impl sharo_core::model_connector::ModelConnectorPort for DaemonConnector {
     {
         match self {
             DaemonConnector::Deterministic => DeterministicConnector.run_turn(profile, request),
-            DaemonConnector::OpenAiCompatible => execute_via_pool(
+            DaemonConnector::OpenAiCompatible { pool } => execute_via_pool(
+                pool,
                 OpenAiCompatibleConnector,
                 profile,
                 request,
             ),
-            DaemonConnector::Ollama => execute_via_pool(OllamaConnector::default(), profile, request),
+            DaemonConnector::Ollama { pool } => {
+                execute_via_pool(pool, OllamaConnector::default(), profile, request)
+            }
         }
     }
 }
 
 fn execute_via_pool<C: sharo_core::model_connector::ModelConnectorPort + Send + 'static>(
+    pool: &BlockingPool,
     connector: C,
     profile: &ModelProfile,
     request: &sharo_core::model_connector::ModelTurnRequest,
 ) -> Result<sharo_core::model_connector::ModelTurnResponse, sharo_core::model_connector::ConnectorError> {
     let profile = profile.clone();
     let request = request.clone();
-    shared_connector_pool()
+    pool
         .execute_with_result(move || connector.run_turn(&profile, &request))
         .map_err(map_pool_error)?
 }
@@ -137,10 +156,14 @@ pub struct DaemonKernel {
 
 impl DaemonKernel {
     pub fn new(config: &KernelRuntimeConfig) -> Self {
+        let pool = BlockingPool::new(
+            config.connector_pool.max_threads,
+            config.connector_pool.queue_capacity,
+        );
         let connector = match config.connector_kind {
             ConnectorKind::Deterministic => DaemonConnector::Deterministic,
-            ConnectorKind::OpenAiCompatible => DaemonConnector::OpenAiCompatible,
-            ConnectorKind::Ollama => DaemonConnector::Ollama,
+            ConnectorKind::OpenAiCompatible => DaemonConnector::OpenAiCompatible { pool: pool.clone() },
+            ConnectorKind::Ollama => DaemonConnector::Ollama { pool: pool.clone() },
         };
         Self {
             reasoning: IdReasoningEngine::new(connector, config.profile.clone()),
@@ -207,24 +230,41 @@ impl KernelPort for DaemonKernelRuntime<'_> {
 #[cfg(test)]
 mod tests {
     use super::{ConnectorKind, KernelRuntimeConfig};
-    use crate::config::ModelRuntimeConfig;
+    use crate::config::{ConnectorPoolConfig, DaemonConfigFile, ModelRuntimeConfig};
 
     #[test]
     fn openai_like_provider_requires_base_url() {
-        let cfg = ModelRuntimeConfig {
-            provider: Some("openai".to_string()),
-            base_url: None,
-            ..ModelRuntimeConfig::default()
+        let cfg = DaemonConfigFile {
+            model: ModelRuntimeConfig {
+                provider: Some("openai".to_string()),
+                base_url: None,
+                ..ModelRuntimeConfig::default()
+            },
+            connector_pool: ConnectorPoolConfig::default(),
         };
-        let err = KernelRuntimeConfig::from_model_config(&cfg).expect_err("expected base_url error");
+        let err = KernelRuntimeConfig::from_daemon_config(&cfg).expect_err("expected base_url error");
         assert!(err.contains("provider_base_url_required"));
     }
 
     #[test]
     fn deterministic_provider_uses_defaults() {
-        let cfg = ModelRuntimeConfig::default();
-        let runtime = KernelRuntimeConfig::from_model_config(&cfg).expect("runtime config");
+        let cfg = DaemonConfigFile::default();
+        let runtime = KernelRuntimeConfig::from_daemon_config(&cfg).expect("runtime config");
         assert!(matches!(runtime.connector_kind, ConnectorKind::Deterministic));
         assert_eq!(runtime.profile.model_id, "mock");
+    }
+
+    #[test]
+    fn reject_invalid_connector_pool_policy_bounds() {
+        let cfg = DaemonConfigFile {
+            model: ModelRuntimeConfig::default(),
+            connector_pool: ConnectorPoolConfig {
+                min_threads: 4,
+                max_threads: 2,
+                queue_capacity: 64,
+            },
+        };
+        let err = KernelRuntimeConfig::from_daemon_config(&cfg).expect_err("expected bounds error");
+        assert!(err.contains("connector_pool_bounds_invalid"));
     }
 }

@@ -7,6 +7,15 @@ use serde::Deserialize;
 pub struct DaemonConfigFile {
     #[serde(default)]
     pub model: ModelRuntimeConfig,
+    #[serde(default)]
+    pub connector_pool: ConnectorPoolConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ConnectorPoolConfig {
+    pub min_threads: usize,
+    pub max_threads: usize,
+    pub queue_capacity: usize,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -40,6 +49,16 @@ impl Default for ModelRuntimeConfig {
             timeout_ms: Some(1_000),
             max_retries: Some(0),
             profile_id: Some("id-default".to_string()),
+        }
+    }
+}
+
+impl Default for ConnectorPoolConfig {
+    fn default() -> Self {
+        Self {
+            min_threads: 2,
+            max_threads: 4,
+            queue_capacity: 64,
         }
     }
 }
@@ -93,6 +112,28 @@ profile_id = "openai-main"
         assert_eq!(parsed.model.timeout_ms, Some(5000));
         assert_eq!(parsed.model.max_retries, Some(2));
         assert_eq!(parsed.model.profile_id.as_deref(), Some("openai-main"));
+    }
+
+    #[test]
+    fn parse_connector_pool_policy_from_toml() {
+        let raw = r#"
+[connector_pool]
+min_threads = 3
+max_threads = 7
+queue_capacity = 128
+"#;
+        let parsed: DaemonConfigFile = toml::from_str(raw).expect("parse");
+        assert_eq!(parsed.connector_pool.min_threads, 3);
+        assert_eq!(parsed.connector_pool.max_threads, 7);
+        assert_eq!(parsed.connector_pool.queue_capacity, 128);
+    }
+
+    #[test]
+    fn default_policy_values_are_nonzero_and_bounded() {
+        let cfg = DaemonConfigFile::default();
+        assert!(cfg.connector_pool.min_threads > 0);
+        assert!(cfg.connector_pool.max_threads >= cfg.connector_pool.min_threads);
+        assert!(cfg.connector_pool.queue_capacity > 0);
     }
 
     #[test]

@@ -243,7 +243,7 @@ async fn main() {
                     std::process::exit(1);
                 }
             };
-            let kernel_config = match KernelRuntimeConfig::from_model_config(&daemon_config.model) {
+            let kernel_config = match KernelRuntimeConfig::from_daemon_config(&daemon_config) {
                 Ok(cfg) => cfg,
                 Err(message) => {
                     eprintln!("daemon_error=config_invalid message={}", message);
