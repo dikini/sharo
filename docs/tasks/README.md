@@ -46,6 +46,7 @@ This keeps task state deterministic and reduces stale registry entries.
 - `TASK-MVP-SLICE-004`: MVP protocol and CLI surface completion.
 - `TASK-MVP-SLICE-005`: verification matrix closure and hardening.
 - `TASK-DOC-TEMPLATE-TERMS-001`: strict template terminology alignment for invariant vs property-based tests.
+- `TASK-FAST-FEEDBACK-ERGONOMICS-001`: content-based marker validity and pre-commit auto-refresh for stale markers.
 
 ## Completed Tooling Items
 

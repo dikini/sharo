@@ -45,8 +45,28 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-status_sha() {
-  git status --porcelain=v1 --untracked-files=all | sha256sum | awk '{print $1}'
+content_sha() {
+  mapfile -t paths < <({
+    git diff --name-only
+    git diff --cached --name-only
+    git ls-files --others --exclude-standard
+  } | sed '/^$/d' | sort -u)
+
+  if [[ "${#paths[@]}" -eq 0 ]]; then
+    printf '' | sha256sum | awk '{print $1}'
+    return
+  fi
+
+  {
+    for p in "${paths[@]}"; do
+      if [[ -e "$p" ]]; then
+        hash="$(git hash-object -- "$p" 2>/dev/null || printf '__nonregular__')"
+      else
+        hash="__deleted__"
+      fi
+      printf '%s\t%s\n' "$p" "$hash"
+    done
+  } | sha256sum | awk '{print $1}'
 }
 
 scripts/doc-lint.sh --changed --strict-new
@@ -72,7 +92,7 @@ if [[ "$write_marker" == true ]]; then
   {
     echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "head=$(git rev-parse HEAD)"
-    echo "status_sha=$(status_sha)"
+    echo "content_sha=$(content_sha)"
   } > "$marker_file"
   echo "fast-feedback: marker updated at $marker_file"
 fi

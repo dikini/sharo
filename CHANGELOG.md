@@ -204,3 +204,10 @@ The format is based on Common Changelog:
   - `Property-based` is explicitly optional and only for generative frameworks
   - `scripts/doc-lint.sh` now accepts either `Invariant:` (preferred) or legacy `Property:`
   - `AGENTS.md` strict-profile guidance aligned with the same terminology
+- Improved fast-feedback commit ergonomics without relaxing guardrails:
+  - `scripts/check-fast-feedback.sh` now records content-based marker hashes for changed+untracked paths
+  - `scripts/check-fast-feedback-marker.sh` validates content hash instead of status/index shape
+  - `.githooks/pre-commit` auto-runs `scripts/check-fast-feedback.sh` once when marker is stale/missing, then re-validates marker
+  - added shell tests:
+    - `scripts/tests/test-fast-feedback-marker.bats`
+    - `scripts/tests/test-precommit-fast-feedback.bats`
