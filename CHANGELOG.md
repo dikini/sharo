@@ -133,6 +133,12 @@ The format is based on Common Changelog:
   - `crates/sharo-cli/tests/scenario_a_cli.rs`
   - `crates/sharo-core/tests/runtime_types_tests.rs`
   - `crates/sharo-core/tests/ipc_protocol_tests.rs`
+- Added initial kernel/reasoning/model connector contracts:
+  - `crates/sharo-core/src/kernel.rs`
+  - `crates/sharo-core/src/reasoning.rs`
+  - `crates/sharo-core/src/model_connector.rs`
+  - `crates/sharo-core/src/model_connectors.rs`
+  - `crates/sharo-core/tests/reasoning_connector_tests.rs`
 
 ### Changed
 
@@ -225,3 +231,10 @@ The format is based on Common Changelog:
   - extend daemon/core scenario coverage to assert socket permissions and trace/artifact conformance fields
 - Documented pre-1.0 persisted-state posture:
   - persisted daemon store schema is intentionally not backward-compatible between unreleased MVP revisions
+- Extracted daemon task execution behind a kernel runtime while preserving current MVP behavior:
+  - daemon now routes `submit-task` and `resolve-approval` through `DaemonKernelRuntime`
+  - store supports route-decision injection via `submit_task_with_route` for behavior-preserving reasoning-engine integration
+- Added first connector implementations behind the unified connector interface:
+  - OpenAI-compatible connector for `/v1/responses` style providers (OpenAI/OpenRouter/Kimi/GLM-compatible endpoints)
+  - local Ollama connector adapter using the same normalized connector contract
+- Added `reqwest` and `serde_json` runtime dependencies to `sharo-core` for provider connector HTTP/JSON support.

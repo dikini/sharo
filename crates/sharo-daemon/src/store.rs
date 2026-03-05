@@ -75,6 +75,10 @@ pub struct Store {
 }
 
 impl Store {
+    pub fn peek_next_task_id(&self) -> String {
+        format!("task-{:06}", self.state.next_task_id)
+    }
+
     pub fn open(path: impl AsRef<Path>) -> Result<Self, String> {
         let path = path.as_ref().to_path_buf();
         if !path.exists() {
@@ -154,11 +158,16 @@ impl Store {
         Ok(session_id)
     }
 
-    pub fn submit_task(&mut self, request: SubmitTaskOpRequest) -> Result<SubmitTaskOpResponse, String> {
+    pub fn submit_task_with_route(
+        &mut self,
+        request: SubmitTaskOpRequest,
+        fallback_session_id: &str,
+        route_decision_details: &str,
+    ) -> Result<SubmitTaskOpResponse, String> {
         let session_id = request
             .session_id
             .clone()
-            .unwrap_or_else(|| "session-implicit".to_string());
+            .unwrap_or_else(|| fallback_session_id.to_string());
         let namespaced_idempotency_key = request
             .idempotency_key
             .as_deref()
@@ -234,7 +243,7 @@ impl Store {
                 TraceEventSummary {
                     event_sequence: 2,
                     event_kind: "route_decision".to_string(),
-                    details: "local_mock".to_string(),
+                    details: route_decision_details.to_string(),
                 },
                 TraceEventSummary {
                     event_sequence: 3,
@@ -320,7 +329,11 @@ impl Store {
             ArtifactSummary {
                 artifact_id: format!("artifact-{}-route", task_id),
                 artifact_kind: "route_decision".to_string(),
-                summary: "selected local mock route".to_string(),
+                summary: if route_decision_details == "local_mock" {
+                    "selected local mock route".to_string()
+                } else {
+                    format!("selected {} route", route_decision_details)
+                },
                 produced_by_step_id: step_id.clone(),
                 produced_by_trace_event_sequence: event_sequence_by_kind(&trace, "route_decision"),
             },

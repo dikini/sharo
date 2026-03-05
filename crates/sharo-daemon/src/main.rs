@@ -4,14 +4,17 @@ use std::{fs, os::unix::fs::PermissionsExt};
 
 use clap::{Parser, Subcommand};
 use sharo_core::client::{RuntimeClient, StubClient};
+use sharo_core::kernel::{KernelApprovalInput, KernelPort, KernelSubmitInput};
 use sharo_core::protocol::{
     DaemonRequest, DaemonResponse, GetArtifactsResponse, GetTaskResponse, GetTraceResponse,
-    RegisterSessionResponse, SubmitTaskOpResponse, TaskStatusRequest,
+    RegisterSessionResponse, TaskStatusRequest,
 };
 use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 
 mod store;
+mod kernel;
+use kernel::DaemonKernelRuntime;
 use store::Store;
 
 const DEFAULT_SOCKET_PATH: &str = "/tmp/sharo-daemon.sock";
@@ -50,18 +53,13 @@ fn handle_request(request: DaemonRequest, client: &impl RuntimeClient, store: &m
             Ok(session_id) => DaemonResponse::RegisterSession(RegisterSessionResponse { session_id }),
             Err(message) => DaemonResponse::Error { message },
         },
-        DaemonRequest::SubmitTask(payload) => match store.submit_task(payload) {
-            Ok(SubmitTaskOpResponse {
-                task_id,
-                task_state,
-                summary,
-            }) => DaemonResponse::SubmitTask(SubmitTaskOpResponse {
-                task_id,
-                task_state,
-                summary,
-            }),
-            Err(message) => DaemonResponse::Error { message },
-        },
+        DaemonRequest::SubmitTask(payload) => {
+            let mut kernel = DaemonKernelRuntime::new(store);
+            match kernel.submit_task(KernelSubmitInput { request: payload }) {
+                Ok(response) => DaemonResponse::SubmitTask(response.response),
+                Err(message) => DaemonResponse::Error { message },
+            }
+        }
         DaemonRequest::GetTask(payload) => match store.get_task(&payload.task_id) {
             Some(task) => DaemonResponse::GetTask(GetTaskResponse { task }),
             None => DaemonResponse::Error {
@@ -81,8 +79,12 @@ fn handle_request(request: DaemonRequest, client: &impl RuntimeClient, store: &m
             DaemonResponse::ListPendingApprovals(store.list_pending_approvals())
         }
         DaemonRequest::ResolveApproval(payload) => {
-            match store.resolve_approval(&payload.approval_id, &payload.decision) {
-                Ok(response) => DaemonResponse::ResolveApproval(response),
+            let mut kernel = DaemonKernelRuntime::new(store);
+            match kernel.resolve_approval(KernelApprovalInput {
+                approval_id: payload.approval_id,
+                decision: payload.decision,
+            }) {
+                Ok(response) => DaemonResponse::ResolveApproval(response.response),
                 Err(message) => DaemonResponse::Error { message },
             }
         }
