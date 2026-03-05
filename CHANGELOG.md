@@ -211,3 +211,7 @@ The format is based on Common Changelog:
   - scope idempotency-key replay by session namespace to prevent cross-session task leakage
   - validate approval decisions strictly (`approve|deny`) and reject malformed values
   - enforce store file permissions to `0600` even for pre-existing store files
+- Hardened daemon IPC and persistence reliability:
+  - serialize daemon error envelopes through `DaemonResponse` instead of manual JSON interpolation
+  - reject oversized IPC request frames with explicit `request_too_large` error
+  - persist store state atomically via temp-file write and rename to reduce crash-corruption risk

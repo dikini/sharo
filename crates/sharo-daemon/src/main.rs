@@ -6,7 +6,7 @@ use sharo_core::protocol::{
     DaemonRequest, DaemonResponse, GetArtifactsResponse, GetTaskResponse, GetTraceResponse,
     RegisterSessionResponse, SubmitTaskOpResponse, TaskStatusRequest,
 };
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 
 mod store;
@@ -14,6 +14,7 @@ use store::Store;
 
 const DEFAULT_SOCKET_PATH: &str = "/tmp/sharo-daemon.sock";
 const DEFAULT_STORE_PATH: &str = "/tmp/sharo-daemon-store.json";
+const MAX_REQUEST_BYTES: usize = 1_048_576;
 
 #[derive(Debug, Parser)]
 #[command(name = "sharo-daemon")]
@@ -87,48 +88,92 @@ fn handle_request(request: DaemonRequest, client: &impl RuntimeClient, store: &m
 }
 
 async fn handle_stream(stream: UnixStream, client: &impl RuntimeClient, store: &mut Store) {
-    let (reader, mut writer) = stream.into_split();
-    let mut reader = BufReader::new(reader);
+    let (mut reader, mut writer) = stream.into_split();
+    let mut bytes = Vec::new();
 
-    let mut line = String::new();
-    match reader.read_line(&mut line).await {
-        Ok(0) => {
-            let _ = writer
-                .write_all(b"{\"Error\":{\"message\":\"empty request\"}}\n")
-                .await;
-        }
-        Ok(_) => {
-            let response = match serde_json::from_str::<DaemonRequest>(line.trim()) {
-                Ok(request) => handle_request(request, client, store),
-                Err(error) => DaemonResponse::Error {
-                    message: format!("invalid request: {error}"),
-                },
-            };
-
-            match serde_json::to_string(&response) {
-                Ok(payload) => {
-                    let _ = writer.write_all(payload.as_bytes()).await;
-                    let _ = writer.write_all(b"\n").await;
+    loop {
+        match reader.read_u8().await {
+            Ok(b) => {
+                if b == b'\n' {
+                    break;
                 }
-                Err(error) => {
-                    let _ = writer
-                        .write_all(
-                            format!(
-                                "{{\"Error\":{{\"message\":\"serialization failure: {}\"}}}}\n",
-                                error
-                            )
-                            .as_bytes(),
-                        )
-                        .await;
+                bytes.push(b);
+                if bytes.len() > MAX_REQUEST_BYTES {
+                    let _ = write_response(
+                        &mut writer,
+                        &DaemonResponse::Error {
+                            message: format!(
+                                "request_too_large max_bytes={} actual_bytes>{}",
+                                MAX_REQUEST_BYTES, MAX_REQUEST_BYTES
+                            ),
+                        },
+                    )
+                    .await;
+                    return;
                 }
             }
-        }
-        Err(error) => {
-            let _ = writer
-                .write_all(format!("{{\"Error\":{{\"message\":\"read failure: {}\"}}}}\n", error).as_bytes())
+            Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => {
+                break;
+            }
+            Err(error) => {
+                let _ = write_response(
+                    &mut writer,
+                    &DaemonResponse::Error {
+                        message: format!("read failure: {}", error),
+                    },
+                )
                 .await;
+                return;
+            }
         }
     }
+
+    if bytes.is_empty() {
+        let _ = write_response(
+            &mut writer,
+            &DaemonResponse::Error {
+                message: "empty request".to_string(),
+            },
+        )
+        .await;
+        return;
+    }
+
+    let line = match String::from_utf8(bytes) {
+        Ok(line) => line,
+        Err(error) => {
+            let _ = write_response(
+                &mut writer,
+                &DaemonResponse::Error {
+                    message: format!("invalid utf-8 request: {}", error),
+                },
+            )
+            .await;
+            return;
+        }
+    };
+
+    let response = match serde_json::from_str::<DaemonRequest>(line.trim()) {
+        Ok(request) => handle_request(request, client, store),
+        Err(error) => DaemonResponse::Error {
+            message: format!("invalid request: {error}"),
+        },
+    };
+    let _ = write_response(&mut writer, &response).await;
+}
+
+async fn write_response<W>(writer: &mut W, response: &DaemonResponse) -> std::io::Result<()>
+where
+    W: AsyncWrite + Unpin,
+{
+    let payload = serde_json::to_string(response).unwrap_or_else(|_| {
+        serde_json::to_string(&DaemonResponse::Error {
+            message: "serialization failure".to_string(),
+        })
+        .unwrap_or_else(|_| "{\"Error\":{\"message\":\"serialization failure\"}}".to_string())
+    });
+    writer.write_all(payload.as_bytes()).await?;
+    writer.write_all(b"\n").await
 }
 
 #[tokio::main]

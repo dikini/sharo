@@ -6,6 +6,7 @@ use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use sharo_core::protocol::{
@@ -92,24 +93,68 @@ impl Store {
     fn save(&self) -> Result<(), String> {
         let data = serde_json::to_string_pretty(&self.state)
             .map_err(|e| format!("store_serialize_failed error={}", e))?;
+        let parent = self
+            .path
+            .parent()
+            .ok_or_else(|| format!("store_parent_missing path={}", self.path.display()))?;
+        let file_name = self
+            .path
+            .file_name()
+            .and_then(|v| v.to_str())
+            .ok_or_else(|| format!("store_filename_invalid path={}", self.path.display()))?;
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| format!("store_time_failed error={}", e))?
+            .as_nanos();
+        let tmp_path = parent.join(format!(".{}.tmp-{}-{}", file_name, std::process::id(), nanos));
+
         #[cfg(unix)]
         {
             let mut file = OpenOptions::new()
-                .create(true)
-                .truncate(true)
                 .write(true)
+                .create_new(true)
                 .mode(0o600)
-                .open(&self.path)
-                .map_err(|e| format!("store_open_failed path={} error={}", self.path.display(), e))?;
+                .open(&tmp_path)
+                .map_err(|e| format!("store_open_failed path={} error={}", tmp_path.display(), e))?;
             file.write_all(data.as_bytes())
-                .map_err(|e| format!("store_write_failed path={} error={}", self.path.display(), e))?;
+                .map_err(|e| format!("store_write_failed path={} error={}", tmp_path.display(), e))?;
+            file.sync_all()
+                .map_err(|e| format!("store_sync_failed path={} error={}", tmp_path.display(), e))?;
+            fs::set_permissions(&tmp_path, fs::Permissions::from_mode(0o600))
+                .map_err(|e| format!("store_chmod_failed path={} error={}", tmp_path.display(), e))?;
+            fs::rename(&tmp_path, &self.path).map_err(|e| {
+                format!(
+                    "store_rename_failed src={} dst={} error={}",
+                    tmp_path.display(),
+                    self.path.display(),
+                    e
+                )
+            })?;
             fs::set_permissions(&self.path, fs::Permissions::from_mode(0o600))
                 .map_err(|e| format!("store_chmod_failed path={} error={}", self.path.display(), e))
         }
         #[cfg(not(unix))]
         {
-            fs::write(&self.path, data)
-                .map_err(|e| format!("store_write_failed path={} error={}", self.path.display(), e))
+            {
+                let mut file = fs::OpenOptions::new()
+                    .create_new(true)
+                    .write(true)
+                    .open(&tmp_path)
+                    .map_err(|e| format!("store_open_failed path={} error={}", tmp_path.display(), e))?;
+                file.write_all(data.as_bytes()).map_err(|e| {
+                    format!("store_write_failed path={} error={}", tmp_path.display(), e)
+                })?;
+                file.sync_all()
+                    .map_err(|e| format!("store_sync_failed path={} error={}", tmp_path.display(), e))?;
+            }
+            fs::rename(&tmp_path, &self.path).map_err(|e| {
+                format!(
+                    "store_rename_failed src={} dst={} error={}",
+                    tmp_path.display(),
+                    self.path.display(),
+                    e
+                )
+            })
         }
     }
 
