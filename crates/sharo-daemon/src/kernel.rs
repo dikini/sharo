@@ -94,10 +94,28 @@ impl sharo_core::model_connector::ModelConnectorPort for DaemonConnector {
     {
         match self {
             DaemonConnector::Deterministic => DeterministicConnector.run_turn(profile, request),
-            DaemonConnector::OpenAiCompatible => OpenAiCompatibleConnector::default().run_turn(profile, request),
-            DaemonConnector::Ollama => OllamaConnector::default().run_turn(profile, request),
+            DaemonConnector::OpenAiCompatible => run_blocking_connector_in_thread(
+                OpenAiCompatibleConnector::default(),
+                profile,
+                request,
+            ),
+            DaemonConnector::Ollama => {
+                run_blocking_connector_in_thread(OllamaConnector::default(), profile, request)
+            }
         }
     }
+}
+
+fn run_blocking_connector_in_thread<C: sharo_core::model_connector::ModelConnectorPort + Send + 'static>(
+    connector: C,
+    profile: &ModelProfile,
+    request: &sharo_core::model_connector::ModelTurnRequest,
+) -> Result<sharo_core::model_connector::ModelTurnResponse, sharo_core::model_connector::ConnectorError> {
+    let profile = profile.clone();
+    let request = request.clone();
+    std::thread::spawn(move || connector.run_turn(&profile, &request))
+        .join()
+        .map_err(|_| sharo_core::model_connector::ConnectorError::Internal("connector_thread_panicked".to_string()))?
 }
 
 pub struct DaemonKernel {

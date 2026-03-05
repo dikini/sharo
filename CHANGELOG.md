@@ -310,3 +310,9 @@ The format is based on Common Changelog:
   - `TASK-CONNECTOR-POOL-IMPL-001`
   - `TASK-CONNECTOR-POOL-IMPL-002`
   - `TASK-CONNECTOR-POOL-IMPL-003`
+- Fixed OpenAI-compatible runtime stability in daemon execution:
+  - connector calls no longer rely on per-request inline blocking-drop behavior in async context
+  - daemon connector path now runs blocking model turns off the async request thread boundary
+- Hardened daemon and CLI scenario tests against user-level default config leakage:
+  - scenario tests now pass explicit deterministic `--config-path` fixtures
+  - prevents local `~/.config/sharo/daemon.toml` from changing test behavior

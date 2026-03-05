@@ -16,10 +16,25 @@ fn daemon_bin() -> PathBuf {
     cli_bin.parent().expect("parent").join("sharo-daemon")
 }
 
+fn write_deterministic_config(prefix: &str) -> PathBuf {
+    let config = unique_path(prefix, ".toml");
+    std::fs::write(
+        &config,
+        r#"[model]
+provider = "deterministic"
+model_id = "mock"
+timeout_ms = 1000
+"#,
+    )
+    .expect("write deterministic config");
+    config
+}
+
 #[test]
 fn cli_scenario_a_end_to_end() {
     let socket = unique_path("sharo-cli-scenario-a", ".sock");
     let store = unique_path("sharo-cli-scenario-a", ".json");
+    let config = write_deterministic_config("sharo-cli-scenario-a");
 
     let mut daemon = Command::new(daemon_bin())
         .args([
@@ -28,6 +43,8 @@ fn cli_scenario_a_end_to_end() {
             socket.to_str().expect("socket"),
             "--store-path",
             store.to_str().expect("store"),
+            "--config-path",
+            config.to_str().expect("config"),
         ])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -147,12 +164,14 @@ fn cli_scenario_a_end_to_end() {
 
     let _ = std::fs::remove_file(socket);
     let _ = std::fs::remove_file(store);
+    let _ = std::fs::remove_file(config);
 }
 
 #[test]
 fn cli_scenario_b_approval_commands() {
     let socket = unique_path("sharo-cli-scenario-b", ".sock");
     let store = unique_path("sharo-cli-scenario-b", ".json");
+    let config = write_deterministic_config("sharo-cli-scenario-b");
 
     let mut daemon = Command::new(daemon_bin())
         .args([
@@ -161,6 +180,8 @@ fn cli_scenario_b_approval_commands() {
             socket.to_str().expect("socket"),
             "--store-path",
             store.to_str().expect("store"),
+            "--config-path",
+            config.to_str().expect("config"),
         ])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -296,12 +317,14 @@ fn cli_scenario_b_approval_commands() {
     let _ = daemon.wait();
     let _ = std::fs::remove_file(socket);
     let _ = std::fs::remove_file(store);
+    let _ = std::fs::remove_file(config);
 }
 
 #[test]
 fn cli_scenario_c_overlap_is_visible_in_task_output() {
     let socket = unique_path("sharo-cli-scenario-c", ".sock");
     let store = unique_path("sharo-cli-scenario-c", ".json");
+    let config = write_deterministic_config("sharo-cli-scenario-c");
 
     let mut daemon = Command::new(daemon_bin())
         .args([
@@ -310,6 +333,8 @@ fn cli_scenario_c_overlap_is_visible_in_task_output() {
             socket.to_str().expect("socket"),
             "--store-path",
             store.to_str().expect("store"),
+            "--config-path",
+            config.to_str().expect("config"),
         ])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -418,4 +443,5 @@ fn cli_scenario_c_overlap_is_visible_in_task_output() {
     let _ = daemon.wait();
     let _ = std::fs::remove_file(socket);
     let _ = std::fs::remove_file(store);
+    let _ = std::fs::remove_file(config);
 }

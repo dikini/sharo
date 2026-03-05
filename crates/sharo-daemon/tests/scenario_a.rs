@@ -23,6 +23,20 @@ fn daemon_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sharo-daemon"))
 }
 
+fn write_deterministic_config(prefix: &str) -> PathBuf {
+    let config = unique_path(prefix, ".toml");
+    fs::write(
+        &config,
+        r#"[model]
+provider = "deterministic"
+model_id = "mock"
+timeout_ms = 1000
+"#,
+    )
+    .expect("write deterministic config");
+    config
+}
+
 fn send_request(socket: &PathBuf, request: &DaemonRequest) -> DaemonResponse {
     for _ in 0..5 {
         let mut connected = None;
@@ -64,6 +78,7 @@ fn assert_trace_monotonic(trace: &sharo_core::protocol::TraceSummary) {
 fn scenario_a_read_task_succeeds_with_verification_artifact() {
     let socket = unique_path("sharo-scenario-a", ".sock");
     let store = unique_path("sharo-scenario-a", ".json");
+    let config = write_deterministic_config("sharo-scenario-a");
 
     let mut daemon = Command::new(daemon_bin())
         .args([
@@ -72,6 +87,8 @@ fn scenario_a_read_task_succeeds_with_verification_artifact() {
             socket.to_str().expect("socket path"),
             "--store-path",
             store.to_str().expect("store path"),
+            "--config-path",
+            config.to_str().expect("config path"),
         ])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -215,12 +232,16 @@ fn scenario_a_read_task_succeeds_with_verification_artifact() {
     if store.exists() {
         let _ = fs::remove_file(&store);
     }
+    if config.exists() {
+        let _ = fs::remove_file(&config);
+    }
 }
 
 #[test]
 fn scenario_b_pending_approval_survives_restart_and_can_be_resolved() {
     let socket = unique_path("sharo-scenario-b", ".sock");
     let store = unique_path("sharo-scenario-b", ".json");
+    let config = write_deterministic_config("sharo-scenario-b");
 
     let mut daemon = Command::new(daemon_bin())
         .args([
@@ -229,6 +250,8 @@ fn scenario_b_pending_approval_survives_restart_and_can_be_resolved() {
             socket.to_str().expect("socket path"),
             "--store-path",
             store.to_str().expect("store path"),
+            "--config-path",
+            config.to_str().expect("config path"),
         ])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -282,6 +305,8 @@ fn scenario_b_pending_approval_survives_restart_and_can_be_resolved() {
             socket.to_str().expect("socket path"),
             "--store-path",
             store.to_str().expect("store path"),
+            "--config-path",
+            config.to_str().expect("config path"),
         ])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -399,12 +424,14 @@ fn scenario_b_pending_approval_survives_restart_and_can_be_resolved() {
     let _ = daemon.wait();
     let _ = fs::remove_file(&socket);
     let _ = fs::remove_file(&store);
+    let _ = fs::remove_file(&config);
 }
 
 #[test]
 fn scenario_c_overlap_visibility_survives_restart() {
     let socket = unique_path("sharo-scenario-c", ".sock");
     let store = unique_path("sharo-scenario-c", ".json");
+    let config = write_deterministic_config("sharo-scenario-c");
 
     let mut daemon = Command::new(daemon_bin())
         .args([
@@ -413,6 +440,8 @@ fn scenario_c_overlap_visibility_survives_restart() {
             socket.to_str().expect("socket path"),
             "--store-path",
             store.to_str().expect("store path"),
+            "--config-path",
+            config.to_str().expect("config path"),
         ])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -483,6 +512,8 @@ fn scenario_c_overlap_visibility_survives_restart() {
             socket.to_str().expect("socket path"),
             "--store-path",
             store.to_str().expect("store path"),
+            "--config-path",
+            config.to_str().expect("config path"),
         ])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -520,12 +551,14 @@ fn scenario_c_overlap_visibility_survives_restart() {
     let _ = daemon.wait();
     let _ = fs::remove_file(&socket);
     let _ = fs::remove_file(&store);
+    let _ = fs::remove_file(&config);
 }
 
 #[test]
 fn invalid_manifest_is_blocked_with_explicit_reason() {
     let socket = unique_path("sharo-scenario-manifest", ".sock");
     let store = unique_path("sharo-scenario-manifest", ".json");
+    let config = write_deterministic_config("sharo-scenario-manifest");
 
     let mut daemon = Command::new(daemon_bin())
         .args([
@@ -534,6 +567,8 @@ fn invalid_manifest_is_blocked_with_explicit_reason() {
             socket.to_str().expect("socket path"),
             "--store-path",
             store.to_str().expect("store path"),
+            "--config-path",
+            config.to_str().expect("config path"),
         ])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -602,12 +637,14 @@ fn invalid_manifest_is_blocked_with_explicit_reason() {
     let _ = daemon.wait();
     let _ = fs::remove_file(&socket);
     let _ = fs::remove_file(&store);
+    let _ = fs::remove_file(&config);
 }
 
 #[test]
 fn store_file_permissions_are_restricted() {
     let socket = unique_path("sharo-store-perms", ".sock");
     let store = unique_path("sharo-store-perms", ".json");
+    let config = write_deterministic_config("sharo-store-perms");
 
     let mut daemon = Command::new(daemon_bin())
         .args([
@@ -616,6 +653,8 @@ fn store_file_permissions_are_restricted() {
             socket.to_str().expect("socket path"),
             "--store-path",
             store.to_str().expect("store path"),
+            "--config-path",
+            config.to_str().expect("config path"),
         ])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -646,6 +685,8 @@ fn store_file_permissions_are_restricted() {
             socket.to_str().expect("socket path"),
             "--store-path",
             store.to_str().expect("store path"),
+            "--config-path",
+            config.to_str().expect("config path"),
         ])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -670,4 +711,5 @@ fn store_file_permissions_are_restricted() {
     let _ = daemon.wait();
     let _ = fs::remove_file(&socket);
     let _ = fs::remove_file(&store);
+    let _ = fs::remove_file(&config);
 }

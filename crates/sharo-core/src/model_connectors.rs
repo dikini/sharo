@@ -1,22 +1,18 @@
 use reqwest::blocking::Client;
 use serde_json::Value;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use crate::model_connector::{
     ConnectorError, ModelConnectorPort, ModelProfile, ModelTurnRequest, ModelTurnResponse,
 };
 
-#[derive(Debug, Clone)]
-pub struct OpenAiCompatibleConnector {
-    client: Client,
-}
+#[derive(Debug, Clone, Copy, Default)]
+pub struct OpenAiCompatibleConnector;
 
-impl Default for OpenAiCompatibleConnector {
-    fn default() -> Self {
-        Self {
-            client: Client::new(),
-        }
-    }
+fn shared_blocking_client() -> &'static Client {
+    static CLIENT: OnceLock<Client> = OnceLock::new();
+    CLIENT.get_or_init(Client::new)
 }
 
 impl ModelConnectorPort for OpenAiCompatibleConnector {
@@ -35,8 +31,7 @@ impl ModelConnectorPort for OpenAiCompatibleConnector {
         })?;
 
         let url = format!("{}/v1/responses", base_url.trim_end_matches('/'));
-        let mut req = self
-            .client
+        let mut req = shared_blocking_client()
             .post(url)
             .timeout(Duration::from_millis(profile.timeout_ms))
             .json(&serde_json::json!({
