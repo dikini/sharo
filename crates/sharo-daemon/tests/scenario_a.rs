@@ -84,10 +84,43 @@ fn scenario_a_read_task_succeeds_with_verification_artifact() {
         &DaemonRequest::SubmitTask(SubmitTaskOpRequest {
             session_id: Some(session_id.clone()),
             goal: "read one context item".to_string(),
-            idempotency_key: None,
+            idempotency_key: Some("idem-a-1".to_string()),
         }),
     ) {
         DaemonResponse::SubmitTask(r) => r.task_id,
+        other => panic!("unexpected response: {other:?}"),
+    };
+
+    match send_request(
+        &socket,
+        &DaemonRequest::SubmitTask(SubmitTaskOpRequest {
+            session_id: Some(session_id.clone()),
+            goal: "read one context item".to_string(),
+            idempotency_key: Some("idem-a-1".to_string()),
+        }),
+    ) {
+        DaemonResponse::SubmitTask(r) => assert_eq!(r.task_id, task_id),
+        other => panic!("unexpected response: {other:?}"),
+    };
+
+    let session_id_2 = match send_request(
+        &socket,
+        &DaemonRequest::RegisterSession(RegisterSessionRequest {
+            session_label: "scenario-a-other-session".to_string(),
+        }),
+    ) {
+        DaemonResponse::RegisterSession(r) => r.session_id,
+        other => panic!("unexpected response: {other:?}"),
+    };
+    match send_request(
+        &socket,
+        &DaemonRequest::SubmitTask(SubmitTaskOpRequest {
+            session_id: Some(session_id_2),
+            goal: "read one context item".to_string(),
+            idempotency_key: Some("idem-a-1".to_string()),
+        }),
+    ) {
+        DaemonResponse::SubmitTask(r) => assert_ne!(r.task_id, task_id),
         other => panic!("unexpected response: {other:?}"),
     };
 
@@ -282,6 +315,17 @@ fn scenario_b_pending_approval_survives_restart_and_can_be_resolved() {
         }),
     ) {
         DaemonResponse::ResolveApproval(r) => assert_eq!(r.state, "approved"),
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    match send_request(
+        &socket,
+        &DaemonRequest::ResolveApproval(ResolveApprovalRequest {
+            approval_id: "approval-999999".to_string(),
+            decision: "approved".to_string(),
+        }),
+    ) {
+        DaemonResponse::Error { message } => assert!(message.contains("approval_decision_invalid")),
         other => panic!("unexpected response: {other:?}"),
     }
 
@@ -508,6 +552,74 @@ fn invalid_manifest_is_blocked_with_explicit_reason() {
             assert!(kinds.contains(&"failure_record"));
         }
         other => panic!("unexpected response: {other:?}"),
+    }
+
+    daemon.kill().expect("kill daemon");
+    let _ = daemon.wait();
+    let _ = fs::remove_file(&socket);
+    let _ = fs::remove_file(&store);
+}
+
+#[test]
+fn store_file_permissions_are_restricted() {
+    let socket = unique_path("sharo-store-perms", ".sock");
+    let store = unique_path("sharo-store-perms", ".json");
+
+    let mut daemon = Command::new(daemon_bin())
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let _ = send_request(
+        &socket,
+        &DaemonRequest::RegisterSession(RegisterSessionRequest {
+            session_label: "perms".to_string(),
+        }),
+    );
+    daemon.kill().expect("kill daemon");
+    let _ = daemon.wait();
+    let _ = fs::remove_file(&socket);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&store, fs::Permissions::from_mode(0o644))
+            .expect("set permissive perms");
+    }
+
+    let mut daemon = Command::new(daemon_bin())
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let _ = send_request(
+        &socket,
+        &DaemonRequest::RegisterSession(RegisterSessionRequest {
+            session_label: "perms-2".to_string(),
+        }),
+    );
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = fs::metadata(&store).expect("store metadata").permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
     }
 
     daemon.kill().expect("kill daemon");

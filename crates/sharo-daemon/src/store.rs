@@ -1,5 +1,10 @@
 use std::collections::BTreeMap;
 use std::fs;
+#[cfg(unix)]
+use std::fs::OpenOptions;
+use std::io::Write;
+#[cfg(unix)]
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -24,6 +29,7 @@ struct PersistedState {
     bindings: BTreeMap<String, Vec<BindingRecord>>,
     approvals: BTreeMap<String, ApprovalRecord>,
     resource_claims: BTreeMap<String, Vec<String>>,
+    idempotency_keys: BTreeMap<String, String>,
     next_session_id: u64,
     next_task_id: u64,
     next_approval_id: u64,
@@ -49,6 +55,7 @@ impl Default for PersistedState {
             bindings: BTreeMap::new(),
             approvals: BTreeMap::new(),
             resource_claims: BTreeMap::new(),
+            idempotency_keys: BTreeMap::new(),
             next_session_id: 1,
             next_task_id: 1,
             next_approval_id: 1,
@@ -85,8 +92,25 @@ impl Store {
     fn save(&self) -> Result<(), String> {
         let data = serde_json::to_string_pretty(&self.state)
             .map_err(|e| format!("store_serialize_failed error={}", e))?;
-        fs::write(&self.path, data)
-            .map_err(|e| format!("store_write_failed path={} error={}", self.path.display(), e))
+        #[cfg(unix)]
+        {
+            let mut file = OpenOptions::new()
+                .create(true)
+                .truncate(true)
+                .write(true)
+                .mode(0o600)
+                .open(&self.path)
+                .map_err(|e| format!("store_open_failed path={} error={}", self.path.display(), e))?;
+            file.write_all(data.as_bytes())
+                .map_err(|e| format!("store_write_failed path={} error={}", self.path.display(), e))?;
+            fs::set_permissions(&self.path, fs::Permissions::from_mode(0o600))
+                .map_err(|e| format!("store_chmod_failed path={} error={}", self.path.display(), e))
+        }
+        #[cfg(not(unix))]
+        {
+            fs::write(&self.path, data)
+                .map_err(|e| format!("store_write_failed path={} error={}", self.path.display(), e))
+        }
     }
 
     pub fn register_session(&mut self, session_label: &str) -> Result<String, String> {
@@ -108,7 +132,27 @@ impl Store {
     pub fn submit_task(&mut self, request: SubmitTaskOpRequest) -> Result<SubmitTaskOpResponse, String> {
         let session_id = request
             .session_id
+            .clone()
             .unwrap_or_else(|| "session-implicit".to_string());
+        let namespaced_idempotency_key = request
+            .idempotency_key
+            .as_deref()
+            .map(|key| format!("{}:{}", session_id, key));
+
+        if let Some(idempotency_key) = namespaced_idempotency_key.as_deref() {
+            if let Some(existing_task_id) = self.state.idempotency_keys.get(idempotency_key) {
+                let existing_task = self
+                    .state
+                    .tasks
+                    .get(existing_task_id)
+                    .ok_or_else(|| format!("idempotency_task_missing task_id={}", existing_task_id))?;
+                return Ok(SubmitTaskOpResponse {
+                    task_id: existing_task.task_id.clone(),
+                    task_state: existing_task.task_state.clone(),
+                    summary: "task replayed by idempotency key".to_string(),
+                });
+            }
+        }
 
         let task_id = format!("task-{:06}", self.state.next_task_id);
         self.state.next_task_id += 1;
@@ -290,6 +334,9 @@ impl Store {
         self.state.traces.insert(task_id.clone(), trace);
         self.state.artifacts.insert(task_id.clone(), artifacts);
         self.state.bindings.insert(task_id.clone(), task_bindings);
+        if let Some(idempotency_key) = namespaced_idempotency_key {
+            self.state.idempotency_keys.insert(idempotency_key, task_id.clone());
+        }
 
         let response_state = self
             .state
@@ -340,6 +387,13 @@ impl Store {
         approval_id: &str,
         decision: &str,
     ) -> Result<ResolveApprovalResponse, String> {
+        if decision != "approve" && decision != "deny" {
+            return Err(format!(
+                "approval_decision_invalid decision={} expected=approve|deny",
+                decision
+            ));
+        }
+
         let (task_id, final_state, response_approval_id) = {
             let approval = self
                 .state

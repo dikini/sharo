@@ -207,3 +207,7 @@ The format is based on Common Changelog:
 - Fixed approval-completion artifact lifecycle and trace sequencing consistency in daemon store:
   - add `final_result` artifact when approval resolution transitions task to `succeeded`
   - ensure appended trace events use monotonic sequence allocation
+- Hardened daemon idempotency and store safety:
+  - scope idempotency-key replay by session namespace to prevent cross-session task leakage
+  - validate approval decisions strictly (`approve|deny`) and reject malformed values
+  - enforce store file permissions to `0600` even for pre-existing store files
