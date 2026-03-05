@@ -236,7 +236,9 @@ for sf in "${strict_files[@]}"; do
   has_line "^\\*\\*Postconditions\\*\\*$" "$sf" || fail "$sf missing '**Postconditions**'"
   has_line "^\\*\\*Tests \\(must exist before implementation\\)\\*\\*$" "$sf" || fail "$sf missing strict tests heading"
   has_line "^Unit:$" "$sf" || fail "$sf missing 'Unit:' section"
-  has_line "^Property:$" "$sf" || fail "$sf missing 'Property:' section"
+  if ! has_line "^Invariant:$" "$sf" && ! has_line "^Property:$" "$sf"; then
+    fail "$sf missing 'Invariant:' section (legacy 'Property:' accepted)"
+  fi
   has_line "^Integration:$" "$sf" || fail "$sf missing 'Integration:' section"
 
   if [[ "$sf" == docs/plans/* || "$sf" == *"/plan.template.md" ]]; then

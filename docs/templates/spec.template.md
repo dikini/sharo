@@ -4,7 +4,8 @@
 > - Keep `Template-Profile: tdd-strict-v1`.
 > - Define tests before implementation work.
 > - Every task must include Preconditions, Invariants, and Postconditions.
-> - Use Unit, Property, and Integration tests.
+> - Use Unit, Invariant, and Integration checks.
+> - Use Property-based tests only when a generative framework is actually used.
 > - Run `scripts/doc-lint.sh` before commit.
 
 Updated: <YYYY-MM-DD>
@@ -47,11 +48,14 @@ Template-Profile: tdd-strict-v1
 Unit:
 - <test id or test name>
 
-Property:
+Invariant:
 - <test id or test name>
 
 Integration:
 - <test id or test name>
+
+Property-based (optional):
+- <test id or test name; only when using generative tooling such as proptest/quickcheck>
 
 ## Scenarios
 

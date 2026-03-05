@@ -199,3 +199,8 @@ The format is based on Common Changelog:
 - Updated `docs/specs/mvp.md` with explicit MVP readiness gate checklist and verification evidence link.
 - Marked `TASK-MVP-SLICE-005` as done in task registry.
 - Updated `Cargo.lock` to include the `serde` dependency used by `sharo-daemon` runtime store serialization.
+- Updated strict docs guidance terminology:
+  - `docs/templates/plan.template.md` and `docs/templates/spec.template.md` now prefer `Unit`/`Invariant`/`Integration`
+  - `Property-based` is explicitly optional and only for generative frameworks
+  - `scripts/doc-lint.sh` now accepts either `Invariant:` (preferred) or legacy `Property:`
+  - `AGENTS.md` strict-profile guidance aligned with the same terminology

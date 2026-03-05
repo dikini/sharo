@@ -62,7 +62,7 @@ Example:
   - Preconditions
   - Invariants
   - Postconditions
-  - Tests defined before implementation (`Unit`, `Property`, `Integration`)
+  - Tests/checks defined before implementation (`Unit`, `Invariant`, `Integration`; `Property-based` optional only when using generative frameworks)
   - Red/Green phases and completion evidence
 - At the start of any docs/spec/plan task, run `scripts/doc-lint.sh --changed --strict-new`.
 - Run `scripts/doc-lint.sh --changed --strict-new` before committing documentation changes.

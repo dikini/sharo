@@ -45,6 +45,7 @@ This keeps task state deterministic and reduces stale registry entries.
 - `TASK-MVP-SLICE-003`: Scenario C overlap and coordination durability.
 - `TASK-MVP-SLICE-004`: MVP protocol and CLI surface completion.
 - `TASK-MVP-SLICE-005`: verification matrix closure and hardening.
+- `TASK-DOC-TEMPLATE-TERMS-001`: strict template terminology alignment for invariant vs property-based tests.
 
 ## Completed Tooling Items
 
