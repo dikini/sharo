@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use crate::model_connector::{
     ConnectorError, ModelConnectorPort, ModelProfile, ModelTurnRequest,
 };
+use crate::reasoning_context::{Composer, ContextState, NoOpComposer};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReasoningInput {
@@ -35,10 +36,12 @@ impl<C: ModelConnectorPort> IdReasoningEngine<C> {
 
 impl<C: ModelConnectorPort> ReasoningEnginePort for IdReasoningEngine<C> {
     fn plan(&self, input: &ReasoningInput) -> Result<ReasoningOutcome, String> {
+        let context_state = ContextState::from_reasoning_input_defaults(input);
+        let prompt = NoOpComposer.compose(&context_state);
         let request = ModelTurnRequest {
             trace_id: input.trace_id.clone(),
             task_id: input.task_id.clone(),
-            prompt: input.goal.clone(),
+            prompt: prompt.prompt_text,
             metadata: BTreeMap::new(),
         };
         let response = self

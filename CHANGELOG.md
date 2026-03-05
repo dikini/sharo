@@ -265,3 +265,8 @@ The format is based on Common Changelog:
   - clarified adjustment execution as an ordered declarative `AdjustmentPlan` collection with explicit apply semantics and iteration traceability
   - includes a future-integration note that tool call results are treated as runtime context and must pass the same fit/filter policy pipeline
   - adds near-term concurrency/persistence design for per-key ordering plus single-writer actor sequencing without global hot locks
+- Added Task 1 reasoning-context core interfaces and loop skeleton in `sharo-core`:
+  - new `reasoning_context` module with `TurnScope`, `ContextState`, `AdjustmentPlan`, fit decisions, and bounded fit-loop runner
+  - default no-op composer/fitter/applier implementations for behavior-preserving integration
+  - `IdReasoningEngine` now composes prompt text through default context interfaces while preserving goal-only behavior
+  - added `reasoning_context_tests` covering scope shape, loop termination, non-progress detection, and default compatibility
