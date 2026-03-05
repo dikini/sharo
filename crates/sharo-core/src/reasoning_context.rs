@@ -192,17 +192,9 @@ impl PolicyConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct HeuristicPolicyFitter {
     config: PolicyConfig,
-}
-
-impl Default for HeuristicPolicyFitter {
-    fn default() -> Self {
-        Self {
-            config: PolicyConfig::default(),
-        }
-    }
 }
 
 impl HeuristicPolicyFitter {

@@ -292,3 +292,6 @@ The format is based on Common Changelog:
 - Added concrete heuristic policy fitting rules for the fixed-point loop:
   - policy fitter now emits deterministic adjustment plans for runtime redaction, memory-line bounds, and prompt-budget pressure
   - policy settings can be overridden via reasoning metadata (`policy.max_prompt_chars`, `policy.max_memory_lines`, `policy.forbidden_runtime_fields`)
+- Resolved post-task lint regressions in `sharo-core`:
+  - derive `Default` for `HeuristicPolicyFitter` to satisfy clippy strictness
+  - update `StubClient` tests to instantiate the unit struct directly
