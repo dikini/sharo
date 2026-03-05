@@ -270,3 +270,8 @@ The format is based on Common Changelog:
   - default no-op composer/fitter/applier implementations for behavior-preserving integration
   - `IdReasoningEngine` now composes prompt text through default context interfaces while preserving goal-only behavior
   - added `reasoning_context_tests` covering scope shape, loop termination, non-progress detection, and default compatibility
+- Added Task 2 resolver ports and resolved-context wiring:
+  - new `context_resolvers` module with uniform resolver contract, component provenance, resolver bundle, and local filtering hooks
+  - `ReasoningInput` now carries `session_id`, `turn_id`, and `metadata` for resolver scope and connector pass-through
+  - `IdReasoningEngine` now resolves system/persona/memory/runtime context before model call and returns `resolved_context` in outcome
+  - added `context_resolver_tests` for uniform resolver behavior, deterministic ordering, pre-compose filtering, and resolved-context integration

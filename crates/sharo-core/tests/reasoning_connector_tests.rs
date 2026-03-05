@@ -48,12 +48,16 @@ fn id_reasoning_engine_uses_connector_route_decision() {
         .plan(&ReasoningInput {
             trace_id: "trace-task-1".to_string(),
             task_id: "task-1".to_string(),
+            session_id: "session-1".to_string(),
+            turn_id: 1,
             goal: "read one context item".to_string(),
+            metadata: Default::default(),
         })
         .expect("reasoning should succeed");
 
     assert_eq!(outcome.route_decision_details, "local_mock");
     assert!(outcome.model_output_text.contains("deterministic-response"));
+    assert_eq!(outcome.resolved_context.system.provenance.source, "default-system");
 }
 
 #[test]

@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use sharo_core::kernel::{
     KernelApprovalInput, KernelApprovalResult, KernelPort, KernelSubmitInput, KernelSubmitResult,
 };
@@ -140,7 +142,10 @@ impl KernelPort for DaemonKernelRuntime<'_> {
         let reasoning = self.kernel.reasoning.plan(&ReasoningInput {
             trace_id: format!("trace-{}", task_id_hint),
             task_id: task_id_hint,
+            session_id: session_id_hint.clone(),
+            turn_id: 1,
             goal: input.request.goal.clone(),
+            metadata: BTreeMap::new(),
         })?;
 
         let response = self.store.submit_task_with_route(

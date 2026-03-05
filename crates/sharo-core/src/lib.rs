@@ -1,4 +1,5 @@
 pub mod client;
+pub mod context_resolvers;
 pub mod kernel;
 pub mod model_connector;
 pub mod model_connectors;

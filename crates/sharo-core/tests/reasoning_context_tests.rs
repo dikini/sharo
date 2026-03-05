@@ -84,7 +84,10 @@ fn id_reasoning_engine_compatibility_with_context_defaults() {
     let input = ReasoningInput {
         trace_id: "trace-task-1".to_string(),
         task_id: "task-1".to_string(),
+        session_id: "session-1".to_string(),
+        turn_id: 1,
         goal: "read one context item".to_string(),
+        metadata: Default::default(),
     };
 
     let state = ContextState::from_reasoning_input_defaults(&input);
