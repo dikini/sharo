@@ -4,7 +4,8 @@ use clap::{Parser, Subcommand, ValueEnum};
 use sharo_core::client::{RuntimeClient, StubClient};
 use sharo_core::protocol::{
     DaemonRequest, DaemonResponse, GetArtifactsRequest, GetTaskRequest, GetTraceRequest,
-    RegisterSessionRequest, SubmitTaskOpRequest, SubmitTaskRequest, TaskStatusRequest,
+    ListPendingApprovalsRequest, RegisterSessionRequest, ResolveApprovalRequest, SubmitTaskOpRequest,
+    SubmitTaskRequest, TaskStatusRequest,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
@@ -57,6 +58,10 @@ enum Command {
         #[command(subcommand)]
         command: ArtifactsCommand,
     },
+    Approval {
+        #[command(subcommand)]
+        command: ApprovalCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -94,6 +99,17 @@ enum ArtifactsCommand {
     List {
         #[arg(long)]
         task_id: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ApprovalCommand {
+    List,
+    Resolve {
+        #[arg(long)]
+        approval_id: String,
+        #[arg(long)]
+        decision: String,
     },
 }
 
@@ -230,10 +246,15 @@ async fn run_ipc(cli: &Cli) -> Result<(), String> {
             match send_ipc(&cli.socket_path, &request).await? {
                 DaemonResponse::GetTask(response) => {
                     println!(
-                        "task_id={} task_state={} current_step_summary={}",
+                        "task_id={} task_state={} current_step_summary={} blocking_reason={}",
                         response.task.task_id,
                         response.task.task_state,
-                        response.task.current_step_summary
+                        response.task.current_step_summary,
+                        response
+                            .task
+                            .blocking_reason
+                            .as_deref()
+                            .unwrap_or("-")
                     );
                     Ok(())
                 }
@@ -270,6 +291,52 @@ async fn run_ipc(cli: &Cli) -> Result<(), String> {
             match send_ipc(&cli.socket_path, &request).await? {
                 DaemonResponse::GetArtifacts(response) => {
                     println!("task_id={} artifacts={}", task_id, response.artifacts.len());
+                    Ok(())
+                }
+                DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
+                other => Err(format!("unexpected_response={:?}", other)),
+            }
+        }
+        Command::Approval {
+            command: ApprovalCommand::List,
+        } => {
+            let request = DaemonRequest::ListPendingApprovals(ListPendingApprovalsRequest {});
+            match send_ipc(&cli.socket_path, &request).await? {
+                DaemonResponse::ListPendingApprovals(response) => {
+                    println!("pending_approvals={}", response.approvals.len());
+                    for approval in response.approvals {
+                        println!(
+                            "approval_id={} task_id={} step_id={} state={} reason={}",
+                            approval.approval_id,
+                            approval.task_id,
+                            approval.step_id,
+                            approval.state,
+                            approval.reason
+                        );
+                    }
+                    Ok(())
+                }
+                DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
+                other => Err(format!("unexpected_response={:?}", other)),
+            }
+        }
+        Command::Approval {
+            command:
+                ApprovalCommand::Resolve {
+                    approval_id,
+                    decision,
+                },
+        } => {
+            let request = DaemonRequest::ResolveApproval(ResolveApprovalRequest {
+                approval_id: approval_id.clone(),
+                decision: decision.clone(),
+            });
+            match send_ipc(&cli.socket_path, &request).await? {
+                DaemonResponse::ResolveApproval(response) => {
+                    println!(
+                        "approval_id={} task_id={} state={} summary={}",
+                        response.approval_id, response.task_id, response.state, response.summary
+                    );
                     Ok(())
                 }
                 DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),

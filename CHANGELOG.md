@@ -122,6 +122,11 @@ The format is based on Common Changelog:
   - `crates/sharo-core/tests/runtime_types_tests.rs`
   - `crates/sharo-daemon/tests/scenario_a.rs`
   - `crates/sharo-cli/tests/scenario_a_cli.rs`
+- Added Scenario B policy and approval artifacts for MVP slice 002:
+  - `crates/sharo-core/src/policy.rs`
+  - `crates/sharo-core/tests/policy_tests.rs`
+  - `crates/sharo-daemon/tests/approval_flow.rs`
+  - `crates/sharo-cli/tests/approval_cli.rs`
 
 ### Changed
 
@@ -165,4 +170,8 @@ The format is based on Common Changelog:
   - `get-trace`
   - `get-artifacts`
 - Marked `TASK-MVP-SLICE-001` as done in task registry.
+- Updated daemon, store, and CLI protocol handling with Scenario B approval operations:
+  - `list-pending-approvals`
+  - `resolve-approval`
+- Marked `TASK-MVP-SLICE-002` as done in task registry.
 - Updated `Cargo.lock` to include the `serde` dependency used by `sharo-daemon` runtime store serialization.

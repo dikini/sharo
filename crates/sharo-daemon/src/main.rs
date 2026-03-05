@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand};
 use sharo_core::client::{RuntimeClient, StubClient};
 use sharo_core::protocol::{
     DaemonRequest, DaemonResponse, GetArtifactsResponse, GetTaskResponse, GetTraceResponse,
-    RegisterSessionResponse, SubmitTaskOpResponse, TaskStatusRequest,
+    ListPendingApprovalsResponse, RegisterSessionResponse, SubmitTaskOpResponse, TaskStatusRequest,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
@@ -74,6 +74,18 @@ fn handle_request(request: DaemonRequest, client: &impl RuntimeClient, store: &m
         DaemonRequest::GetArtifacts(payload) => DaemonResponse::GetArtifacts(GetArtifactsResponse {
             artifacts: store.get_artifacts(&payload.task_id),
         }),
+        DaemonRequest::ListPendingApprovals(_) => {
+            DaemonResponse::ListPendingApprovals(ListPendingApprovalsResponse {
+                approvals: store.list_pending_approvals(),
+            })
+        }
+        DaemonRequest::ResolveApproval(payload) => match store.resolve_approval(
+            &payload.approval_id,
+            &payload.decision,
+        ) {
+            Ok(response) => DaemonResponse::ResolveApproval(response),
+            Err(message) => DaemonResponse::Error { message },
+        },
     }
 }
 
