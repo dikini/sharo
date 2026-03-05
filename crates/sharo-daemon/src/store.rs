@@ -184,19 +184,16 @@ impl Store {
                     "approval-handle",
                     None,
                 );
-                trace.events.push(TraceEventSummary {
-                    event_sequence: (trace.events.len() as u64) + 1,
-                    event_kind: "binding_created".to_string(),
-                    details: format!(
-                        "binding_id={} visibility=approval_gated",
-                        binding.binding_id
-                    ),
-                });
-                trace.events.push(TraceEventSummary {
-                    event_sequence: (trace.events.len() as u64) + 1,
-                    event_kind: "binding_redacted_for_model".to_string(),
-                    details: format!("binding_id={}", binding.binding_id),
-                });
+                push_trace_event(
+                    &mut trace,
+                    "binding_created",
+                    &format!("binding_id={} visibility=approval_gated", binding.binding_id),
+                );
+                push_trace_event(
+                    &mut trace,
+                    "binding_redacted_for_model",
+                    &format!("binding_id={}", binding.binding_id),
+                );
                 task_bindings.push(binding);
             } else {
                 let binding = self.new_binding(
@@ -206,37 +203,29 @@ impl Store {
                     "engine-handle",
                     None,
                 );
-                trace.events.push(TraceEventSummary {
-                    event_sequence: (trace.events.len() as u64) + 1,
-                    event_kind: "binding_created".to_string(),
-                    details: format!("binding_id={} visibility=engine_only", binding.binding_id),
-                });
-                trace.events.push(TraceEventSummary {
-                    event_sequence: (trace.events.len() as u64) + 1,
-                    event_kind: "binding_redacted_for_model".to_string(),
-                    details: format!("binding_id={}", binding.binding_id),
-                });
+                push_trace_event(
+                    &mut trace,
+                    "binding_created",
+                    &format!("binding_id={} visibility=engine_only", binding.binding_id),
+                );
+                push_trace_event(
+                    &mut trace,
+                    "binding_redacted_for_model",
+                    &format!("binding_id={}", binding.binding_id),
+                );
                 task_bindings.push(binding);
             }
         }
 
         if invalid_manifest {
-            trace.events.push(TraceEventSummary {
-                event_sequence: 4,
-                event_kind: "manifest_validation_failed".to_string(),
-                details: "missing or invalid capability manifest".to_string(),
-            });
+            push_trace_event(
+                &mut trace,
+                "manifest_validation_failed",
+                "missing or invalid capability manifest",
+            );
         } else if restricted {
-            trace.events.push(TraceEventSummary {
-                event_sequence: 4,
-                event_kind: "policy_decision".to_string(),
-                details: "require_approval".to_string(),
-            });
-            trace.events.push(TraceEventSummary {
-                event_sequence: 5,
-                event_kind: "approval_requested".to_string(),
-                details: "pending".to_string(),
-            });
+            push_trace_event(&mut trace, "policy_decision", "require_approval");
+            push_trace_event(&mut trace, "approval_requested", "pending");
         }
 
         if let Some(resource_key) = resource {
@@ -248,15 +237,11 @@ impl Store {
                     "conflict_detected conflict_id={} resource={}",
                     conflict_id, resource_key
                 ));
-                trace.events.push(TraceEventSummary {
-                    event_sequence: (trace.events.len() as u64) + 1,
-                    event_kind: "conflict_detected".to_string(),
-                    details: format!(
-                        "resource={} related_tasks={}",
-                        resource_key,
-                        claim_entry.join(",")
-                    ),
-                });
+                push_trace_event(
+                    &mut trace,
+                    "conflict_detected",
+                    &format!("resource={} related_tasks={}", resource_key, claim_entry.join(",")),
+                );
             }
             claim_entry.push(task_id.clone());
         }
@@ -272,12 +257,14 @@ impl Store {
                 artifact_kind: "verification_result".to_string(),
                 summary: "postconditions satisfied".to_string(),
             },
-            ArtifactSummary {
+        ];
+        if task.task_state == "succeeded" {
+            artifacts.push(ArtifactSummary {
                 artifact_id: format!("artifact-{}-final", task_id),
                 artifact_kind: "final_result".to_string(),
                 summary: "task succeeded".to_string(),
-            },
-        ];
+            });
+        }
         if invalid_manifest {
             artifacts.push(ArtifactSummary {
                 artifact_id: format!("artifact-{}-manifest", task_id),
@@ -392,6 +379,18 @@ impl Store {
             }
         }
 
+        if final_state == "approved" {
+            let artifacts = self.state.artifacts.entry(task_id.clone()).or_default();
+            let has_final = artifacts.iter().any(|a| a.artifact_kind == "final_result");
+            if !has_final {
+                artifacts.push(ArtifactSummary {
+                    artifact_id: format!("artifact-{}-final", task_id),
+                    artifact_kind: "final_result".to_string(),
+                    summary: "task succeeded".to_string(),
+                });
+            }
+        }
+
         if let Some(trace) = self.state.traces.get_mut(&task_id) {
             trace.events.push(TraceEventSummary {
                 event_sequence: (trace.events.len() as u64) + 1,
@@ -414,6 +413,14 @@ fn parse_resource_claim(goal: &str) -> Option<String> {
     goal.split_whitespace()
         .find_map(|token| token.strip_prefix("resource:"))
         .map(|v| v.to_string())
+}
+
+fn push_trace_event(trace: &mut TraceSummary, event_kind: &str, details: &str) {
+    trace.events.push(TraceEventSummary {
+        event_sequence: (trace.events.len() as u64) + 1,
+        event_kind: event_kind.to_string(),
+        details: details.to_string(),
+    });
 }
 
 impl Store {

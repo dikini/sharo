@@ -45,6 +45,12 @@ fn send_request(socket: &PathBuf, request: &DaemonRequest) -> DaemonResponse {
     serde_json::from_str(line.trim()).expect("parse response")
 }
 
+fn assert_trace_monotonic(trace: &sharo_core::protocol::TraceSummary) {
+    for pair in trace.events.windows(2) {
+        assert!(pair[0].event_sequence < pair[1].event_sequence);
+    }
+}
+
 #[test]
 fn scenario_a_read_task_succeeds_with_verification_artifact() {
     let socket = unique_path("sharo-scenario-a", ".sock");
@@ -116,6 +122,7 @@ fn scenario_a_read_task_succeeds_with_verification_artifact() {
                     .iter()
                     .any(|e| e.event_kind == "binding_redacted_for_model")
             );
+            assert_trace_monotonic(&r.trace);
         }
         other => panic!("unexpected response: {other:?}"),
     }
@@ -244,6 +251,25 @@ fn scenario_b_pending_approval_survives_restart_and_can_be_resolved() {
                     .iter()
                     .any(|e| e.event_kind == "binding_redacted_for_model")
             );
+            assert_trace_monotonic(&r.trace);
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    match send_request(
+        &socket,
+        &DaemonRequest::GetArtifacts(GetArtifactsRequest {
+            task_id: task_id.clone(),
+        }),
+    ) {
+        DaemonResponse::GetArtifacts(r) => {
+            let kinds: Vec<&str> = r
+                .artifacts
+                .iter()
+                .map(|a: &ArtifactSummary| a.artifact_kind.as_str())
+                .collect();
+            assert!(!kinds.contains(&"final_result"));
+            assert!(kinds.contains(&"verification_result"));
         }
         other => panic!("unexpected response: {other:?}"),
     }
@@ -266,6 +292,23 @@ fn scenario_b_pending_approval_survives_restart_and_can_be_resolved() {
         }),
     ) {
         DaemonResponse::GetTask(r) => assert_eq!(r.task.task_state, "succeeded"),
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    match send_request(
+        &socket,
+        &DaemonRequest::GetArtifacts(GetArtifactsRequest {
+            task_id: task_id.clone(),
+        }),
+    ) {
+        DaemonResponse::GetArtifacts(r) => {
+            let kinds: Vec<&str> = r
+                .artifacts
+                .iter()
+                .map(|a: &ArtifactSummary| a.artifact_kind.as_str())
+                .collect();
+            assert!(kinds.contains(&"final_result"));
+        }
         other => panic!("unexpected response: {other:?}"),
     }
 
@@ -384,6 +427,7 @@ fn scenario_c_overlap_visibility_survives_restart() {
     ) {
         DaemonResponse::GetTrace(r) => {
             assert!(r.trace.events.iter().any(|e| e.event_kind == "conflict_detected"));
+            assert_trace_monotonic(&r.trace);
         }
         other => panic!("unexpected response: {other:?}"),
     }
@@ -444,6 +488,24 @@ fn invalid_manifest_is_blocked_with_explicit_reason() {
             assert_eq!(r.task.task_state, "blocked");
             let reason = r.task.blocking_reason.unwrap_or_default();
             assert!(reason.contains("manifest_invalid"));
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    match send_request(
+        &socket,
+        &DaemonRequest::GetArtifacts(GetArtifactsRequest {
+            task_id: task_id.clone(),
+        }),
+    ) {
+        DaemonResponse::GetArtifacts(r) => {
+            let kinds: Vec<&str> = r
+                .artifacts
+                .iter()
+                .map(|a: &ArtifactSummary| a.artifact_kind.as_str())
+                .collect();
+            assert!(!kinds.contains(&"final_result"));
+            assert!(kinds.contains(&"failure_record"));
         }
         other => panic!("unexpected response: {other:?}"),
     }

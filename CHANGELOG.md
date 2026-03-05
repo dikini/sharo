@@ -204,3 +204,6 @@ The format is based on Common Changelog:
 - Updated matrix evidence mapping for `binding_can_remain_opaque` to `implemented`.
 - Refined protocol/CLI contract split for approvals and coordination visibility to support topical commit history.
 - Finalized dedicated MVP matrix-map quality gate wiring across local hooks, fast-feedback, and CI.
+- Fixed approval-completion artifact lifecycle and trace sequencing consistency in daemon store:
+  - add `final_result` artifact when approval resolution transitions task to `succeeded`
+  - ensure appended trace events use monotonic sequence allocation
