@@ -162,6 +162,7 @@ fn cli_scenario_a_end_to_end() {
     assert!(get_task.status.success());
     let get_task_out = String::from_utf8_lossy(&get_task.stdout);
     assert!(get_task_out.contains("task_state=succeeded"));
+    assert!(get_task_out.contains("result_preview=deterministic-response"));
 
     let get_trace = Command::new(env!("CARGO_BIN_EXE_sharo"))
         .args([

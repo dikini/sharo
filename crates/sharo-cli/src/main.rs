@@ -246,7 +246,7 @@ async fn run_ipc(cli: &Cli) -> Result<(), String> {
             match send_ipc(&cli.socket_path, &request).await? {
                 DaemonResponse::GetTask(response) => {
                     println!(
-                        "task_id={} task_state={} current_step_summary={} blocking_reason={} coordination_summary={}",
+                        "task_id={} task_state={} current_step_summary={} blocking_reason={} coordination_summary={} result_preview={}",
                         response.task.task_id,
                         response.task.task_state,
                         response.task.current_step_summary,
@@ -257,6 +257,10 @@ async fn run_ipc(cli: &Cli) -> Result<(), String> {
                         response
                             .task
                             .coordination_summary
+                            .unwrap_or_else(|| "none".to_string()),
+                        response
+                            .task
+                            .result_preview
                             .unwrap_or_else(|| "none".to_string())
                     );
                     Ok(())

@@ -28,6 +28,9 @@ The format is based on Common Changelog:
 - Persisted a succeeded-task `result_preview` derived from canonical model output:
   - successful `task get` protocol records now carry answer preview content
   - approval-gated tasks keep preview empty until approval transitions them to `succeeded`
+- Surfaced task result previews in CLI output:
+  - `sharo task get` now prints `result_preview=<content|none>`
+  - protocol round-trip and CLI scenario coverage pin the preview field behavior
 - Hardened `scripts/openai-live-smoke.sh` failure and parsing behavior:
   - preserves `daemon_log` on readiness failure so diagnostics remain available
   - safely strips inline TOML comments before reading `model.auth_env_key`

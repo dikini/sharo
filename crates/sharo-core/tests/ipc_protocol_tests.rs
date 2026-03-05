@@ -1,7 +1,9 @@
 use sharo_core::protocol::{
-    ArtifactSummary, DaemonRequest, DaemonResponse, GetArtifactsResponse, GetTraceResponse,
+    ArtifactSummary, DaemonRequest, DaemonResponse, GetArtifactsResponse, GetTaskResponse,
+    GetTraceResponse,
     ResolveApprovalRequest, ResolveApprovalResponse, SubmitTaskRequest, SubmitTaskResponse,
-    TaskState, TaskStatusRequest, TaskStatusResponse, TraceEventSummary, TraceSummary,
+    TaskState, TaskStatusRequest, TaskStatusResponse, TaskSummary, TraceEventSummary,
+    TraceSummary,
 };
 
 #[test]
@@ -100,6 +102,26 @@ fn approval_envelope_roundtrip() {
 
 #[test]
 fn trace_and_artifact_envelopes_include_conformance_fields() {
+    let task_resp = DaemonResponse::GetTask(GetTaskResponse {
+        task: TaskSummary {
+            task_id: "task-1".to_string(),
+            session_id: "session-1".to_string(),
+            task_state: "succeeded".to_string(),
+            current_step_summary: "done".to_string(),
+            blocking_reason: None,
+            coordination_summary: None,
+            result_preview: Some("preview".to_string()),
+        },
+    });
+    let task_json = serde_json::to_string(&task_resp).expect("serialize task response");
+    let task_parsed: DaemonResponse = serde_json::from_str(&task_json).expect("deserialize task response");
+    match task_parsed {
+        DaemonResponse::GetTask(payload) => {
+            assert_eq!(payload.task.result_preview.as_deref(), Some("preview"));
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
     let trace_resp = DaemonResponse::GetTrace(GetTraceResponse {
         trace: TraceSummary {
             trace_id: "trace-1".to_string(),
