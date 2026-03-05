@@ -326,3 +326,7 @@ The format is based on Common Changelog:
 - Fixed connector pool lifecycle for request handling:
   - daemon kernel is now constructed once at startup and reused across requests
   - connector pool is process-shared instead of being recreated per submit/approval request
+- Added adaptive connector pool scaling controls and behavior:
+  - pool policy now includes `scale_up_queue_threshold`, `scale_down_idle_ms`, and `cooldown_ms`
+  - pool scales up under queue pressure and scales down on idle while respecting min/max worker bounds
+  - added daemon unit tests for scale-up, scale-down, and bounds invariants

@@ -8,7 +8,7 @@ use sharo_core::model_connectors::{OllamaConnector, OpenAiCompatibleConnector};
 use sharo_core::reasoning::{IdReasoningEngine, ReasoningEnginePort, ReasoningInput};
 
 use crate::config::{ConnectorPoolConfig, DaemonConfigFile};
-use crate::connector_pool::{BlockingPool, PoolError};
+use crate::connector_pool::{BlockingPool, PoolError, PoolPolicy};
 use crate::store::Store;
 
 #[derive(Debug, Clone)]
@@ -85,6 +85,23 @@ impl KernelRuntimeConfig {
         if config.connector_pool.queue_capacity == 0 {
             return Err("connector_pool_queue_capacity_invalid queue_capacity=0".to_string());
         }
+        if config.connector_pool.scale_up_queue_threshold == 0 {
+            return Err(
+                "connector_pool_scale_up_threshold_invalid scale_up_queue_threshold=0".to_string(),
+            );
+        }
+        if config.connector_pool.scale_up_queue_threshold > config.connector_pool.queue_capacity {
+            return Err(format!(
+                "connector_pool_scale_up_threshold_invalid scale_up_queue_threshold={} queue_capacity={}",
+                config.connector_pool.scale_up_queue_threshold, config.connector_pool.queue_capacity
+            ));
+        }
+        if config.connector_pool.scale_down_idle_ms == 0 {
+            return Err("connector_pool_idle_invalid scale_down_idle_ms=0".to_string());
+        }
+        if config.connector_pool.cooldown_ms == 0 {
+            return Err("connector_pool_cooldown_invalid cooldown_ms=0".to_string());
+        }
 
         Ok(Self {
             connector_kind,
@@ -156,10 +173,14 @@ pub struct DaemonKernel {
 
 impl DaemonKernel {
     pub fn new(config: &KernelRuntimeConfig) -> Self {
-        let pool = BlockingPool::new(
-            config.connector_pool.max_threads,
-            config.connector_pool.queue_capacity,
-        );
+        let pool = BlockingPool::new(PoolPolicy {
+            min_threads: config.connector_pool.min_threads,
+            max_threads: config.connector_pool.max_threads,
+            queue_capacity: config.connector_pool.queue_capacity,
+            scale_up_queue_threshold: config.connector_pool.scale_up_queue_threshold,
+            scale_down_idle_ms: config.connector_pool.scale_down_idle_ms,
+            cooldown_ms: config.connector_pool.cooldown_ms,
+        });
         let connector = match config.connector_kind {
             ConnectorKind::Deterministic => DaemonConnector::Deterministic,
             ConnectorKind::OpenAiCompatible => DaemonConnector::OpenAiCompatible { pool: pool.clone() },
@@ -262,9 +283,29 @@ mod tests {
                 min_threads: 4,
                 max_threads: 2,
                 queue_capacity: 64,
+                scale_up_queue_threshold: 4,
+                scale_down_idle_ms: 1000,
+                cooldown_ms: 100,
             },
         };
         let err = KernelRuntimeConfig::from_daemon_config(&cfg).expect_err("expected bounds error");
         assert!(err.contains("connector_pool_bounds_invalid"));
+    }
+
+    #[test]
+    fn reject_invalid_connector_pool_threshold() {
+        let cfg = DaemonConfigFile {
+            model: ModelRuntimeConfig::default(),
+            connector_pool: ConnectorPoolConfig {
+                min_threads: 1,
+                max_threads: 2,
+                queue_capacity: 4,
+                scale_up_queue_threshold: 8,
+                scale_down_idle_ms: 1000,
+                cooldown_ms: 100,
+            },
+        };
+        let err = KernelRuntimeConfig::from_daemon_config(&cfg).expect_err("expected threshold error");
+        assert!(err.contains("connector_pool_scale_up_threshold_invalid"));
     }
 }

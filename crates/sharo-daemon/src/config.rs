@@ -16,6 +16,9 @@ pub struct ConnectorPoolConfig {
     pub min_threads: usize,
     pub max_threads: usize,
     pub queue_capacity: usize,
+    pub scale_up_queue_threshold: usize,
+    pub scale_down_idle_ms: u64,
+    pub cooldown_ms: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -59,6 +62,9 @@ impl Default for ConnectorPoolConfig {
             min_threads: 2,
             max_threads: 4,
             queue_capacity: 64,
+            scale_up_queue_threshold: 4,
+            scale_down_idle_ms: 5000,
+            cooldown_ms: 250,
         }
     }
 }
@@ -121,11 +127,17 @@ profile_id = "openai-main"
 min_threads = 3
 max_threads = 7
 queue_capacity = 128
+scale_up_queue_threshold = 6
+scale_down_idle_ms = 2000
+cooldown_ms = 500
 "#;
         let parsed: DaemonConfigFile = toml::from_str(raw).expect("parse");
         assert_eq!(parsed.connector_pool.min_threads, 3);
         assert_eq!(parsed.connector_pool.max_threads, 7);
         assert_eq!(parsed.connector_pool.queue_capacity, 128);
+        assert_eq!(parsed.connector_pool.scale_up_queue_threshold, 6);
+        assert_eq!(parsed.connector_pool.scale_down_idle_ms, 2000);
+        assert_eq!(parsed.connector_pool.cooldown_ms, 500);
     }
 
     #[test]
@@ -134,6 +146,9 @@ queue_capacity = 128
         assert!(cfg.connector_pool.min_threads > 0);
         assert!(cfg.connector_pool.max_threads >= cfg.connector_pool.min_threads);
         assert!(cfg.connector_pool.queue_capacity > 0);
+        assert!(cfg.connector_pool.scale_up_queue_threshold > 0);
+        assert!(cfg.connector_pool.scale_down_idle_ms > 0);
+        assert!(cfg.connector_pool.cooldown_ms > 0);
     }
 
     #[test]
