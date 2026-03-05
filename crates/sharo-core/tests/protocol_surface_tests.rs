@@ -1,6 +1,6 @@
 use sharo_core::protocol::{
     ControlTaskRequest, ControlTaskResponse, DaemonInfoRequest, DaemonRequest, DaemonResponse,
-    SubmitTaskOpRequest, SubmitTaskOpResponse,
+    ListTasksRequest, SubmitTaskOpRequest, SubmitTaskOpResponse,
 };
 
 #[test]
@@ -10,6 +10,7 @@ fn protocol_contains_required_mvp_operations() {
         task_id: "task-1".to_string(),
         action: "cancel".to_string(),
     });
+    let _ = DaemonRequest::ListTasks(ListTasksRequest {});
 }
 
 #[test]
@@ -51,6 +52,10 @@ fn protocol_envelope_roundtrip_for_all_operations() {
     });
     let control_json = serde_json::to_string(&control).expect("serialize control");
     let _: DaemonRequest = serde_json::from_str(&control_json).expect("deserialize control");
+
+    let list = DaemonRequest::ListTasks(ListTasksRequest {});
+    let list_json = serde_json::to_string(&list).expect("serialize list");
+    let _: DaemonRequest = serde_json::from_str(&list_json).expect("deserialize list");
 
     let response = DaemonResponse::ControlTask(ControlTaskResponse {
         task_id: "task-1".to_string(),

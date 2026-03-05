@@ -95,6 +95,14 @@ pub struct GetTaskResponse {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListTasksRequest {}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListTasksResponse {
+    pub tasks: Vec<TaskSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GetTraceRequest {
     pub task_id: String,
 }
@@ -183,6 +191,7 @@ pub enum DaemonRequest {
     SubmitTask(SubmitTaskOpRequest),
     ControlTask(ControlTaskRequest),
     GetTask(GetTaskRequest),
+    ListTasks(ListTasksRequest),
     GetTrace(GetTraceRequest),
     GetArtifacts(GetArtifactsRequest),
     ListPendingApprovals(ListPendingApprovalsRequest),
@@ -198,6 +207,7 @@ pub enum DaemonResponse {
     SubmitTask(SubmitTaskOpResponse),
     ControlTask(ControlTaskResponse),
     GetTask(GetTaskResponse),
+    ListTasks(ListTasksResponse),
     GetTrace(GetTraceResponse),
     GetArtifacts(GetArtifactsResponse),
     ListPendingApprovals(ListPendingApprovalsResponse),

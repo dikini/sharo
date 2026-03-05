@@ -137,6 +137,11 @@ The format is based on Common Changelog:
   - `crates/sharo-core/tests/protocol_surface_tests.rs`
   - `crates/sharo-cli/tests/cli_surface_tests.rs`
   - `crates/sharo-daemon/tests/idempotency_and_control.rs`
+- Added verification/hardening artifacts for MVP slice 005:
+  - `docs/plans/2026-03-05-mvp-verification-matrix-map.md`
+  - `scripts/tests/test-mvp-matrix-map.bats`
+  - `scripts/tests/test-mvp-gate.bats`
+  - `crates/sharo-daemon/tests/recovery_invariants.rs`
 
 ### Changed
 
@@ -190,4 +195,7 @@ The format is based on Common Changelog:
 - Added CLI `daemon ping`, `task submit --idempotency-key`, and `task cancel` command surface.
 - Added daemon/store semantics for submit idempotency replay and durable task cancellation control.
 - Marked `TASK-MVP-SLICE-004` as done in task registry.
+- Added protocol/daemon/CLI `list-tasks` operation coverage for MVP control surface completeness.
+- Updated `docs/specs/mvp.md` with explicit MVP readiness gate checklist and verification evidence link.
+- Marked `TASK-MVP-SLICE-005` as done in task registry.
 - Updated `Cargo.lock` to include the `serde` dependency used by `sharo-daemon` runtime store serialization.

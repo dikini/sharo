@@ -427,6 +427,10 @@ impl Store {
         self.state.tasks.get(task_id).cloned()
     }
 
+    pub fn list_tasks(&self) -> Vec<TaskSummary> {
+        self.state.tasks.values().cloned().collect()
+    }
+
     pub fn get_trace(&self, task_id: &str) -> Option<TraceSummary> {
         self.state.traces.get(task_id).cloned()
     }

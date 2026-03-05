@@ -4,7 +4,8 @@ use clap::{Parser, Subcommand};
 use sharo_core::client::{RuntimeClient, StubClient};
 use sharo_core::protocol::{
     DaemonInfoResponse, DaemonRequest, DaemonResponse, GetArtifactsResponse, GetTaskResponse, GetTraceResponse,
-    ListPendingApprovalsResponse, RegisterSessionResponse, SubmitTaskOpResponse, TaskStatusRequest,
+    ListPendingApprovalsResponse, ListTasksResponse, RegisterSessionResponse, SubmitTaskOpResponse,
+    TaskStatusRequest,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
@@ -73,6 +74,9 @@ fn handle_request(request: DaemonRequest, client: &impl RuntimeClient, store: &m
                 message: format!("task_not_found task_id={}", payload.task_id),
             },
         },
+        DaemonRequest::ListTasks(_) => DaemonResponse::ListTasks(ListTasksResponse {
+            tasks: store.list_tasks(),
+        }),
         DaemonRequest::GetTrace(payload) => match store.get_trace(&payload.task_id) {
             Some(trace) => DaemonResponse::GetTrace(GetTraceResponse { trace }),
             None => DaemonResponse::Error {

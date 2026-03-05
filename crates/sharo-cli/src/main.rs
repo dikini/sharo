@@ -4,8 +4,8 @@ use clap::{Parser, Subcommand, ValueEnum};
 use sharo_core::client::{RuntimeClient, StubClient};
 use sharo_core::protocol::{
     ControlTaskRequest, DaemonInfoRequest, DaemonRequest, DaemonResponse, GetArtifactsRequest, GetTaskRequest,
-    GetTraceRequest, ListPendingApprovalsRequest, RegisterSessionRequest, ResolveApprovalRequest,
-    SubmitTaskOpRequest, SubmitTaskRequest, TaskStatusRequest,
+    GetTraceRequest, ListPendingApprovalsRequest, ListTasksRequest, RegisterSessionRequest,
+    ResolveApprovalRequest, SubmitTaskOpRequest, SubmitTaskRequest, TaskStatusRequest,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
@@ -90,6 +90,7 @@ enum TaskCommand {
         #[arg(long)]
         task_id: String,
     },
+    List,
     Cancel {
         #[arg(long)]
         task_id: String,
@@ -255,6 +256,25 @@ async fn run_ipc(cli: &Cli) -> Result<(), String> {
                         response.reason.as_deref().unwrap_or("-"),
                         response.summary
                     );
+                    Ok(())
+                }
+                DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
+                other => Err(format!("unexpected_response={:?}", other)),
+            }
+        }
+        Command::Task {
+            command: TaskCommand::List,
+        } => {
+            let request = DaemonRequest::ListTasks(ListTasksRequest {});
+            match send_ipc(&cli.socket_path, &request).await? {
+                DaemonResponse::ListTasks(response) => {
+                    println!("tasks={}", response.tasks.len());
+                    for task in response.tasks {
+                        println!(
+                            "task_id={} task_state={} current_step_summary={}",
+                            task.task_id, task.task_state, task.current_step_summary
+                        );
+                    }
                     Ok(())
                 }
                 DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),

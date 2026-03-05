@@ -1094,6 +1094,26 @@ Three scenarios are mandatory.
 | Binding can remain opaque | Reasoning / memory | A | unit + integration | binding handle present without raw value leakage |
 | Verification and observability artifacts are first-class | Harness / memory | A | integration | verification or health artifacts retrievable with provenance |
 
+## 21.1 MVP Readiness Gate (2026-03-05)
+
+Verification evidence map:
+- `docs/plans/2026-03-05-mvp-verification-matrix-map.md`
+
+Required gate checklist:
+- [x] `TASK-MVP-SLICE-000` done.
+- [x] `TASK-MVP-SLICE-001` done.
+- [x] `TASK-MVP-SLICE-002` done.
+- [x] `TASK-MVP-SLICE-003` done.
+- [x] `TASK-MVP-SLICE-004` done.
+- [x] `TASK-MVP-SLICE-005` done.
+- [x] Recovery and restart invariants have executable tests.
+- [x] Protocol and CLI required MVP operations are test-backed.
+- [x] No open required checklist items for MVP gate.
+
+Deferred (non-blocking for current MVP runtime boundary):
+- `capability-manifest-required`
+- `binding-remains-opaque`
+
 ## 22. Enrichment Roadmap
 
 Enrichment is risk-first and must be justified either by research or by observed MVP limitations.

@@ -186,6 +186,21 @@ fn cli_command_set_maps_to_protocol_operations() {
     let cancel_out = String::from_utf8_lossy(&cancel.stdout);
     assert!(cancel_out.contains("accepted=true"));
 
+    let list = Command::new(env!("CARGO_BIN_EXE_sharo"))
+        .args([
+            "--transport",
+            "ipc",
+            "--socket-path",
+            socket.to_str().expect("socket"),
+            "task",
+            "list",
+        ])
+        .output()
+        .expect("task list");
+    assert!(list.status.success());
+    let list_out = String::from_utf8_lossy(&list.stdout);
+    assert!(list_out.contains("tasks="));
+
     daemon.kill().expect("kill daemon");
     let _ = daemon.wait();
     let _ = std::fs::remove_file(socket);
