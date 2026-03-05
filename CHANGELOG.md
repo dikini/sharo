@@ -323,3 +323,6 @@ The format is based on Common Changelog:
   - new TOML section `[connector_pool]` with `min_threads`, `max_threads`, `queue_capacity`
   - kernel runtime config now validates pool bounds and queue capacity
   - pool construction now uses configured policy values
+- Fixed connector pool lifecycle for request handling:
+  - daemon kernel is now constructed once at startup and reused across requests
+  - connector pool is process-shared instead of being recreated per submit/approval request

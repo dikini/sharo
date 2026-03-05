@@ -173,14 +173,14 @@ impl DaemonKernel {
 
 pub struct DaemonKernelRuntime<'a> {
     store: &'a mut Store,
-    kernel: DaemonKernel,
+    kernel: &'a DaemonKernel,
 }
 
 impl<'a> DaemonKernelRuntime<'a> {
-    pub fn new(store: &'a mut Store, config: &KernelRuntimeConfig) -> Self {
+    pub fn new(store: &'a mut Store, kernel: &'a DaemonKernel) -> Self {
         Self {
             store,
-            kernel: DaemonKernel::new(config),
+            kernel,
         }
     }
 }

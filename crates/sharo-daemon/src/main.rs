@@ -17,7 +17,7 @@ mod config;
 mod connector_pool;
 mod kernel;
 use config::{default_daemon_config_path, load_daemon_config};
-use kernel::{DaemonKernelRuntime, KernelRuntimeConfig};
+use kernel::{DaemonKernel, DaemonKernelRuntime, KernelRuntimeConfig};
 use store::Store;
 
 const DEFAULT_SOCKET_PATH: &str = "/tmp/sharo-daemon.sock";
@@ -52,7 +52,7 @@ fn handle_request(
     request: DaemonRequest,
     client: &impl RuntimeClient,
     store: &mut Store,
-    kernel_config: &KernelRuntimeConfig,
+    daemon_kernel: &DaemonKernel,
 ) -> DaemonResponse {
     match request {
         DaemonRequest::Submit(submit) => DaemonResponse::Submit(client.submit(&submit)),
@@ -64,7 +64,7 @@ fn handle_request(
             Err(message) => DaemonResponse::Error { message },
         },
         DaemonRequest::SubmitTask(payload) => {
-            let mut kernel = DaemonKernelRuntime::new(store, kernel_config);
+            let mut kernel = DaemonKernelRuntime::new(store, daemon_kernel);
             match kernel.submit_task(KernelSubmitInput { request: payload }) {
                 Ok(response) => DaemonResponse::SubmitTask(response.response),
                 Err(message) => DaemonResponse::Error { message },
@@ -89,7 +89,7 @@ fn handle_request(
             DaemonResponse::ListPendingApprovals(store.list_pending_approvals())
         }
         DaemonRequest::ResolveApproval(payload) => {
-            let mut kernel = DaemonKernelRuntime::new(store, kernel_config);
+            let mut kernel = DaemonKernelRuntime::new(store, daemon_kernel);
             match kernel.resolve_approval(KernelApprovalInput {
                 approval_id: payload.approval_id,
                 decision: payload.decision,
@@ -105,7 +105,7 @@ async fn handle_stream(
     stream: UnixStream,
     client: &impl RuntimeClient,
     store: &mut Store,
-    kernel_config: &KernelRuntimeConfig,
+    daemon_kernel: &DaemonKernel,
 ) {
     let (mut reader, mut writer) = stream.into_split();
     let mut bytes = Vec::new();
@@ -173,7 +173,7 @@ async fn handle_stream(
     };
 
     let response = match serde_json::from_str::<DaemonRequest>(line.trim()) {
-        Ok(request) => handle_request(request, client, store, kernel_config),
+        Ok(request) => handle_request(request, client, store, daemon_kernel),
         Err(error) => DaemonResponse::Error {
             message: format!("invalid request: {error}"),
         },
@@ -250,6 +250,7 @@ async fn main() {
                     std::process::exit(1);
                 }
             };
+            let daemon_kernel = DaemonKernel::new(&kernel_config);
 
             let client = StubClient;
 
@@ -264,7 +265,7 @@ async fn main() {
                             }
                         };
 
-                        handle_stream(stream, &client, &mut store, &kernel_config).await;
+                        handle_stream(stream, &client, &mut store, &daemon_kernel).await;
 
                         if serve_once {
                             break;
