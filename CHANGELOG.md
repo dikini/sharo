@@ -165,3 +165,4 @@ The format is based on Common Changelog:
   - `get-trace`
   - `get-artifacts`
 - Marked `TASK-MVP-SLICE-001` as done in task registry.
+- Updated `Cargo.lock` to include the `serde` dependency used by `sharo-daemon` runtime store serialization.

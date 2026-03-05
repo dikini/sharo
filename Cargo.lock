@@ -251,6 +251,7 @@ name = "sharo-daemon"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "serde",
  "serde_json",
  "sharo-core",
  "tokio",
