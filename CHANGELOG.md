@@ -301,3 +301,12 @@ The format is based on Common Changelog:
   - `s4_non_convergent_fit_loop_fails_with_terminal_reason`
 - Refined reasoning fit failure semantics:
   - over-budget prompts with no available adjustments now fail via `context_policy_fit_failed` instead of incorrectly reporting `fitted`
+- Added connector execution design and rollout artifacts for bounded worker pools and future adaptive scaling:
+  - `docs/specs/connector-blocking-execution.md`
+  - `docs/plans/2026-03-05-connector-blocking-pool-scaling-plan.md`
+- Updated task registry with connector pool design/plan and staged implementation entries:
+  - `TASK-CONNECTOR-POOL-SPEC-001`
+  - `TASK-CONNECTOR-POOL-PLAN-001`
+  - `TASK-CONNECTOR-POOL-IMPL-001`
+  - `TASK-CONNECTOR-POOL-IMPL-002`
+  - `TASK-CONNECTOR-POOL-IMPL-003`
