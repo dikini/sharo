@@ -14,7 +14,7 @@ use crate::config::{
     ConnectorPoolConfig, DaemonConfigFile, ReasoningContextConfig, ReasoningPolicyConfig,
 };
 use crate::connector_pool::{BlockingPool, PoolError, PoolPolicy};
-use crate::store::Store;
+use crate::store::{Store, SubmitReplay};
 
 #[derive(Debug, Clone)]
 pub enum ConnectorKind {
@@ -247,7 +247,10 @@ impl KernelPort for DaemonKernelRuntime<'_> {
             .store
             .replay_by_idempotency(&session_id_hint, input.request.idempotency_key.as_deref())?
         {
-            return Ok(KernelSubmitResult { response: replay });
+            return match replay {
+                SubmitReplay::Task(response) => Ok(KernelSubmitResult { response }),
+                SubmitReplay::Error(message) => Err(message),
+            };
         }
         let turn_id_hint = self.store.next_turn_id_for_session(&session_id_hint);
         let mut metadata = BTreeMap::new();
@@ -280,7 +283,14 @@ impl KernelPort for DaemonKernelRuntime<'_> {
                 return Ok(KernelSubmitResult { response });
             }
             Err(ReasoningError::ConnectorFailure { message })
-            | Err(ReasoningError::ResolveFailure { message }) => return Err(message),
+            | Err(ReasoningError::ResolveFailure { message }) => {
+                self.store.record_submission_failure(
+                    &session_id_hint,
+                    input.request.idempotency_key.as_deref(),
+                    &message,
+                )?;
+                return Err(message);
+            }
         };
 
         let response = self.store.submit_task_with_route(

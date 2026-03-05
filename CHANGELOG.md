@@ -37,6 +37,9 @@ The format is based on Common Changelog:
 - Refined reasoning failure classification and persisted fit-loop history:
   - only fit-loop failures are persisted as failed tasks; connector/provider failures still return direct errors
   - preserved actual fit-loop adjustment history in failed-task trace/artifact records instead of collapsing to zero-iteration failure
+- Restored idempotent replay for submit-time connector and resolver failures:
+  - persisted request-scoped submission errors separately from task records
+  - replayed the original error for duplicate `session_id` + `idempotency_key` submissions without re-running reasoning
 - Added planning docs:
   - `docs/plans/2026-03-04-design-note-alignment-plan.md`
   - `docs/plans/2026-03-04-research-note-alignment-plan.md`

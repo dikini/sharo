@@ -26,6 +26,7 @@ struct SessionRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 struct PersistedState {
     sessions: BTreeMap<String, SessionRecord>,
     tasks: BTreeMap<String, TaskSummary>,
@@ -35,6 +36,7 @@ struct PersistedState {
     approvals: BTreeMap<String, ApprovalRecord>,
     resource_claims: BTreeMap<String, Vec<String>>,
     idempotency_keys: BTreeMap<String, String>,
+    idempotency_failures: BTreeMap<String, String>,
     next_session_id: u64,
     next_task_id: u64,
     next_approval_id: u64,
@@ -61,6 +63,7 @@ impl Default for PersistedState {
             approvals: BTreeMap::new(),
             resource_claims: BTreeMap::new(),
             idempotency_keys: BTreeMap::new(),
+            idempotency_failures: BTreeMap::new(),
             next_session_id: 1,
             next_task_id: 1,
             next_approval_id: 1,
@@ -73,6 +76,11 @@ impl Default for PersistedState {
 pub struct Store {
     path: PathBuf,
     state: PersistedState,
+}
+
+pub enum SubmitReplay {
+    Task(SubmitTaskOpResponse),
+    Error(String),
 }
 
 impl Store {
@@ -93,11 +101,14 @@ impl Store {
         &self,
         session_id: &str,
         idempotency_key: Option<&str>,
-    ) -> Result<Option<SubmitTaskOpResponse>, String> {
+    ) -> Result<Option<SubmitReplay>, String> {
         let Some(key) = idempotency_key else {
             return Ok(None);
         };
         let namespaced = format!("{}:{}", session_id, key);
+        if let Some(message) = self.state.idempotency_failures.get(&namespaced) {
+            return Ok(Some(SubmitReplay::Error(message.clone())));
+        }
         let Some(existing_task_id) = self.state.idempotency_keys.get(&namespaced) else {
             return Ok(None);
         };
@@ -106,11 +117,27 @@ impl Store {
             .tasks
             .get(existing_task_id)
             .ok_or_else(|| format!("idempotency_task_missing task_id={}", existing_task_id))?;
-        Ok(Some(SubmitTaskOpResponse {
+        Ok(Some(SubmitReplay::Task(SubmitTaskOpResponse {
             task_id: existing_task.task_id.clone(),
             task_state: existing_task.task_state.clone(),
             summary: "task replayed by idempotency key".to_string(),
-        }))
+        })))
+    }
+
+    pub fn record_submission_failure(
+        &mut self,
+        session_id: &str,
+        idempotency_key: Option<&str>,
+        message: &str,
+    ) -> Result<(), String> {
+        let Some(key) = idempotency_key else {
+            return Ok(());
+        };
+        let namespaced = format!("{}:{}", session_id, key);
+        self.state
+            .idempotency_failures
+            .insert(namespaced, message.to_string());
+        self.save()
     }
 
     pub fn open(path: impl AsRef<Path>) -> Result<Self, String> {
@@ -209,7 +236,12 @@ impl Store {
             .as_deref()
             .map(|key| format!("{}:{}", session_id, key));
         if let Some(replay) = self.replay_by_idempotency(&session_id, request.idempotency_key.as_deref())? {
-            return Ok(replay);
+            return match replay {
+                SubmitReplay::Task(response) => Ok(response),
+                SubmitReplay::Error(message) => Err(format!(
+                    "idempotency_failure_replay_unexpected message={message}"
+                )),
+            };
         }
 
         let task_id = format!("task-{:06}", self.state.next_task_id);
@@ -501,7 +533,12 @@ impl Store {
             .as_deref()
             .map(|key| format!("{}:{}", session_id, key));
         if let Some(replay) = self.replay_by_idempotency(&session_id, request.idempotency_key.as_deref())? {
-            return Ok(replay);
+            return match replay {
+                SubmitReplay::Task(response) => Ok(response),
+                SubmitReplay::Error(message) => Err(format!(
+                    "idempotency_failure_replay_unexpected message={message}"
+                )),
+            };
         }
 
         let task_id = format!("task-{:06}", self.state.next_task_id);
@@ -692,6 +729,48 @@ impl Store {
             task_id,
             state: final_state,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Store, SubmitReplay};
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_store_path(prefix: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        std::env::temp_dir().join(format!("{prefix}-{nanos}.json"))
+    }
+
+    #[test]
+    fn replay_by_idempotency_returns_persisted_submission_error() {
+        let path = unique_store_path("sharo-store-idempotency-failure");
+        let mut store = Store::open(&path).expect("open store");
+        store
+            .record_submission_failure(
+                "session-000001",
+                Some("idem-1"),
+                "missing auth env var SHARO_TEST_MISSING_OPENAI_KEY",
+            )
+            .expect("record failure");
+
+        let replay = store
+            .replay_by_idempotency("session-000001", Some("idem-1"))
+            .expect("replay")
+            .expect("replay result");
+        match replay {
+            SubmitReplay::Error(message) => {
+                assert!(message.contains("missing auth env var SHARO_TEST_MISSING_OPENAI_KEY"));
+            }
+            SubmitReplay::Task(response) => panic!("unexpected task replay: {response:?}"),
+        }
+
+        let _ = fs::remove_file(path);
     }
 }
 

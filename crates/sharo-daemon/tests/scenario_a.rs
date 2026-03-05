@@ -724,7 +724,7 @@ fn scenario_s3_provider_auth_failure_returns_error_without_persisted_task() {
         other => panic!("unexpected response: {other:?}"),
     };
 
-    match send_request(
+    let first_error = match send_request(
         &socket,
         &DaemonRequest::SubmitTask(SubmitTaskOpRequest {
             session_id: Some(session_id),
@@ -734,9 +734,23 @@ fn scenario_s3_provider_auth_failure_returns_error_without_persisted_task() {
     ) {
         DaemonResponse::Error { message } => {
             assert!(message.contains("missing auth env var SHARO_TEST_MISSING_OPENAI_KEY"));
+            message
         }
         other => panic!("unexpected response: {other:?}"),
-    }
+    };
+
+    let replayed_error = match send_request(
+        &socket,
+        &DaemonRequest::SubmitTask(SubmitTaskOpRequest {
+            session_id: Some("session-000001".to_string()),
+            goal: "read one context item".to_string(),
+            idempotency_key: Some("idem-s3".to_string()),
+        }),
+    ) {
+        DaemonResponse::Error { message } => message,
+        other => panic!("unexpected response: {other:?}"),
+    };
+    assert_eq!(replayed_error, first_error);
 
     match send_request(
         &socket,
