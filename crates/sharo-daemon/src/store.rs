@@ -4,9 +4,10 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use sharo_core::protocol::{
-    ArtifactSummary, SubmitTaskOpRequest, SubmitTaskOpResponse, TaskSummary, TraceEventSummary,
-    TraceSummary,
+    ApprovalSummary, ArtifactSummary, ListPendingApprovalsResponse, ResolveApprovalResponse,
+    SubmitTaskOpRequest, SubmitTaskOpResponse, TaskSummary, TraceEventSummary, TraceSummary,
 };
+use sharo_core::runtime_types::{BindingRecord, BindingVisibility};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct SessionRecord {
@@ -20,8 +21,22 @@ struct PersistedState {
     tasks: BTreeMap<String, TaskSummary>,
     traces: BTreeMap<String, TraceSummary>,
     artifacts: BTreeMap<String, Vec<ArtifactSummary>>,
+    bindings: BTreeMap<String, Vec<BindingRecord>>,
+    approvals: BTreeMap<String, ApprovalRecord>,
+    resource_claims: BTreeMap<String, Vec<String>>,
     next_session_id: u64,
     next_task_id: u64,
+    next_approval_id: u64,
+    next_conflict_id: u64,
+    next_binding_id: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ApprovalRecord {
+    approval_id: String,
+    task_id: String,
+    state: String,
+    reason: String,
 }
 
 impl Default for PersistedState {
@@ -31,8 +46,14 @@ impl Default for PersistedState {
             tasks: BTreeMap::new(),
             traces: BTreeMap::new(),
             artifacts: BTreeMap::new(),
+            bindings: BTreeMap::new(),
+            approvals: BTreeMap::new(),
+            resource_claims: BTreeMap::new(),
             next_session_id: 1,
             next_task_id: 1,
+            next_approval_id: 1,
+            next_conflict_id: 1,
+            next_binding_id: 1,
         }
     }
 }
@@ -92,15 +113,46 @@ impl Store {
         let task_id = format!("task-{:06}", self.state.next_task_id);
         self.state.next_task_id += 1;
 
-        let task = TaskSummary {
+        let invalid_manifest = request.goal.contains("invalid_manifest:");
+        let restricted = request.goal.contains("restricted:");
+        let resource = parse_resource_claim(&request.goal);
+        let step_id = format!("step-{}", task_id);
+
+        let mut task = TaskSummary {
             task_id: task_id.clone(),
             session_id: session_id.clone(),
-            task_state: "succeeded".to_string(),
+            task_state: if invalid_manifest {
+                "blocked".to_string()
+            } else if restricted {
+                "awaiting_approval".to_string()
+            } else {
+                "succeeded".to_string()
+            },
             current_step_summary: "read one context item".to_string(),
             blocking_reason: None,
+            coordination_summary: None,
         };
 
-        let trace = TraceSummary {
+        if invalid_manifest {
+            task.current_step_summary = "capability manifest validation failed".to_string();
+            task.blocking_reason = Some("manifest_invalid".to_string());
+        } else if restricted {
+            let approval_id = format!("approval-{:06}", self.state.next_approval_id);
+            self.state.next_approval_id += 1;
+            self.state.approvals.insert(
+                approval_id.clone(),
+                ApprovalRecord {
+                    approval_id: approval_id.clone(),
+                    task_id: task_id.clone(),
+                    state: "pending".to_string(),
+                    reason: "policy require_approval".to_string(),
+                },
+            );
+            task.current_step_summary = "awaiting approval for restricted capability".to_string();
+            task.blocking_reason = Some(format!("approval_required approval_id={approval_id}"));
+        }
+
+        let mut trace = TraceSummary {
             trace_id: format!("trace-{}", task_id),
             task_id: task_id.clone(),
             events: vec![
@@ -122,7 +174,94 @@ impl Store {
             ],
         };
 
-        let artifacts = vec![
+        let mut task_bindings: Vec<BindingRecord> = Vec::new();
+        if !invalid_manifest {
+            if restricted {
+                let binding = self.new_binding(
+                    &task_id,
+                    &step_id,
+                    BindingVisibility::ApprovalGated,
+                    "approval-handle",
+                    None,
+                );
+                trace.events.push(TraceEventSummary {
+                    event_sequence: (trace.events.len() as u64) + 1,
+                    event_kind: "binding_created".to_string(),
+                    details: format!(
+                        "binding_id={} visibility=approval_gated",
+                        binding.binding_id
+                    ),
+                });
+                trace.events.push(TraceEventSummary {
+                    event_sequence: (trace.events.len() as u64) + 1,
+                    event_kind: "binding_redacted_for_model".to_string(),
+                    details: format!("binding_id={}", binding.binding_id),
+                });
+                task_bindings.push(binding);
+            } else {
+                let binding = self.new_binding(
+                    &task_id,
+                    &step_id,
+                    BindingVisibility::EngineOnly,
+                    "engine-handle",
+                    None,
+                );
+                trace.events.push(TraceEventSummary {
+                    event_sequence: (trace.events.len() as u64) + 1,
+                    event_kind: "binding_created".to_string(),
+                    details: format!("binding_id={} visibility=engine_only", binding.binding_id),
+                });
+                trace.events.push(TraceEventSummary {
+                    event_sequence: (trace.events.len() as u64) + 1,
+                    event_kind: "binding_redacted_for_model".to_string(),
+                    details: format!("binding_id={}", binding.binding_id),
+                });
+                task_bindings.push(binding);
+            }
+        }
+
+        if invalid_manifest {
+            trace.events.push(TraceEventSummary {
+                event_sequence: 4,
+                event_kind: "manifest_validation_failed".to_string(),
+                details: "missing or invalid capability manifest".to_string(),
+            });
+        } else if restricted {
+            trace.events.push(TraceEventSummary {
+                event_sequence: 4,
+                event_kind: "policy_decision".to_string(),
+                details: "require_approval".to_string(),
+            });
+            trace.events.push(TraceEventSummary {
+                event_sequence: 5,
+                event_kind: "approval_requested".to_string(),
+                details: "pending".to_string(),
+            });
+        }
+
+        if let Some(resource_key) = resource {
+            let claim_entry = self.state.resource_claims.entry(resource_key.clone()).or_default();
+            if !claim_entry.is_empty() {
+                let conflict_id = format!("conflict-{:06}", self.state.next_conflict_id);
+                self.state.next_conflict_id += 1;
+                task.coordination_summary = Some(format!(
+                    "conflict_detected conflict_id={} resource={}",
+                    conflict_id, resource_key
+                ));
+                trace.events.push(TraceEventSummary {
+                    event_sequence: (trace.events.len() as u64) + 1,
+                    event_kind: "conflict_detected".to_string(),
+                    details: format!(
+                        "resource={} related_tasks={}",
+                        resource_key,
+                        claim_entry.join(",")
+                    ),
+                });
+            }
+            claim_entry.push(task_id.clone());
+        }
+
+        let mut artifacts = vec![
             ArtifactSummary {
                 artifact_id: format!("artifact-{}-route", task_id),
                 artifact_kind: "route_decision".to_string(),
@@ -139,17 +278,44 @@ impl Store {
                 summary: "task succeeded".to_string(),
             },
         ];
+        if invalid_manifest {
+            artifacts.push(ArtifactSummary {
+                artifact_id: format!("artifact-{}-manifest", task_id),
+                artifact_kind: "failure_record".to_string(),
+                summary: "capability manifest invalid".to_string(),
+            });
+        } else if restricted {
+            artifacts.push(ArtifactSummary {
+                artifact_id: format!("artifact-{}-approval", task_id),
+                artifact_kind: "verification_result".to_string(),
+                summary: "restricted step is approval gated".to_string(),
+            });
+        }
+        if task.coordination_summary.is_some() {
+            artifacts.push(ArtifactSummary {
+                artifact_id: format!("artifact-{}-coordination", task_id),
+                artifact_kind: "verification_result".to_string(),
+                summary: "coordination summary recorded".to_string(),
+            });
+        }
 
         self.state.tasks.insert(task_id.clone(), task);
         self.state.traces.insert(task_id.clone(), trace);
         self.state.artifacts.insert(task_id.clone(), artifacts);
+        self.state.bindings.insert(task_id.clone(), task_bindings);
 
+        let response_state = self
+            .state
+            .tasks
+            .get(&task_id)
+            .map(|t| t.task_state.clone())
+            .unwrap_or_else(|| "succeeded".to_string());
         self.save()?;
 
         Ok(SubmitTaskOpResponse {
             task_id,
-            task_state: "succeeded".to_string(),
-            summary: "read path executed and verified".to_string(),
+            task_state: response_state,
+            summary: "task accepted".to_string(),
         })
     }
 
@@ -163,5 +329,113 @@ impl Store {
 
     pub fn get_artifacts(&self, task_id: &str) -> Vec<ArtifactSummary> {
         self.state.artifacts.get(task_id).cloned().unwrap_or_default()
+    }
+
+    pub fn list_pending_approvals(&self) -> ListPendingApprovalsResponse {
+        ListPendingApprovalsResponse {
+            approvals: self
+                .state
+                .approvals
+                .values()
+                .filter(|a| a.state == "pending")
+                .map(|a| ApprovalSummary {
+                    approval_id: a.approval_id.clone(),
+                    task_id: a.task_id.clone(),
+                    state: a.state.clone(),
+                    reason: a.reason.clone(),
+                })
+                .collect(),
+        }
+    }
+
+    pub fn resolve_approval(
+        &mut self,
+        approval_id: &str,
+        decision: &str,
+    ) -> Result<ResolveApprovalResponse, String> {
+        let (task_id, final_state, response_approval_id) = {
+            let approval = self
+                .state
+                .approvals
+                .get_mut(approval_id)
+                .ok_or_else(|| format!("approval_not_found approval_id={approval_id}"))?;
+
+            if approval.state != "pending" {
+                return Ok(ResolveApprovalResponse {
+                    approval_id: approval.approval_id.clone(),
+                    task_id: approval.task_id.clone(),
+                    state: approval.state.clone(),
+                });
+            }
+
+            approval.state = if decision == "approve" {
+                "approved".to_string()
+            } else {
+                "denied".to_string()
+            };
+            (
+                approval.task_id.clone(),
+                approval.state.clone(),
+                approval.approval_id.clone(),
+            )
+        };
+
+        if let Some(task) = self.state.tasks.get_mut(&task_id) {
+            if final_state == "approved" {
+                task.task_state = "succeeded".to_string();
+                task.current_step_summary = "restricted step approved and completed".to_string();
+                task.blocking_reason = None;
+            } else {
+                task.task_state = "blocked".to_string();
+                task.current_step_summary = "restricted step denied".to_string();
+                task.blocking_reason = Some("approval_denied".to_string());
+            }
+        }
+
+        if let Some(trace) = self.state.traces.get_mut(&task_id) {
+            trace.events.push(TraceEventSummary {
+                event_sequence: (trace.events.len() as u64) + 1,
+                event_kind: "approval_resolved".to_string(),
+                details: final_state.clone(),
+            });
+        }
+
+        self.save()?;
+
+        Ok(ResolveApprovalResponse {
+            approval_id: response_approval_id,
+            task_id,
+            state: final_state,
+        })
+    }
+}
+
+fn parse_resource_claim(goal: &str) -> Option<String> {
+    goal.split_whitespace()
+        .find_map(|token| token.strip_prefix("resource:"))
+        .map(|v| v.to_string())
+}
+
+impl Store {
+    fn new_binding(
+        &mut self,
+        task_id: &str,
+        step_id: &str,
+        visibility: BindingVisibility,
+        handle: &str,
+        raw_value_model_text: Option<String>,
+    ) -> BindingRecord {
+        let binding_id = format!("binding-{:06}", self.state.next_binding_id);
+        self.state.next_binding_id += 1;
+        let exposed = raw_value_model_text.is_some();
+        BindingRecord {
+            binding_id,
+            task_id: task_id.to_string(),
+            step_id: step_id.to_string(),
+            visibility,
+            handle: handle.to_string(),
+            raw_value_model_text,
+            raw_value_redacted: !exposed,
+        }
     }
 }

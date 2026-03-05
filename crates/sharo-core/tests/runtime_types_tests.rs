@@ -1,6 +1,6 @@
 use sharo_core::runtime_types::{
-    ArtifactKind, ArtifactRecord, StepRecord, StepState, TaskRecord, TaskStateV2, TraceEvent,
-    TraceRecord,
+    ArtifactKind, ArtifactRecord, BindingRecord, BindingVisibility, StepRecord, StepState,
+    TaskRecord, TaskStateV2, TraceEvent, TraceRecord,
 };
 
 #[test]
@@ -61,4 +61,79 @@ fn scenario_a_record_roundtrip_json() {
     assert_eq!(decoded.0.task_id, "task-1");
     assert_eq!(decoded.1.step_id, "step-1");
     assert_eq!(decoded.2.artifact_kind, ArtifactKind::VerificationResult);
+}
+
+#[test]
+fn step_terminal_state_is_explicit() {
+    let terminal = [StepState::Completed, StepState::Blocked, StepState::Failed];
+    let non_terminal = [StepState::Proposed, StepState::Ready, StepState::Executing, StepState::AwaitingApproval];
+
+    for state in terminal {
+        assert!(matches!(state, StepState::Completed | StepState::Blocked | StepState::Failed));
+    }
+    for state in non_terminal {
+        assert!(!matches!(state, StepState::Completed | StepState::Blocked | StepState::Failed));
+    }
+}
+
+#[test]
+fn binding_visibility_redacts_non_model_values() {
+    let engine_only = BindingRecord {
+        binding_id: "binding-1".to_string(),
+        task_id: "task-1".to_string(),
+        step_id: "step-1".to_string(),
+        visibility: BindingVisibility::EngineOnly,
+        handle: "engine-handle-1".to_string(),
+        raw_value_model_text: None,
+        raw_value_redacted: true,
+    };
+    let approval_gated = BindingRecord {
+        binding_id: "binding-2".to_string(),
+        task_id: "task-1".to_string(),
+        step_id: "step-1".to_string(),
+        visibility: BindingVisibility::ApprovalGated,
+        handle: "approval-handle-1".to_string(),
+        raw_value_model_text: None,
+        raw_value_redacted: true,
+    };
+
+    assert!(!engine_only.is_model_text_exposed());
+    assert!(!approval_gated.is_model_text_exposed());
+    assert!(engine_only.raw_value_redacted);
+    assert!(approval_gated.raw_value_redacted);
+}
+
+#[test]
+fn binding_model_visible_can_expose_model_text() {
+    let model_visible = BindingRecord {
+        binding_id: "binding-3".to_string(),
+        task_id: "task-2".to_string(),
+        step_id: "step-2".to_string(),
+        visibility: BindingVisibility::ModelVisible,
+        handle: "visible-handle".to_string(),
+        raw_value_model_text: Some("safe-visible-value".to_string()),
+        raw_value_redacted: false,
+    };
+
+    assert!(model_visible.is_model_text_exposed());
+    assert_eq!(
+        model_visible.raw_value_model_text.as_deref(),
+        Some("safe-visible-value")
+    );
+}
+
+#[test]
+fn binding_handle_present_when_value_redacted() {
+    let binding = BindingRecord {
+        binding_id: "binding-4".to_string(),
+        task_id: "task-3".to_string(),
+        step_id: "step-3".to_string(),
+        visibility: BindingVisibility::EngineOnly,
+        handle: "engine-handle-opaque".to_string(),
+        raw_value_model_text: None,
+        raw_value_redacted: true,
+    };
+
+    assert!(!binding.handle.is_empty());
+    assert!(binding.raw_value_model_text.is_none());
 }

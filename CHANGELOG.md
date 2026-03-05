@@ -122,6 +122,17 @@ The format is based on Common Changelog:
   - `crates/sharo-core/tests/runtime_types_tests.rs`
   - `crates/sharo-daemon/tests/scenario_a.rs`
   - `crates/sharo-cli/tests/scenario_a_cli.rs`
+- Added dedicated MVP matrix mapping quality-gate wrapper:
+  - `scripts/check-mvp-matrix-map.sh`
+- Added MVP verification matrix mapping artifact:
+  - `docs/tasks/mvp-verification-matrix-map.csv`
+- Added explicit binding opacity runtime model:
+  - `BindingVisibility` and `BindingRecord` in `crates/sharo-core/src/runtime_types.rs`
+- Added approval and overlap scenario coverage tests:
+  - `crates/sharo-daemon/tests/scenario_a.rs`
+  - `crates/sharo-cli/tests/scenario_a_cli.rs`
+  - `crates/sharo-core/tests/runtime_types_tests.rs`
+  - `crates/sharo-core/tests/ipc_protocol_tests.rs`
 
 ### Changed
 
@@ -166,3 +177,28 @@ The format is based on Common Changelog:
   - `get-artifacts`
 - Marked `TASK-MVP-SLICE-001` as done in task registry.
 - Updated `Cargo.lock` to include the `serde` dependency used by `sharo-daemon` runtime store serialization.
+- Updated policy execution surfaces to expose MVP matrix map gate explicitly:
+  - `.githooks/pre-commit`
+  - `scripts/check-fast-feedback.sh`
+  - `.github/workflows/policy-checks.yml`
+- Extended daemon runtime and protocol for MVP scenario closure:
+  - restricted tasks now become durable `awaiting_approval` with list/resolve APIs
+  - approval resolution is idempotent and updates durable task and trace state
+  - overlap detection records durable conflict/coordination visibility
+  - invalid manifest requests are explicitly blocked with durable reason/evidence
+- Extended CLI surface with approval commands and richer task output:
+  - `sharo approval list`
+  - `sharo approval resolve --approval-id <id> --decision <approve|deny>`
+  - `task get` now reports blocking and coordination summaries
+- Upgraded MVP matrix map Bats gate to enforce:
+  - unique matrix row keys
+  - required row-to-test bindings
+  - referenced test IDs exist in mapped files
+- Updated MVP and task docs for evidence-backed matrix closure:
+  - `docs/specs/mvp.md`
+  - `docs/tasks/README.md`
+  - `docs/tasks/tasks.csv`
+- Updated daemon traces to emit binding opacity evidence:
+  - `binding_created`
+  - `binding_redacted_for_model`
+- Updated matrix evidence mapping for `binding_can_remain_opaque` to `implemented`.
