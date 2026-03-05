@@ -9,6 +9,10 @@ pub struct DaemonConfigFile {
     pub model: ModelRuntimeConfig,
     #[serde(default)]
     pub connector_pool: ConnectorPoolConfig,
+    #[serde(default)]
+    pub reasoning_policy: ReasoningPolicyConfig,
+    #[serde(default)]
+    pub reasoning_context: ReasoningContextConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -30,6 +34,21 @@ pub struct ModelRuntimeConfig {
     pub timeout_ms: Option<u64>,
     pub max_retries: Option<u32>,
     pub profile_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ReasoningPolicyConfig {
+    pub max_prompt_chars: Option<usize>,
+    pub max_memory_lines: Option<usize>,
+    pub forbidden_runtime_fields: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ReasoningContextConfig {
+    pub system: Option<String>,
+    pub persona: Option<String>,
+    pub memory: Option<String>,
+    pub runtime: Option<String>,
 }
 
 fn daemon_config_path_from_home(home: &Path) -> PathBuf {
@@ -138,6 +157,34 @@ cooldown_ms = 500
         assert_eq!(parsed.connector_pool.scale_up_queue_threshold, 6);
         assert_eq!(parsed.connector_pool.scale_down_idle_ms, 2000);
         assert_eq!(parsed.connector_pool.cooldown_ms, 500);
+    }
+
+    #[test]
+    fn parse_reasoning_policy_and_context_from_toml() {
+        let raw = r#"
+[reasoning_policy]
+max_prompt_chars = 256
+max_memory_lines = 2
+forbidden_runtime_fields = ["secret", "token"]
+
+[reasoning_context]
+system = "keep-safe"
+persona = "verbosity=high"
+memory = "m1\nm2\nm3"
+runtime = "secret=abc123"
+"#;
+        let parsed: DaemonConfigFile = toml::from_str(raw).expect("parse");
+        assert_eq!(parsed.reasoning_policy.max_prompt_chars, Some(256));
+        assert_eq!(parsed.reasoning_policy.max_memory_lines, Some(2));
+        assert_eq!(
+            parsed.reasoning_policy.forbidden_runtime_fields,
+            Some(vec!["secret".to_string(), "token".to_string()])
+        );
+        assert_eq!(
+            parsed.reasoning_context.persona.as_deref(),
+            Some("verbosity=high")
+        );
+        assert_eq!(parsed.reasoning_context.runtime.as_deref(), Some("secret=abc123"));
     }
 
     #[test]

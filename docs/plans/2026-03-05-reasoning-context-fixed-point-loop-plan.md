@@ -5,7 +5,7 @@ Architecture: Split reasoning into `resolve (I/O)` and `compose (pure)` phases. 
 Tech Stack: Rust 1.93+, `sharo-core` traits + types, existing daemon/kernel/runtime store surfaces.
 Template-Profile: tdd-strict-v1
 
-Task-Registry-Refs: TASK-REASONING-FIT-DESIGN-001, TASK-REASONING-FIT-PLAN-001
+Task-Registry-Refs: TASK-REASONING-FIT-DESIGN-001, TASK-REASONING-FIT-PLAN-001, TASK-REASONING-FIT-IMPL-002
 
 ## Intent
 

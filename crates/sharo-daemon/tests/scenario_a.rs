@@ -37,6 +37,50 @@ timeout_ms = 1000
     config
 }
 
+fn write_reasoning_pressure_config(prefix: &str) -> PathBuf {
+    let config = unique_path(prefix, ".toml");
+    fs::write(
+        &config,
+        r#"[model]
+provider = "deterministic"
+model_id = "mock"
+timeout_ms = 1000
+
+[reasoning_policy]
+max_prompt_chars = 10000
+max_memory_lines = 1
+forbidden_runtime_fields = ["secret"]
+
+[reasoning_context]
+system = "system=keep-safe"
+persona = "verbosity=high"
+memory = """m1
+m2
+m3 with many words for compression pressure"""
+runtime = "secret=abc123"
+"#,
+    )
+    .expect("write pressure config");
+    config
+}
+
+fn write_reasoning_failure_config(prefix: &str) -> PathBuf {
+    let config = unique_path(prefix, ".toml");
+    fs::write(
+        &config,
+        r#"[model]
+provider = "deterministic"
+model_id = "mock"
+timeout_ms = 1000
+
+[reasoning_policy]
+max_prompt_chars = 1
+"#,
+    )
+    .expect("write failure config");
+    config
+}
+
 fn send_request(socket: &PathBuf, request: &DaemonRequest) -> DaemonResponse {
     for _ in 0..5 {
         let mut connected = None;
@@ -416,6 +460,142 @@ fn scenario_b_pending_approval_survives_restart_and_can_be_resolved() {
                 assert!(!artifact.produced_by_step_id.is_empty());
                 assert!(artifact.produced_by_trace_event_sequence > 0);
             }
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    daemon.kill().expect("kill daemon");
+    let _ = daemon.wait();
+    let _ = fs::remove_file(&socket);
+    let _ = fs::remove_file(&store);
+    let _ = fs::remove_file(&config);
+}
+
+#[test]
+fn scenario_s2_fit_loop_adjustment_is_visible_in_runtime_records() {
+    let socket = unique_path("sharo-scenario-s2", ".sock");
+    let store = unique_path("sharo-scenario-s2", ".json");
+    let config = write_reasoning_pressure_config("sharo-scenario-s2");
+
+    let mut daemon = Command::new(daemon_bin())
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+            "--config-path",
+            config.to_str().expect("config path"),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let session_id = match send_request(
+        &socket,
+        &DaemonRequest::RegisterSession(RegisterSessionRequest {
+            session_label: "scenario-s2".to_string(),
+        }),
+    ) {
+        DaemonResponse::RegisterSession(r) => r.session_id,
+        other => panic!("unexpected response: {other:?}"),
+    };
+
+    let task_id = match send_request(
+        &socket,
+        &DaemonRequest::SubmitTask(SubmitTaskOpRequest {
+            session_id: Some(session_id),
+            goal: "summarize memory and runtime".to_string(),
+            idempotency_key: None,
+        }),
+    ) {
+        DaemonResponse::SubmitTask(r) => {
+            assert_eq!(r.task_state, "succeeded");
+            r.task_id
+        }
+        other => panic!("unexpected response: {other:?}"),
+    };
+
+    match send_request(
+        &socket,
+        &DaemonRequest::GetTrace(GetTraceRequest {
+            task_id: task_id.clone(),
+        }),
+    ) {
+        DaemonResponse::GetTrace(r) => {
+            assert!(r.trace.events.iter().any(|e| e.event_kind == "fit_loop_adjusted"));
+            assert!(r.trace.events.iter().any(|e| e.event_kind == "fit_loop_fitted"));
+            assert!(r.trace.events.iter().any(|e| e.event_kind == "model_output_received"));
+            assert_trace_monotonic(&r.trace);
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    match send_request(
+        &socket,
+        &DaemonRequest::GetArtifacts(GetArtifactsRequest {
+            task_id: task_id.clone(),
+        }),
+    ) {
+        DaemonResponse::GetArtifacts(r) => {
+            assert!(r.artifacts.iter().any(|a| {
+                a.artifact_kind == "fit_loop_decision"
+                    && a.summary.contains("final_decision=fitted")
+            }));
+            assert!(r.artifacts.iter().any(|a| a.artifact_kind == "final_result"));
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    daemon.kill().expect("kill daemon");
+    let _ = daemon.wait();
+    let _ = fs::remove_file(&socket);
+    let _ = fs::remove_file(&store);
+    let _ = fs::remove_file(&config);
+}
+
+#[test]
+fn scenario_s4_non_convergent_fit_loop_fails_without_success_records() {
+    let socket = unique_path("sharo-scenario-s4", ".sock");
+    let store = unique_path("sharo-scenario-s4", ".json");
+    let config = write_reasoning_failure_config("sharo-scenario-s4");
+
+    let mut daemon = Command::new(daemon_bin())
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+            "--config-path",
+            config.to_str().expect("config path"),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let session_id = match send_request(
+        &socket,
+        &DaemonRequest::RegisterSession(RegisterSessionRequest {
+            session_label: "scenario-s4".to_string(),
+        }),
+    ) {
+        DaemonResponse::RegisterSession(r) => r.session_id,
+        other => panic!("unexpected response: {other:?}"),
+    };
+
+    match send_request(
+        &socket,
+        &DaemonRequest::SubmitTask(SubmitTaskOpRequest {
+            session_id: Some(session_id),
+            goal: "this goal is intentionally too long".to_string(),
+            idempotency_key: None,
+        }),
+    ) {
+        DaemonResponse::Error { message } => {
+            assert!(message.contains("context_policy_fit_failed"));
         }
         other => panic!("unexpected response: {other:?}"),
     }

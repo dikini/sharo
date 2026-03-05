@@ -30,6 +30,50 @@ timeout_ms = 1000
     config
 }
 
+fn write_reasoning_pressure_config(prefix: &str) -> PathBuf {
+    let config = unique_path(prefix, ".toml");
+    std::fs::write(
+        &config,
+        r#"[model]
+provider = "deterministic"
+model_id = "mock"
+timeout_ms = 1000
+
+[reasoning_policy]
+max_prompt_chars = 10000
+max_memory_lines = 1
+forbidden_runtime_fields = ["secret"]
+
+[reasoning_context]
+system = "system=keep-safe"
+persona = "verbosity=high"
+memory = """m1
+m2
+m3 with many words for compression pressure"""
+runtime = "secret=abc123"
+"#,
+    )
+    .expect("write pressure config");
+    config
+}
+
+fn write_reasoning_failure_config(prefix: &str) -> PathBuf {
+    let config = unique_path(prefix, ".toml");
+    std::fs::write(
+        &config,
+        r#"[model]
+provider = "deterministic"
+model_id = "mock"
+timeout_ms = 1000
+
+[reasoning_policy]
+max_prompt_chars = 1
+"#,
+    )
+    .expect("write failure config");
+    config
+}
+
 #[test]
 fn cli_scenario_a_end_to_end() {
     let socket = unique_path("sharo-cli-scenario-a", ".sock");
@@ -438,6 +482,175 @@ fn cli_scenario_c_overlap_is_visible_in_task_output() {
     assert!(task_get.status.success());
     let task_out = String::from_utf8_lossy(&task_get.stdout);
     assert!(task_out.contains("coordination_summary=conflict_detected"));
+
+    daemon.kill().expect("kill daemon");
+    let _ = daemon.wait();
+    let _ = std::fs::remove_file(socket);
+    let _ = std::fs::remove_file(store);
+    let _ = std::fs::remove_file(config);
+}
+
+#[test]
+fn cli_scenario_s2_fit_loop_adjustment_is_visible() {
+    let socket = unique_path("sharo-cli-scenario-s2", ".sock");
+    let store = unique_path("sharo-cli-scenario-s2", ".json");
+    let config = write_reasoning_pressure_config("sharo-cli-scenario-s2");
+
+    let mut daemon = Command::new(daemon_bin())
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket"),
+            "--store-path",
+            store.to_str().expect("store"),
+            "--config-path",
+            config.to_str().expect("config"),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    for _ in 0..80 {
+        if socket.exists() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(15));
+    }
+
+    let session = Command::new(env!("CARGO_BIN_EXE_sharo"))
+        .args([
+            "--transport",
+            "ipc",
+            "--socket-path",
+            socket.to_str().expect("socket"),
+            "session",
+            "open",
+            "--label",
+            "scenario-s2",
+        ])
+        .output()
+        .expect("session open command");
+    assert!(session.status.success());
+    let session_id = String::from_utf8_lossy(&session.stdout)
+        .trim()
+        .trim_start_matches("session_id=")
+        .to_string();
+
+    let submit = Command::new(env!("CARGO_BIN_EXE_sharo"))
+        .args([
+            "--transport",
+            "ipc",
+            "--socket-path",
+            socket.to_str().expect("socket"),
+            "task",
+            "submit",
+            "--session-id",
+            &session_id,
+            "--goal",
+            "summarize memory and runtime",
+        ])
+        .output()
+        .expect("task submit command");
+    assert!(submit.status.success());
+    let submit_out = String::from_utf8_lossy(&submit.stdout);
+    let task_id = submit_out
+        .split_whitespace()
+        .find(|part| part.starts_with("task_id="))
+        .expect("task_id field")
+        .trim_start_matches("task_id=")
+        .to_string();
+
+    let get_trace = Command::new(env!("CARGO_BIN_EXE_sharo"))
+        .args([
+            "--transport",
+            "ipc",
+            "--socket-path",
+            socket.to_str().expect("socket"),
+            "trace",
+            "get",
+            "--task-id",
+            &task_id,
+        ])
+        .output()
+        .expect("trace get command");
+    assert!(get_trace.status.success());
+    let get_trace_out = String::from_utf8_lossy(&get_trace.stdout);
+    assert!(get_trace_out.contains("event_kind=fit_loop_adjusted"));
+    assert!(get_trace_out.contains("event_kind=fit_loop_fitted"));
+
+    daemon.kill().expect("kill daemon");
+    let _ = daemon.wait();
+    let _ = std::fs::remove_file(socket);
+    let _ = std::fs::remove_file(store);
+    let _ = std::fs::remove_file(config);
+}
+
+#[test]
+fn cli_scenario_s4_non_convergent_fit_loop_is_explicit() {
+    let socket = unique_path("sharo-cli-scenario-s4", ".sock");
+    let store = unique_path("sharo-cli-scenario-s4", ".json");
+    let config = write_reasoning_failure_config("sharo-cli-scenario-s4");
+
+    let mut daemon = Command::new(daemon_bin())
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket"),
+            "--store-path",
+            store.to_str().expect("store"),
+            "--config-path",
+            config.to_str().expect("config"),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    for _ in 0..80 {
+        if socket.exists() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(15));
+    }
+
+    let session = Command::new(env!("CARGO_BIN_EXE_sharo"))
+        .args([
+            "--transport",
+            "ipc",
+            "--socket-path",
+            socket.to_str().expect("socket"),
+            "session",
+            "open",
+            "--label",
+            "scenario-s4",
+        ])
+        .output()
+        .expect("session open command");
+    assert!(session.status.success());
+    let session_id = String::from_utf8_lossy(&session.stdout)
+        .trim()
+        .trim_start_matches("session_id=")
+        .to_string();
+
+    let submit = Command::new(env!("CARGO_BIN_EXE_sharo"))
+        .args([
+            "--transport",
+            "ipc",
+            "--socket-path",
+            socket.to_str().expect("socket"),
+            "task",
+            "submit",
+            "--session-id",
+            &session_id,
+            "--goal",
+            "this goal is intentionally too long",
+        ])
+        .output()
+        .expect("task submit command");
+    assert!(!submit.status.success());
+    let submit_err = String::from_utf8_lossy(&submit.stderr);
+    assert!(submit_err.contains("context_policy_fit_failed"));
 
     daemon.kill().expect("kill daemon");
     let _ = daemon.wait();

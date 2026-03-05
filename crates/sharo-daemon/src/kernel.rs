@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use sharo_core::context_resolvers::{ResolverBundle, StaticTextResolver};
 use sharo_core::kernel::{
     KernelApprovalInput, KernelApprovalResult, KernelPort, KernelSubmitInput, KernelSubmitResult,
 };
@@ -7,7 +8,9 @@ use sharo_core::model_connector::{DeterministicConnector, ModelCapabilityFlags, 
 use sharo_core::model_connectors::{OllamaConnector, OpenAiCompatibleConnector};
 use sharo_core::reasoning::{IdReasoningEngine, ReasoningEnginePort, ReasoningInput};
 
-use crate::config::{ConnectorPoolConfig, DaemonConfigFile};
+use crate::config::{
+    ConnectorPoolConfig, DaemonConfigFile, ReasoningContextConfig, ReasoningPolicyConfig,
+};
 use crate::connector_pool::{BlockingPool, PoolError, PoolPolicy};
 use crate::store::Store;
 
@@ -23,6 +26,8 @@ pub struct KernelRuntimeConfig {
     pub connector_kind: ConnectorKind,
     pub profile: ModelProfile,
     pub connector_pool: ConnectorPoolConfig,
+    pub reasoning_policy: ReasoningPolicyConfig,
+    pub reasoning_context: ReasoningContextConfig,
 }
 
 impl KernelRuntimeConfig {
@@ -107,6 +112,8 @@ impl KernelRuntimeConfig {
             connector_kind,
             profile,
             connector_pool: config.connector_pool.clone(),
+            reasoning_policy: config.reasoning_policy.clone(),
+            reasoning_context: config.reasoning_context.clone(),
         })
     }
 }
@@ -169,6 +176,7 @@ fn map_pool_error(error: PoolError) -> sharo_core::model_connector::ConnectorErr
 
 pub struct DaemonKernel {
     reasoning: IdReasoningEngine<DaemonConnector>,
+    reasoning_policy: ReasoningPolicyConfig,
 }
 
 impl DaemonKernel {
@@ -186,8 +194,27 @@ impl DaemonKernel {
             ConnectorKind::OpenAiCompatible => DaemonConnector::OpenAiCompatible { pool: pool.clone() },
             ConnectorKind::Ollama => DaemonConnector::Ollama { pool: pool.clone() },
         };
+        let resolvers = ResolverBundle {
+            system: Box::new(StaticTextResolver::new(
+                config.reasoning_context.system.as_deref().unwrap_or(""),
+                "config-system",
+            )),
+            persona: Box::new(StaticTextResolver::new(
+                config.reasoning_context.persona.as_deref().unwrap_or(""),
+                "config-persona",
+            )),
+            memory: Box::new(StaticTextResolver::new(
+                config.reasoning_context.memory.as_deref().unwrap_or(""),
+                "config-memory",
+            )),
+            runtime: Box::new(StaticTextResolver::new(
+                config.reasoning_context.runtime.as_deref().unwrap_or(""),
+                "config-runtime",
+            )),
+        };
         Self {
-            reasoning: IdReasoningEngine::new(connector, config.profile.clone()),
+            reasoning: IdReasoningEngine::with_resolvers(connector, config.profile.clone(), resolvers),
+            reasoning_policy: config.reasoning_policy.clone(),
         }
     }
 }
@@ -221,13 +248,23 @@ impl KernelPort for DaemonKernelRuntime<'_> {
             return Ok(KernelSubmitResult { response: replay });
         }
         let turn_id_hint = self.store.next_turn_id_for_session(&session_id_hint);
+        let mut metadata = BTreeMap::new();
+        if let Some(value) = self.kernel.reasoning_policy_max_prompt_chars() {
+            metadata.insert("policy.max_prompt_chars".to_string(), value.to_string());
+        }
+        if let Some(value) = self.kernel.reasoning_policy_max_memory_lines() {
+            metadata.insert("policy.max_memory_lines".to_string(), value.to_string());
+        }
+        if let Some(value) = self.kernel.reasoning_policy_forbidden_runtime_fields() {
+            metadata.insert("policy.forbidden_runtime_fields".to_string(), value);
+        }
         let reasoning = self.kernel.reasoning.plan(&ReasoningInput {
             trace_id: format!("trace-{}", task_id_hint),
             task_id: task_id_hint,
             session_id: session_id_hint.clone(),
             turn_id: turn_id_hint,
             goal: input.request.goal.clone(),
-            metadata: BTreeMap::new(),
+            metadata,
         })?;
 
         let response = self.store.submit_task_with_route(
@@ -248,6 +285,20 @@ impl KernelPort for DaemonKernelRuntime<'_> {
     }
 }
 
+impl DaemonKernel {
+    fn reasoning_policy_max_prompt_chars(&self) -> Option<usize> {
+        self.reasoning_policy.max_prompt_chars
+    }
+
+    fn reasoning_policy_max_memory_lines(&self) -> Option<usize> {
+        self.reasoning_policy.max_memory_lines
+    }
+
+    fn reasoning_policy_forbidden_runtime_fields(&self) -> Option<String> {
+        self.reasoning_policy.forbidden_runtime_fields.as_ref().map(|fields| fields.join(","))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{ConnectorKind, KernelRuntimeConfig};
@@ -262,6 +313,7 @@ mod tests {
                 ..ModelRuntimeConfig::default()
             },
             connector_pool: ConnectorPoolConfig::default(),
+            ..DaemonConfigFile::default()
         };
         let err = KernelRuntimeConfig::from_daemon_config(&cfg).expect_err("expected base_url error");
         assert!(err.contains("provider_base_url_required"));
@@ -287,6 +339,7 @@ mod tests {
                 scale_down_idle_ms: 1000,
                 cooldown_ms: 100,
             },
+            ..DaemonConfigFile::default()
         };
         let err = KernelRuntimeConfig::from_daemon_config(&cfg).expect_err("expected bounds error");
         assert!(err.contains("connector_pool_bounds_invalid"));
@@ -304,6 +357,7 @@ mod tests {
                 scale_down_idle_ms: 1000,
                 cooldown_ms: 100,
             },
+            ..DaemonConfigFile::default()
         };
         let err = KernelRuntimeConfig::from_daemon_config(&cfg).expect_err("expected threshold error");
         assert!(err.contains("connector_pool_scale_up_threshold_invalid"));

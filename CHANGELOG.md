@@ -26,6 +26,10 @@ The format is based on Common Changelog:
   - preserves `daemon_log` on readiness failure so diagnostics remain available
   - safely strips inline TOML comments before reading `model.auth_env_key`
   - validates `model.auth_env_key` format before indirect environment lookup
+- Wired daemon reasoning policy/context into runtime fit-loop execution:
+  - added `[reasoning_policy]` and `[reasoning_context]` config parsing in `sharo-daemon`
+  - passed policy metadata and static resolver context through kernel reasoning
+  - added daemon and CLI acceptance coverage for fit-loop adjusted success and explicit non-convergent failure
 - Added planning docs:
   - `docs/plans/2026-03-04-design-note-alignment-plan.md`
   - `docs/plans/2026-03-04-research-note-alignment-plan.md`
