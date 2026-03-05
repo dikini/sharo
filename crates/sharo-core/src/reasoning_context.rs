@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use sha2::{Digest, Sha256};
 
@@ -138,6 +138,133 @@ pub struct AlwaysFitPolicyFitter;
 impl PolicyFitter for AlwaysFitPolicyFitter {
     fn fit(&self, _prompt: &ComposePrompt, _state: &ContextState) -> FitDecision {
         FitDecision::Fitted
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PolicyConfig {
+    pub max_prompt_chars: usize,
+    pub max_memory_lines: usize,
+    pub forbidden_runtime_fields: Vec<String>,
+}
+
+impl Default for PolicyConfig {
+    fn default() -> Self {
+        Self {
+            max_prompt_chars: 12_000,
+            max_memory_lines: 32,
+            forbidden_runtime_fields: vec![
+                "api_key".to_string(),
+                "token".to_string(),
+                "secret".to_string(),
+            ],
+        }
+    }
+}
+
+impl PolicyConfig {
+    pub fn from_metadata(metadata: &BTreeMap<String, String>) -> Self {
+        let mut cfg = Self::default();
+        if let Some(raw) = metadata.get("policy.max_prompt_chars")
+            && let Ok(v) = raw.parse::<usize>()
+            && v > 0
+        {
+            cfg.max_prompt_chars = v;
+        }
+        if let Some(raw) = metadata.get("policy.max_memory_lines")
+            && let Ok(v) = raw.parse::<usize>()
+            && v > 0
+        {
+            cfg.max_memory_lines = v;
+        }
+        if let Some(raw) = metadata.get("policy.forbidden_runtime_fields") {
+            let parsed: Vec<String> = raw
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(ToString::to_string)
+                .collect();
+            if !parsed.is_empty() {
+                cfg.forbidden_runtime_fields = parsed;
+            }
+        }
+        cfg
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HeuristicPolicyFitter {
+    config: PolicyConfig,
+}
+
+impl Default for HeuristicPolicyFitter {
+    fn default() -> Self {
+        Self {
+            config: PolicyConfig::default(),
+        }
+    }
+}
+
+impl HeuristicPolicyFitter {
+    pub fn new(config: PolicyConfig) -> Self {
+        Self { config }
+    }
+}
+
+impl PolicyFitter for HeuristicPolicyFitter {
+    fn fit(&self, prompt: &ComposePrompt, state: &ContextState) -> FitDecision {
+        let mut steps = Vec::new();
+
+        let mut matches = Vec::new();
+        for field in &self.config.forbidden_runtime_fields {
+            if state.runtime.contains(field) {
+                matches.push(field.clone());
+            }
+        }
+        if !matches.is_empty() {
+            steps.push(AdjustmentStep::RedactRuntimeFields { fields: matches });
+        }
+
+        let memory_line_count = state.memory.lines().filter(|v| !v.trim().is_empty()).count();
+        if memory_line_count > self.config.max_memory_lines {
+            steps.push(AdjustmentStep::DropMemoryByRank {
+                max_items: self.config.max_memory_lines,
+            });
+        }
+
+        if prompt.prompt_text.len() > self.config.max_prompt_chars {
+            if !state.memory.is_empty() {
+                let word_count = state.memory.split_whitespace().count();
+                let next_budget = word_count.saturating_mul(3) / 4;
+                steps.push(AdjustmentStep::CompressMemoryToTokens {
+                    token_budget: next_budget,
+                });
+            }
+            if !state.persona.contains("verbosity=low") {
+                steps.push(AdjustmentStep::ClampPersonaVerbosity {
+                    level: "low".to_string(),
+                });
+            }
+        }
+
+        if steps.is_empty() {
+            FitDecision::Fitted
+        } else {
+            let step_tags: Vec<&str> = steps
+                .iter()
+                .map(|step| match step {
+                    AdjustmentStep::DropMemoryByRank { .. } => "drop_memory",
+                    AdjustmentStep::CompressMemoryToTokens { .. } => "compress_memory",
+                    AdjustmentStep::RedactRuntimeFields { .. } => "redact_runtime",
+                    AdjustmentStep::ClampPersonaVerbosity { .. } => "clamp_persona",
+                })
+                .collect();
+            FitDecision::Adjust(AdjustmentPlan {
+                plan_id: format!("policy-adjust-{}", step_tags.join("-")),
+                rationale: "policy_fit_required".to_string(),
+                steps,
+            })
+        }
     }
 }
 

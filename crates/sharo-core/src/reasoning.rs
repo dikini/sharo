@@ -5,8 +5,8 @@ use crate::model_connector::{
     ConnectorError, ModelConnectorPort, ModelProfile, ModelTurnRequest,
 };
 use crate::reasoning_context::{
-    AlwaysFitPolicyFitter, ComposePrompt, Composer, ContextState, DeterministicAdjustmentApplier,
-    FitLoopRecord, TurnScope, run_fit_loop,
+    ComposePrompt, Composer, ContextState, DeterministicAdjustmentApplier, FitLoopRecord,
+    HeuristicPolicyFitter, PolicyConfig, TurnScope, run_fit_loop,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,7 +72,7 @@ impl<C: ModelConnectorPort> ReasoningEnginePort for IdReasoningEngine<C> {
             goal: input.goal.clone(),
         };
         let composer = ResolvedContextComposer;
-        let fitter = AlwaysFitPolicyFitter;
+        let fitter = HeuristicPolicyFitter::new(PolicyConfig::from_metadata(&input.metadata));
         let mut applier = DeterministicAdjustmentApplier;
         let fit_outcome = run_fit_loop(&mut context_state, &composer, &fitter, &mut applier, 8)
             .map_err(|error| format!("reasoning_fit_failed error={error:?}"))?;

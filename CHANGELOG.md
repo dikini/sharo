@@ -289,3 +289,6 @@ The format is based on Common Changelog:
 - Hardened fit-loop fingerprint privacy and storage behavior:
   - `ContextState::state_hash` now returns SHA-256 digests instead of raw serialized context content
   - prevents sensitive context text from leaking into persisted fit-loop trace fields
+- Added concrete heuristic policy fitting rules for the fixed-point loop:
+  - policy fitter now emits deterministic adjustment plans for runtime redaction, memory-line bounds, and prompt-budget pressure
+  - policy settings can be overridden via reasoning metadata (`policy.max_prompt_chars`, `policy.max_memory_lines`, `policy.forbidden_runtime_fields`)
