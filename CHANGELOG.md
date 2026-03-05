@@ -108,6 +108,20 @@ The format is based on Common Changelog:
   - `scripts/tests/test-sync-tools.bats`
   - `scripts/tests/test-rust-policy.bats`
   - `scripts/tests/test-knot-tooling.bats`
+- Added MVP planning artifacts split by roadmap and slice plans:
+  - `docs/plans/2026-03-05-mvp-roadmap.md`
+  - `docs/plans/2026-03-05-mvp-slice-000-roadmap-tracking-plan.md`
+  - `docs/plans/2026-03-05-mvp-slice-001-scenario-a-plan.md`
+  - `docs/plans/2026-03-05-mvp-slice-002-scenario-b-plan.md`
+  - `docs/plans/2026-03-05-mvp-slice-003-scenario-c-plan.md`
+  - `docs/plans/2026-03-05-mvp-slice-004-protocol-cli-plan.md`
+  - `docs/plans/2026-03-05-mvp-slice-005-verification-hardening-plan.md`
+- Added Scenario A runtime artifacts for MVP slice 001:
+  - `crates/sharo-core/src/runtime_types.rs`
+  - `crates/sharo-daemon/src/store.rs`
+  - `crates/sharo-core/tests/runtime_types_tests.rs`
+  - `crates/sharo-daemon/tests/scenario_a.rs`
+  - `crates/sharo-cli/tests/scenario_a_cli.rs`
 
 ### Changed
 
@@ -137,3 +151,17 @@ The format is based on Common Changelog:
 - Updated task registry/docs to mark `TASK-KNOT-DIFF-001` and `TASK-RESEARCH-LINT-001` complete.
 - Updated fast-feedback and CI policy checks to run the unified Bats shell-test runner.
 - Updated task registry/docs to record `TASK-BATS-TESTS-001` completion.
+- Updated task registry and task docs to track MVP delivery slices:
+  - `TASK-MVP-SLICE-000`
+  - `TASK-MVP-SLICE-001`
+  - `TASK-MVP-SLICE-002`
+  - `TASK-MVP-SLICE-003`
+  - `TASK-MVP-SLICE-004`
+  - `TASK-MVP-SLICE-005`
+- Updated daemon and CLI protocol handling with Scenario A operations:
+  - `register-session`
+  - `submit-task`
+  - `get-task`
+  - `get-trace`
+  - `get-artifacts`
+- Marked `TASK-MVP-SLICE-001` as done in task registry.

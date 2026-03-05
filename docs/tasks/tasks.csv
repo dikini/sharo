@@ -7,3 +7,9 @@ TASK-RUST-WORKSPACE-001,runtime,Rust workspace bootstrap,docs/tasks/README.md,do
 TASK-VERIFICATION-GATE-001,policy,Pre-commit Rust test gate,docs/tasks/README.md,done,,Added rust test gate in pre-commit and CI for rust-impacting changes
 TASK-FAST-FEEDBACK-001,policy,Fast feedback wrapper and marker gate,docs/tasks/README.md,done,,Added single-command feedback loop and pre-commit marker freshness enforcement
 TASK-BATS-TESTS-001,tooling,Bats-based shell test harness migration,docs/tasks/README.md,done,,Added pinned bats installer unified runner and migrated script tests to .bats
+TASK-MVP-SLICE-000,planning,MVP roadmap and tracking bootstrap,docs/tasks/README.md,done,,Added roadmap plus per-slice plans and task registry entries
+TASK-MVP-SLICE-001,runtime,Scenario A read-oriented end-to-end flow,docs/tasks/README.md,done,,Implemented register session submit task get task get trace get artifacts Scenario A path with durable store
+TASK-MVP-SLICE-002,runtime,Scenario B restricted flow with approvals,docs/tasks/README.md,planned,,Implement policy decision and approval queue semantics for restricted steps
+TASK-MVP-SLICE-003,runtime,Scenario C overlap and coordination records,docs/tasks/README.md,planned,,Implement durable intent claim conflict and coordination visibility
+TASK-MVP-SLICE-004,runtime,MVP protocol and CLI surface completion,docs/tasks/README.md,planned,,Complete required protocol operations and CLI command surface
+TASK-MVP-SLICE-005,verification,MVP verification matrix closure,docs/tasks/README.md,planned,,Close all matrix rows with executable tests and recovery hardening
