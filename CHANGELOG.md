@@ -95,6 +95,13 @@ The format is based on Common Changelog:
 - Added IPC transport spec and plan artifacts:
   - `docs/specs/ipc-transport.md`
   - `docs/plans/2026-03-05-ipc-transport-plan.md`
+- Added Knot deferred-task tooling and fixtures:
+  - `scripts/lib/knot-tool.sh`
+  - `scripts/check-knot-diff.sh`
+  - `scripts/check-research-references.sh`
+  - `scripts/tests/test-knot-tooling.sh`
+  - `docs/tasks/knot-diff-mapping.csv`
+  - `docs/tasks/research-reference-rules.csv`
 
 ### Changed
 
@@ -120,3 +127,5 @@ The format is based on Common Changelog:
 - Added a REQUIRED fast-feedback loop policy in `AGENTS.md` with MUST-level local check cadence for docs, tasks, and Rust edits.
 - Added single-command fast-feedback workflow with marker freshness enforcement before commit.
 - Replaced stub-only CLI runtime path with real Unix socket IPC transport between `sharo-cli` and `sharo-daemon`, while keeping explicit `--transport stub` fallback.
+- Updated fast-feedback policy runner to include Knot diff and research reference checks.
+- Updated task registry/docs to mark `TASK-KNOT-DIFF-001` and `TASK-RESEARCH-LINT-001` complete.
