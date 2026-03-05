@@ -238,3 +238,6 @@ The format is based on Common Changelog:
   - OpenAI-compatible connector for `/v1/responses` style providers (OpenAI/OpenRouter/Kimi/GLM-compatible endpoints)
   - local Ollama connector adapter using the same normalized connector contract
 - Added `reqwest` and `serde_json` runtime dependencies to `sharo-core` for provider connector HTTP/JSON support.
+- Hardened OpenAI-compatible connector contract behavior:
+  - enforce `ModelProfile.timeout_ms` for outbound HTTP requests
+  - treat missing/empty provider output text as `ProtocolMismatch` instead of successful empty response

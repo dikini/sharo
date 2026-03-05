@@ -79,3 +79,30 @@ fn openai_compatible_connector_requires_base_url() {
         sharo_core::model_connector::ConnectorError::InvalidRequest(_)
     ));
 }
+
+#[test]
+fn openai_compatible_connector_rejects_zero_timeout_profile() {
+    let connector = OpenAiCompatibleConnector::default();
+    let mut profile = test_profile();
+    profile.provider_id = "openai".to_string();
+    profile.model_id = "gpt-5-mini".to_string();
+    profile.timeout_ms = 0;
+
+    let result = connector.run_turn(
+        &profile,
+        &ModelTurnRequest {
+            trace_id: "trace-task-1".to_string(),
+            task_id: "task-1".to_string(),
+            prompt: "ping".to_string(),
+            metadata: Default::default(),
+        },
+    );
+
+    let error = result.expect_err("zero timeout should fail");
+    match error {
+        sharo_core::model_connector::ConnectorError::InvalidRequest(message) => {
+            assert!(message.contains("timeout_ms"));
+        }
+        other => panic!("unexpected error kind: {other:?}"),
+    }
+}
