@@ -7,7 +7,7 @@ use sharo_core::kernel::{
 };
 use sharo_core::model_connector::{DeterministicConnector, ModelCapabilityFlags, ModelProfile};
 use sharo_core::model_connectors::{OllamaConnector, OpenAiCompatibleConnector};
-use sharo_core::reasoning::{IdReasoningEngine, ReasoningEnginePort, ReasoningInput};
+use sharo_core::reasoning::{IdReasoningEngine, ReasoningEnginePort, ReasoningError, ReasoningInput};
 use sharo_core::reasoning_context::PolicyConfig;
 
 use crate::config::{
@@ -270,14 +270,17 @@ impl KernelPort for DaemonKernelRuntime<'_> {
         };
         let reasoning = match self.kernel.reasoning.plan(&reasoning_input) {
             Ok(reasoning) => reasoning,
-            Err(message) => {
+            Err(ReasoningError::FitLoopFailure { message, records }) => {
                 let response = self.store.submit_failed_task(
                     input.request,
                     &session_id_hint,
                     &message,
+                    &records,
                 )?;
                 return Ok(KernelSubmitResult { response });
             }
+            Err(ReasoningError::ConnectorFailure { message })
+            | Err(ReasoningError::ResolveFailure { message }) => return Err(message),
         };
 
         let response = self.store.submit_task_with_route(

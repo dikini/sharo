@@ -27,8 +27,22 @@ pub struct ReasoningOutcome {
     pub fit_loop_records: Vec<FitLoopRecord>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReasoningError {
+    FitLoopFailure {
+        message: String,
+        records: Vec<FitLoopRecord>,
+    },
+    ConnectorFailure {
+        message: String,
+    },
+    ResolveFailure {
+        message: String,
+    },
+}
+
 pub trait ReasoningEnginePort {
-    fn plan(&self, input: &ReasoningInput) -> Result<ReasoningOutcome, String>;
+    fn plan(&self, input: &ReasoningInput) -> Result<ReasoningOutcome, ReasoningError>;
 }
 
 pub struct IdReasoningEngine<C: ModelConnectorPort> {
@@ -56,14 +70,15 @@ impl<C: ModelConnectorPort> IdReasoningEngine<C> {
 }
 
 impl<C: ModelConnectorPort> ReasoningEnginePort for IdReasoningEngine<C> {
-    fn plan(&self, input: &ReasoningInput) -> Result<ReasoningOutcome, String> {
+    fn plan(&self, input: &ReasoningInput) -> Result<ReasoningOutcome, ReasoningError> {
         let scope = TurnScope {
             session_id: input.session_id.clone(),
             task_id: input.task_id.clone(),
             turn_id: input.turn_id,
             goal: input.goal.clone(),
         };
-        let resolved_context = resolve_context(&self.resolvers, &scope)?;
+        let resolved_context = resolve_context(&self.resolvers, &scope)
+            .map_err(|message| ReasoningError::ResolveFailure { message })?;
         let mut context_state = ContextState {
             system: resolved_context.system.content.clone(),
             persona: resolved_context.persona.content.clone(),
@@ -85,7 +100,9 @@ impl<C: ModelConnectorPort> ReasoningEnginePort for IdReasoningEngine<C> {
         let response = self
             .connector
             .run_turn(&self.profile, &request)
-            .map_err(|error| format_connector_error(&error))?;
+            .map_err(|error| ReasoningError::ConnectorFailure {
+                message: format_connector_error(&error),
+            })?;
         Ok(ReasoningOutcome {
             route_decision_details: response.route_label,
             model_output_text: response.content,
@@ -144,14 +161,20 @@ fn format_connector_error(error: &ConnectorError) -> String {
     }
 }
 
-fn format_reasoning_context_error(error: ReasoningContextError) -> String {
+fn format_reasoning_context_error(error: ReasoningContextError) -> ReasoningError {
     match error {
-        ReasoningContextError::ContextPolicyFitFailed(message)
-        | ReasoningContextError::NonProgressDetected(message) => {
-            format!("context_policy_fit_failed reason={message}")
+        ReasoningContextError::ContextPolicyFitFailed { message, records }
+        | ReasoningContextError::NonProgressDetected { message, records } => {
+            ReasoningError::FitLoopFailure {
+                message: format!("context_policy_fit_failed reason={message}"),
+                records,
+            }
         }
-        ReasoningContextError::ApplyFailed(message) => {
-            format!("context_adjustment_apply_failed reason={message}")
+        ReasoningContextError::ApplyFailed { message, records } => {
+            ReasoningError::FitLoopFailure {
+                message: format!("context_adjustment_apply_failed reason={message}"),
+                records,
+            }
         }
     }
 }

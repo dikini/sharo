@@ -3,7 +3,7 @@ use sharo_core::model_connector::{
 };
 use sharo_core::model_connectors::OpenAiCompatibleConnector;
 use sharo_core::context_resolvers::{ResolverBundle, StaticTextResolver};
-use sharo_core::reasoning::{IdReasoningEngine, ReasoningEnginePort, ReasoningInput};
+use sharo_core::reasoning::{IdReasoningEngine, ReasoningEnginePort, ReasoningError, ReasoningInput};
 
 fn test_profile() -> ModelProfile {
     ModelProfile {
@@ -170,7 +170,13 @@ fn s4_non_convergent_fit_loop_fails_with_terminal_reason() {
             metadata,
         })
         .expect_err("non-convergent fit loop should fail");
-    assert!(error.contains("context_policy_fit_failed"));
+    match error {
+        ReasoningError::FitLoopFailure { message, records } => {
+            assert!(message.contains("context_policy_fit_failed"));
+            assert!(!records.is_empty());
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
 }
 
 #[test]
@@ -192,5 +198,10 @@ fn s3_provider_auth_failure_is_explicit_and_non_success() {
             metadata: Default::default(),
         })
         .expect_err("missing auth env var should fail");
-    assert!(error.contains("missing auth env var SHARO_TEST_MISSING_OPENAI_KEY"));
+    match error {
+        ReasoningError::ConnectorFailure { message } => {
+            assert!(message.contains("missing auth env var SHARO_TEST_MISSING_OPENAI_KEY"));
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
 }

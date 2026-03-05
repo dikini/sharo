@@ -81,6 +81,22 @@ max_prompt_chars = 1
     config
 }
 
+fn write_openai_missing_auth_config(prefix: &str) -> PathBuf {
+    let config = unique_path(prefix, ".toml");
+    fs::write(
+        &config,
+        r#"[model]
+provider = "openai"
+model_id = "gpt-5-mini"
+base_url = "https://api.openai.com"
+auth_env_key = "SHARO_TEST_MISSING_OPENAI_KEY"
+timeout_ms = 1000
+"#,
+    )
+    .expect("write openai auth config");
+    config
+}
+
 fn send_request(socket: &PathBuf, request: &DaemonRequest) -> DaemonResponse {
     for _ in 0..5 {
         let mut connected = None;
@@ -643,6 +659,7 @@ fn scenario_s4_non_convergent_fit_loop_fails_without_success_records() {
         }),
     ) {
         DaemonResponse::GetTrace(r) => {
+            assert!(r.trace.events.iter().any(|e| e.event_kind == "fit_loop_adjusted"));
             assert!(r.trace.events.iter().any(|e| e.event_kind == "fit_loop_failed"));
             assert!(!r.trace.events.iter().any(|e| e.event_kind == "model_output_received"));
             assert_trace_monotonic(&r.trace);
@@ -660,7 +677,74 @@ fn scenario_s4_non_convergent_fit_loop_fails_without_success_records() {
             assert!(kinds.contains(&"failure_record"));
             assert!(!kinds.contains(&"model_output"));
             assert!(!kinds.contains(&"final_result"));
+            assert!(r.artifacts.iter().any(|a| {
+                a.artifact_kind == "fit_loop_decision"
+                    && a.summary.contains("iterations=")
+                    && !a.summary.contains("iterations=0")
+            }));
         }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    daemon.kill().expect("kill daemon");
+    let _ = daemon.wait();
+    let _ = fs::remove_file(&socket);
+    let _ = fs::remove_file(&store);
+    let _ = fs::remove_file(&config);
+}
+
+#[test]
+fn scenario_s3_provider_auth_failure_returns_error_without_persisted_task() {
+    let socket = unique_path("sharo-scenario-s3", ".sock");
+    let store = unique_path("sharo-scenario-s3", ".json");
+    let config = write_openai_missing_auth_config("sharo-scenario-s3");
+
+    let mut daemon = Command::new(daemon_bin())
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+            "--config-path",
+            config.to_str().expect("config path"),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let session_id = match send_request(
+        &socket,
+        &DaemonRequest::RegisterSession(RegisterSessionRequest {
+            session_label: "scenario-s3".to_string(),
+        }),
+    ) {
+        DaemonResponse::RegisterSession(r) => r.session_id,
+        other => panic!("unexpected response: {other:?}"),
+    };
+
+    match send_request(
+        &socket,
+        &DaemonRequest::SubmitTask(SubmitTaskOpRequest {
+            session_id: Some(session_id),
+            goal: "read one context item".to_string(),
+            idempotency_key: Some("idem-s3".to_string()),
+        }),
+    ) {
+        DaemonResponse::Error { message } => {
+            assert!(message.contains("missing auth env var SHARO_TEST_MISSING_OPENAI_KEY"));
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    match send_request(
+        &socket,
+        &DaemonRequest::GetTask(GetTaskRequest {
+            task_id: "task-000001".to_string(),
+        }),
+    ) {
+        DaemonResponse::Error { message } => assert!(message.contains("task_not_found")),
         other => panic!("unexpected response: {other:?}"),
     }
 

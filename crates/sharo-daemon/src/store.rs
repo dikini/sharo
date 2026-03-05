@@ -490,6 +490,7 @@ impl Store {
         request: SubmitTaskOpRequest,
         fallback_session_id: &str,
         failure_message: &str,
+        fit_loop_records: &[FitLoopRecord],
     ) -> Result<SubmitTaskOpResponse, String> {
         let session_id = request
             .session_id
@@ -526,13 +527,28 @@ impl Store {
                 details: request.goal.clone(),
             }],
         };
+        for record in fit_loop_records {
+            let event_kind = if record.decision == "fitted" {
+                "fit_loop_fitted"
+            } else {
+                "fit_loop_adjusted"
+            };
+            let details = format!(
+                "iteration={} plan_id={} before_hash={} after_hash={}",
+                record.iteration,
+                record.plan_id.as_deref().unwrap_or("none"),
+                record.before_state_hash.as_deref().unwrap_or("none"),
+                record.after_state_hash.as_deref().unwrap_or("none"),
+            );
+            push_trace_event(&mut trace, event_kind, &details);
+        }
         push_trace_event(&mut trace, "fit_loop_failed", failure_message);
 
         let artifacts = vec![
             ArtifactSummary {
                 artifact_id: format!("artifact-{}-fit-loop", task_id),
                 artifact_kind: "fit_loop_decision".to_string(),
-                summary: "fit_loop iterations=0 final_decision=failed".to_string(),
+                summary: summarize_fit_loop_failure(fit_loop_records),
                 produced_by_step_id: step_id.clone(),
                 produced_by_trace_event_sequence: event_sequence_by_kind(&trace, "fit_loop_failed"),
             },
@@ -725,6 +741,16 @@ fn summarize_fit_loop(records: &[FitLoopRecord]) -> String {
         .map(|r| r.decision.as_str())
         .unwrap_or("unknown");
     format!("fit_loop iterations={} final_decision={}", iterations, final_decision)
+}
+
+fn summarize_fit_loop_failure(records: &[FitLoopRecord]) -> String {
+    if records.is_empty() {
+        return "fit_loop iterations=0 final_decision=failed".to_string();
+    }
+    format!(
+        "fit_loop iterations={} final_decision=failed",
+        records.len()
+    )
 }
 
 impl Store {

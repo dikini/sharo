@@ -100,9 +100,18 @@ pub enum FitDecision {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReasoningContextError {
-    ContextPolicyFitFailed(String),
-    NonProgressDetected(String),
-    ApplyFailed(String),
+    ContextPolicyFitFailed {
+        message: String,
+        records: Vec<FitLoopRecord>,
+    },
+    NonProgressDetected {
+        message: String,
+        records: Vec<FitLoopRecord>,
+    },
+    ApplyFailed {
+        message: String,
+        records: Vec<FitLoopRecord>,
+    },
 }
 
 pub trait Composer {
@@ -361,9 +370,10 @@ where
     A: AdjustmentApplier,
 {
     if max_iters == 0 {
-        return Err(ReasoningContextError::ContextPolicyFitFailed(
-            "max_iters_must_be_positive".to_string(),
-        ));
+        return Err(ReasoningContextError::ContextPolicyFitFailed {
+            message: "max_iters_must_be_positive".to_string(),
+            records: Vec::new(),
+        });
     }
 
     let mut seen_hashes = BTreeSet::new();
@@ -386,7 +396,15 @@ where
                 });
             }
             FitDecision::Adjust(plan) => {
-                let report = applier.apply(state, &plan)?;
+                let report = applier.apply(state, &plan).map_err(|error| match error {
+                    ReasoningContextError::ApplyFailed { message, .. } => {
+                        ReasoningContextError::ApplyFailed {
+                            message,
+                            records: records.clone(),
+                        }
+                    }
+                    other => other,
+                })?;
                 records.push(FitLoopRecord {
                     iteration,
                     decision: "adjusted".to_string(),
@@ -395,22 +413,23 @@ where
                     after_state_hash: Some(report.after_state_hash.clone()),
                 });
                 if report.before_state_hash == report.after_state_hash {
-                    return Err(ReasoningContextError::NonProgressDetected(format!(
-                        "no_state_change plan_id={}",
-                        plan.plan_id
-                    )));
+                    return Err(ReasoningContextError::NonProgressDetected {
+                        message: format!("no_state_change plan_id={}", plan.plan_id),
+                        records,
+                    });
                 }
                 if !seen_hashes.insert(report.after_state_hash) {
-                    return Err(ReasoningContextError::NonProgressDetected(
-                        "state_hash_repeated".to_string(),
-                    ));
+                    return Err(ReasoningContextError::NonProgressDetected {
+                        message: "state_hash_repeated".to_string(),
+                        records,
+                    });
                 }
             }
         }
     }
 
-    Err(ReasoningContextError::ContextPolicyFitFailed(format!(
-        "max_iters_exceeded max_iters={}",
-        max_iters
-    )))
+    Err(ReasoningContextError::ContextPolicyFitFailed {
+        message: format!("max_iters_exceeded max_iters={}", max_iters),
+        records,
+    })
 }

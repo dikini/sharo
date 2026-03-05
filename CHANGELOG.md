@@ -34,6 +34,9 @@ The format is based on Common Changelog:
   - persisted non-convergent reasoning failures as inspectable failed tasks with trace/artifact records
   - kept idempotent replay working for persisted failed submit outcomes
   - merged configured forbidden runtime fields with the built-in default redaction set
+- Refined reasoning failure classification and persisted fit-loop history:
+  - only fit-loop failures are persisted as failed tasks; connector/provider failures still return direct errors
+  - preserved actual fit-loop adjustment history in failed-task trace/artifact records instead of collapsing to zero-iteration failure
 - Added planning docs:
   - `docs/plans/2026-03-04-design-note-alignment-plan.md`
   - `docs/plans/2026-03-04-research-note-alignment-plan.md`

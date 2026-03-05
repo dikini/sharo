@@ -51,7 +51,7 @@ fn fit_loop_stops_on_fitted_or_max_iters() {
         .expect_err("max-iter guard should fail");
     assert!(matches!(
         err,
-        ReasoningContextError::ContextPolicyFitFailed(_)
+        ReasoningContextError::ContextPolicyFitFailed { .. }
     ));
 }
 
@@ -77,7 +77,7 @@ fn fit_loop_state_hash_progress_is_monotonic_or_fails() {
         .expect_err("non-progress should fail");
     assert!(matches!(
         err,
-        ReasoningContextError::NonProgressDetected(_)
+        ReasoningContextError::NonProgressDetected { .. }
     ));
 }
 
