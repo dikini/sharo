@@ -149,6 +149,7 @@ fn scenario_a_read_task_succeeds_with_verification_artifact() {
             assert!(r.trace.events.len() >= 3);
             assert_eq!(r.trace.session_id, session_id);
             assert!(r.trace.events.iter().any(|e| e.event_kind == "route_decision"));
+            assert!(r.trace.events.iter().any(|e| e.event_kind == "fit_loop_fitted"));
             assert!(
                 r.trace.events
                     .iter()
@@ -178,6 +179,7 @@ fn scenario_a_read_task_succeeds_with_verification_artifact() {
                 .iter()
                 .map(|a: &ArtifactSummary| a.artifact_kind.as_str())
                 .collect();
+            assert!(kinds.contains(&"fit_loop_decision"));
             assert!(kinds.contains(&"model_output"));
             assert!(kinds.contains(&"verification_result"));
             assert!(kinds.contains(&"final_result"));

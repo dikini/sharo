@@ -275,3 +275,8 @@ The format is based on Common Changelog:
   - `ReasoningInput` now carries `session_id`, `turn_id`, and `metadata` for resolver scope and connector pass-through
   - `IdReasoningEngine` now resolves system/persona/memory/runtime context before model call and returns `resolved_context` in outcome
   - added `context_resolver_tests` for uniform resolver behavior, deterministic ordering, pre-compose filtering, and resolved-context integration
+- Added Task 3 fit-loop decision persistence and inspection wiring:
+  - `ReasoningOutcome` now carries fit-loop records from the fixed-point loop runner
+  - daemon store persists fit-loop decision trace events (`fit_loop_fitted`/`fit_loop_adjusted`)
+  - daemon store emits `fit_loop_decision` artifacts with provenance links to trace events
+  - daemon and CLI scenario coverage now asserts fit-loop decision visibility in trace and artifacts

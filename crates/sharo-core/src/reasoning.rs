@@ -4,7 +4,10 @@ use crate::context_resolvers::{ResolvedContext, ResolverBundle, resolve_context}
 use crate::model_connector::{
     ConnectorError, ModelConnectorPort, ModelProfile, ModelTurnRequest,
 };
-use crate::reasoning_context::{ContextState, TurnScope};
+use crate::reasoning_context::{
+    AlwaysFitPolicyFitter, ComposePrompt, Composer, ContextState, DeterministicAdjustmentApplier,
+    FitLoopRecord, TurnScope, run_fit_loop,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReasoningInput {
@@ -21,6 +24,7 @@ pub struct ReasoningOutcome {
     pub route_decision_details: String,
     pub model_output_text: String,
     pub resolved_context: ResolvedContext,
+    pub fit_loop_records: Vec<FitLoopRecord>,
 }
 
 pub trait ReasoningEnginePort {
@@ -60,18 +64,22 @@ impl<C: ModelConnectorPort> ReasoningEnginePort for IdReasoningEngine<C> {
             goal: input.goal.clone(),
         };
         let resolved_context = resolve_context(&self.resolvers, &scope)?;
-        let context_state = ContextState {
+        let mut context_state = ContextState {
             system: resolved_context.system.content.clone(),
             persona: resolved_context.persona.content.clone(),
             memory: resolved_context.memory.content.clone(),
             runtime: resolved_context.runtime.content.clone(),
             goal: input.goal.clone(),
         };
-        let prompt = compose_resolved_prompt(&context_state);
+        let composer = ResolvedContextComposer;
+        let fitter = AlwaysFitPolicyFitter;
+        let mut applier = DeterministicAdjustmentApplier;
+        let fit_outcome = run_fit_loop(&mut context_state, &composer, &fitter, &mut applier, 8)
+            .map_err(|error| format!("reasoning_fit_failed error={error:?}"))?;
         let request = ModelTurnRequest {
             trace_id: input.trace_id.clone(),
             task_id: input.task_id.clone(),
-            prompt,
+            prompt: fit_outcome.prompt.prompt_text,
             metadata: input.metadata.clone(),
         };
         let response = self
@@ -82,7 +90,18 @@ impl<C: ModelConnectorPort> ReasoningEnginePort for IdReasoningEngine<C> {
             route_decision_details: response.route_label,
             model_output_text: response.content,
             resolved_context,
+            fit_loop_records: fit_outcome.records,
         })
+    }
+}
+
+struct ResolvedContextComposer;
+
+impl Composer for ResolvedContextComposer {
+    fn compose(&self, state: &ContextState) -> ComposePrompt {
+        ComposePrompt {
+            prompt_text: compose_resolved_prompt(state),
+        }
     }
 }
 

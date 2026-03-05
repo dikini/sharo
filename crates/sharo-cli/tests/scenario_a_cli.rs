@@ -118,6 +118,7 @@ fn cli_scenario_a_end_to_end() {
     assert!(get_trace.status.success());
     let get_trace_out = String::from_utf8_lossy(&get_trace.stdout);
     assert!(get_trace_out.contains("events="));
+    assert!(get_trace_out.contains("event_kind=fit_loop_fitted"));
     assert!(get_trace_out.contains("event_kind=model_output_received"));
     assert!(get_trace_out.contains("deterministic-response"));
 
@@ -137,6 +138,7 @@ fn cli_scenario_a_end_to_end() {
     assert!(list_artifacts.status.success());
     let list_artifacts_out = String::from_utf8_lossy(&list_artifacts.stdout);
     assert!(list_artifacts_out.contains("artifacts="));
+    assert!(list_artifacts_out.contains("artifact_kind=fit_loop_decision"));
     assert!(list_artifacts_out.contains("artifact_kind=model_output"));
     assert!(list_artifacts_out.contains("deterministic-response"));
 

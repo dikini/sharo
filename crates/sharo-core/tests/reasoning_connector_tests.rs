@@ -58,6 +58,7 @@ fn id_reasoning_engine_uses_connector_route_decision() {
     assert_eq!(outcome.route_decision_details, "local_mock");
     assert!(outcome.model_output_text.contains("deterministic-response"));
     assert_eq!(outcome.resolved_context.system.provenance.source, "default-system");
+    assert!(outcome.fit_loop_records.iter().any(|r| r.decision == "fitted"));
 }
 
 #[test]

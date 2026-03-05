@@ -16,6 +16,7 @@ use sharo_core::protocol::{
     ApprovalSummary, ArtifactSummary, ListPendingApprovalsResponse, ResolveApprovalResponse,
     SubmitTaskOpRequest, SubmitTaskOpResponse, TaskSummary, TraceEventSummary, TraceSummary,
 };
+use sharo_core::reasoning_context::FitLoopRecord;
 use sharo_core::runtime_types::{BindingRecord, BindingVisibility};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -164,6 +165,7 @@ impl Store {
         fallback_session_id: &str,
         route_decision_details: &str,
         model_output_text: &str,
+        fit_loop_records: &[FitLoopRecord],
     ) -> Result<SubmitTaskOpResponse, String> {
         let session_id = request
             .session_id
@@ -246,18 +248,33 @@ impl Store {
                     event_kind: "route_decision".to_string(),
                     details: route_decision_details.to_string(),
                 },
-                TraceEventSummary {
-                    event_sequence: 3,
-                    event_kind: "model_output_received".to_string(),
-                    details: summarize_model_output(model_output_text),
-                },
-                TraceEventSummary {
-                    event_sequence: 4,
-                    event_kind: "verification_completed".to_string(),
-                    details: "postconditions_satisfied".to_string(),
-                },
             ],
         };
+        for record in fit_loop_records {
+            let event_kind = if record.decision == "fitted" {
+                "fit_loop_fitted"
+            } else {
+                "fit_loop_adjusted"
+            };
+            let details = format!(
+                "iteration={} plan_id={} before_hash={} after_hash={}",
+                record.iteration,
+                record.plan_id.as_deref().unwrap_or("none"),
+                record.before_state_hash.as_deref().unwrap_or("none"),
+                record.after_state_hash.as_deref().unwrap_or("none"),
+            );
+            push_trace_event(&mut trace, event_kind, &details);
+        }
+        push_trace_event(
+            &mut trace,
+            "model_output_received",
+            &summarize_model_output(model_output_text),
+        );
+        push_trace_event(
+            &mut trace,
+            "verification_completed",
+            "postconditions_satisfied",
+        );
 
         let mut task_bindings: Vec<BindingRecord> = Vec::new();
         if !invalid_manifest {
@@ -342,6 +359,24 @@ impl Store {
                 },
                 produced_by_step_id: step_id.clone(),
                 produced_by_trace_event_sequence: event_sequence_by_kind(&trace, "route_decision"),
+            },
+            ArtifactSummary {
+                artifact_id: format!("artifact-{}-fit-loop", task_id),
+                artifact_kind: "fit_loop_decision".to_string(),
+                summary: summarize_fit_loop(fit_loop_records),
+                produced_by_step_id: step_id.clone(),
+                produced_by_trace_event_sequence: event_sequence_by_kind(
+                    &trace,
+                    if fit_loop_records
+                        .last()
+                        .map(|r| r.decision.as_str())
+                        == Some("adjusted")
+                    {
+                        "fit_loop_adjusted"
+                    } else {
+                        "fit_loop_fitted"
+                    },
+                ),
             },
             ArtifactSummary {
                 artifact_id: format!("artifact-{}-model-output", task_id),
@@ -581,6 +616,18 @@ fn summarize_model_output(content: &str) -> String {
     let mut snippet = trimmed.chars().take(LIMIT).collect::<String>();
     snippet.push_str("...");
     snippet
+}
+
+fn summarize_fit_loop(records: &[FitLoopRecord]) -> String {
+    if records.is_empty() {
+        return "fit_loop_no_records".to_string();
+    }
+    let iterations = records.len();
+    let final_decision = records
+        .last()
+        .map(|r| r.decision.as_str())
+        .unwrap_or("unknown");
+    format!("fit_loop iterations={} final_decision={}", iterations, final_decision)
 }
 
 impl Store {

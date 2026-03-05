@@ -153,6 +153,7 @@ impl KernelPort for DaemonKernelRuntime<'_> {
             &session_id_hint,
             &reasoning.route_decision_details,
             &reasoning.model_output_text,
+            &reasoning.fit_loop_records,
         )?;
         Ok(KernelSubmitResult { response })
     }

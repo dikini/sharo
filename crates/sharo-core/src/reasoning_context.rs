@@ -186,6 +186,16 @@ impl AdjustmentApplier for DeterministicAdjustmentApplier {
 pub struct FitLoopOutcome {
     pub prompt: ComposePrompt,
     pub iterations: u64,
+    pub records: Vec<FitLoopRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FitLoopRecord {
+    pub iteration: u64,
+    pub decision: String,
+    pub plan_id: Option<String>,
+    pub before_state_hash: Option<String>,
+    pub after_state_hash: Option<String>,
 }
 
 pub fn run_fit_loop<C, F, A>(
@@ -207,17 +217,33 @@ where
     }
 
     let mut seen_hashes = BTreeSet::new();
+    let mut records = Vec::new();
     for iteration in 1..=max_iters {
         let prompt = composer.compose(state);
         match fitter.fit(&prompt, state) {
             FitDecision::Fitted => {
+                records.push(FitLoopRecord {
+                    iteration,
+                    decision: "fitted".to_string(),
+                    plan_id: None,
+                    before_state_hash: None,
+                    after_state_hash: None,
+                });
                 return Ok(FitLoopOutcome {
                     prompt,
                     iterations: iteration,
+                    records,
                 });
             }
             FitDecision::Adjust(plan) => {
                 let report = applier.apply(state, &plan)?;
+                records.push(FitLoopRecord {
+                    iteration,
+                    decision: "adjusted".to_string(),
+                    plan_id: Some(plan.plan_id.clone()),
+                    before_state_hash: Some(report.before_state_hash.clone()),
+                    after_state_hash: Some(report.after_state_hash.clone()),
+                });
                 if report.before_state_hash == report.after_state_hash {
                     return Err(ReasoningContextError::NonProgressDetected(format!(
                         "no_state_change plan_id={}",
