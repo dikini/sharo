@@ -19,6 +19,13 @@ The format is based on Common Changelog:
   - `scripts/openai-live-smoke.sh`
   - `scripts/tests/test-openai-live-smoke.bats`
 - Added MVP specification at `docs/specs/mvp.md`.
+
+### Fixed
+
+- Hardened `scripts/openai-live-smoke.sh` failure and parsing behavior:
+  - preserves `daemon_log` on readiness failure so diagnostics remain available
+  - safely strips inline TOML comments before reading `model.auth_env_key`
+  - validates `model.auth_env_key` format before indirect environment lookup
 - Added planning docs:
   - `docs/plans/2026-03-04-design-note-alignment-plan.md`
   - `docs/plans/2026-03-04-research-note-alignment-plan.md`

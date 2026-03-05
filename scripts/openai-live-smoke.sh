@@ -37,6 +37,23 @@ read_toml_scalar() {
   local path="$2"
   local raw
   raw="$(awk -F= -v k="$key" '
+    function strip_inline_comment(s,    i, ch, in_quotes, out) {
+      in_quotes = 0
+      out = ""
+      for (i = 1; i <= length(s); i++) {
+        ch = substr(s, i, 1)
+        if (ch == "\"") {
+          in_quotes = !in_quotes
+          out = out ch
+          continue
+        }
+        if (ch == "#" && !in_quotes) {
+          break
+        }
+        out = out ch
+      }
+      return out
+    }
     /^[[:space:]]*#/ { next }
     /^[[:space:]]*\[/ { next }
     {
@@ -45,7 +62,7 @@ read_toml_scalar() {
       if (left == k) {
         $1=""
         sub(/^[[:space:]]*=[[:space:]]*/, "")
-        print $0
+        print strip_inline_comment($0)
         exit
       }
     }
@@ -163,6 +180,11 @@ if [[ "$allow_non_openai" != true ]]; then
     exit 1
   fi
 
+  if [[ ! "$auth_env_key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+    echo "openai-live-smoke: invalid model.auth_env_key value: $auth_env_key" >&2
+    exit 1
+  fi
+
   if [[ -z "${!auth_env_key:-}" ]]; then
     echo "openai-live-smoke: missing required auth env var: $auth_env_key" >&2
     exit 1
@@ -171,6 +193,7 @@ fi
 
 daemon_log="$(mktemp /tmp/sharo-openai-live-daemon-log-XXXXXX.txt)"
 daemon_pid=""
+preserve_daemon_log=false
 
 cleanup() {
   if [[ -n "$daemon_pid" ]]; then
@@ -178,7 +201,10 @@ cleanup() {
     wait "$daemon_pid" >/dev/null 2>&1 || true
   fi
   if [[ "$keep_state" != true ]]; then
-    rm -f "$socket_path" "$store_path" "$daemon_log"
+    rm -f "$socket_path" "$store_path"
+    if [[ "$preserve_daemon_log" != true ]]; then
+      rm -f "$daemon_log"
+    fi
   fi
 }
 trap cleanup EXIT
@@ -195,6 +221,7 @@ for _ in $(seq 1 120); do
 done
 
 if [[ -z "$session_out" ]]; then
+  preserve_daemon_log=true
   echo "openai-live-smoke: daemon did not become ready" >&2
   echo "openai-live-smoke: daemon_log=$daemon_log" >&2
   exit 1
