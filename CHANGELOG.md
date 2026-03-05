@@ -280,3 +280,6 @@ The format is based on Common Changelog:
   - daemon store persists fit-loop decision trace events (`fit_loop_fitted`/`fit_loop_adjusted`)
   - daemon store emits `fit_loop_decision` artifacts with provenance links to trace events
   - daemon and CLI scenario coverage now asserts fit-loop decision visibility in trace and artifacts
+- Fixed post-review compatibility and turn-scoping regressions:
+  - default empty resolved context now preserves goal-only prompt text (no `GOAL:` prefix)
+  - kernel now derives `turn_id` from per-session persisted task history instead of hardcoding `1`

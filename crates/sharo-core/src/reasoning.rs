@@ -106,6 +106,14 @@ impl Composer for ResolvedContextComposer {
 }
 
 fn compose_resolved_prompt(state: &ContextState) -> String {
+    let has_resolved_context = !state.system.is_empty()
+        || !state.persona.is_empty()
+        || !state.memory.is_empty()
+        || !state.runtime.is_empty();
+    if !has_resolved_context {
+        return state.goal.clone();
+    }
+
     let mut segments = Vec::new();
     if !state.system.is_empty() {
         segments.push(format!("SYSTEM:\n{}", state.system));

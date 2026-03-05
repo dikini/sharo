@@ -139,11 +139,12 @@ impl KernelPort for DaemonKernelRuntime<'_> {
             .session_id
             .clone()
             .unwrap_or_else(|| "session-implicit".to_string());
+        let turn_id_hint = self.store.next_turn_id_for_session(&session_id_hint);
         let reasoning = self.kernel.reasoning.plan(&ReasoningInput {
             trace_id: format!("trace-{}", task_id_hint),
             task_id: task_id_hint,
             session_id: session_id_hint.clone(),
-            turn_id: 1,
+            turn_id: turn_id_hint,
             goal: input.request.goal.clone(),
             metadata: BTreeMap::new(),
         })?;

@@ -113,9 +113,26 @@ fn kernel_submit_uses_resolved_context_before_model_call() {
         .expect("reasoning outcome");
 
     assert!(outcome.model_output_text.contains("GOAL"));
-    assert!(outcome.model_output_text.contains("SYSTEM"));
-    assert!(outcome.model_output_text.contains("PERSONA"));
-    assert!(outcome.model_output_text.contains("MEMORY"));
-    assert!(outcome.model_output_text.contains("RUNTIME"));
+    assert!(outcome.model_output_text.contains("SYSTEM:\nSYSTEM"));
+    assert!(outcome.model_output_text.contains("PERSONA:\nPERSONA"));
+    assert!(outcome.model_output_text.contains("MEMORY:\nMEMORY"));
+    assert!(outcome.model_output_text.contains("RUNTIME:\nRUNTIME"));
     let _typed: ResolvedContext = outcome.resolved_context;
+}
+
+#[test]
+fn empty_resolved_context_preserves_goal_only_prompt() {
+    let engine = IdReasoningEngine::new(EchoConnector, profile());
+    let outcome = engine
+        .plan(&ReasoningInput {
+            trace_id: "trace-1".to_string(),
+            task_id: "task-1".to_string(),
+            session_id: "session-1".to_string(),
+            turn_id: 1,
+            goal: "GOAL".to_string(),
+            metadata: BTreeMap::new(),
+        })
+        .expect("reasoning outcome");
+
+    assert_eq!(outcome.model_output_text, "GOAL");
 }

@@ -80,6 +80,15 @@ impl Store {
         format!("task-{:06}", self.state.next_task_id)
     }
 
+    pub fn next_turn_id_for_session(&self, session_id: &str) -> u64 {
+        self.state
+            .tasks
+            .values()
+            .filter(|task| task.session_id == session_id)
+            .count() as u64
+            + 1
+    }
+
     pub fn open(path: impl AsRef<Path>) -> Result<Self, String> {
         let path = path.as_ref().to_path_buf();
         if !path.exists() {
