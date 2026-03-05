@@ -24,25 +24,34 @@ fn daemon_bin() -> PathBuf {
 }
 
 fn send_request(socket: &PathBuf, request: &DaemonRequest) -> DaemonResponse {
-    let mut connected = None;
-    for _ in 0..80 {
-        match UnixStream::connect(socket) {
-            Ok(stream) => {
-                connected = Some(stream);
-                break;
+    for _ in 0..5 {
+        let mut connected = None;
+        for _ in 0..80 {
+            match UnixStream::connect(socket) {
+                Ok(stream) => {
+                    connected = Some(stream);
+                    break;
+                }
+                Err(_) => thread::sleep(Duration::from_millis(15)),
             }
-            Err(_) => thread::sleep(Duration::from_millis(15)),
         }
+        let mut stream = connected.expect("connect to daemon socket");
+        let payload = serde_json::to_string(request).expect("serialize request");
+        writeln!(stream, "{}", payload).expect("write request");
+
+        let mut line = String::new();
+        let mut reader = BufReader::new(stream);
+        reader.read_line(&mut line).expect("read response");
+        if line.trim().is_empty() {
+            thread::sleep(Duration::from_millis(20));
+            continue;
+        }
+        if let Ok(parsed) = serde_json::from_str(line.trim()) {
+            return parsed;
+        }
+        thread::sleep(Duration::from_millis(20));
     }
-
-    let mut stream = connected.expect("connect to daemon socket");
-    let payload = serde_json::to_string(request).expect("serialize request");
-    writeln!(stream, "{}", payload).expect("write request");
-
-    let mut line = String::new();
-    let mut reader = BufReader::new(stream);
-    reader.read_line(&mut line).expect("read response");
-    serde_json::from_str(line.trim()).expect("parse response")
+    panic!("parse response")
 }
 
 fn assert_trace_monotonic(trace: &sharo_core::protocol::TraceSummary) {
@@ -225,6 +234,8 @@ fn scenario_b_pending_approval_survives_restart_and_can_be_resolved() {
         .stderr(Stdio::null())
         .spawn()
         .expect("spawn daemon");
+    thread::sleep(Duration::from_millis(60));
+    assert!(daemon.try_wait().expect("daemon status check").is_none());
 
     let session_id = match send_request(
         &socket,

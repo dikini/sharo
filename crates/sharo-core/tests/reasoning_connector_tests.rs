@@ -2,6 +2,7 @@ use sharo_core::model_connector::{
     DeterministicConnector, ModelCapabilityFlags, ModelConnectorPort, ModelProfile, ModelTurnRequest,
 };
 use sharo_core::model_connectors::OpenAiCompatibleConnector;
+use sharo_core::context_resolvers::{ResolverBundle, StaticTextResolver};
 use sharo_core::reasoning::{IdReasoningEngine, ReasoningEnginePort, ReasoningInput};
 
 fn test_profile() -> ModelProfile {
@@ -111,4 +112,85 @@ fn openai_compatible_connector_rejects_zero_timeout_profile() {
         }
         other => panic!("unexpected error kind: {other:?}"),
     }
+}
+
+#[test]
+fn s2_fit_loop_converges_under_budget_pressure() {
+    let resolvers = ResolverBundle {
+        system: Box::new(StaticTextResolver::new("system=keep-safe", "test-system")),
+        persona: Box::new(StaticTextResolver::new("verbosity=high", "test-persona")),
+        memory: Box::new(StaticTextResolver::new(
+            "m1\nm2\nm3 with many words for compression pressure",
+            "test-memory",
+        )),
+        runtime: Box::new(StaticTextResolver::new("secret=abc123", "test-runtime")),
+    };
+    let engine = IdReasoningEngine::with_resolvers(DeterministicConnector, test_profile(), resolvers);
+    let mut metadata = std::collections::BTreeMap::new();
+    metadata.insert("policy.max_prompt_chars".to_string(), "10000".to_string());
+    metadata.insert("policy.max_memory_lines".to_string(), "1".to_string());
+    metadata.insert(
+        "policy.forbidden_runtime_fields".to_string(),
+        "secret".to_string(),
+    );
+    let outcome = engine
+        .plan(&ReasoningInput {
+            trace_id: "trace-task-s2".to_string(),
+            task_id: "task-s2".to_string(),
+            session_id: "session-s2".to_string(),
+            turn_id: 1,
+            goal: "summarize memory and runtime".to_string(),
+            metadata,
+        })
+        .expect("fit loop should converge");
+
+    assert!(outcome.fit_loop_records.iter().any(|r| r.decision == "adjusted"));
+    assert_eq!(
+        outcome
+            .fit_loop_records
+            .last()
+            .map(|r| r.decision.as_str()),
+        Some("fitted")
+    );
+    assert!(outcome.model_output_text.contains("deterministic-response"));
+}
+
+#[test]
+fn s4_non_convergent_fit_loop_fails_with_terminal_reason() {
+    let engine = IdReasoningEngine::new(DeterministicConnector, test_profile());
+    let mut metadata = std::collections::BTreeMap::new();
+    metadata.insert("policy.max_prompt_chars".to_string(), "1".to_string());
+    let error = engine
+        .plan(&ReasoningInput {
+            trace_id: "trace-task-s4".to_string(),
+            task_id: "task-s4".to_string(),
+            session_id: "session-s4".to_string(),
+            turn_id: 1,
+            goal: "this goal is intentionally too long for the configured budget".to_string(),
+            metadata,
+        })
+        .expect_err("non-convergent fit loop should fail");
+    assert!(error.contains("context_policy_fit_failed"));
+}
+
+#[test]
+fn s3_provider_auth_failure_is_explicit_and_non_success() {
+    let mut profile = test_profile();
+    profile.provider_id = "openai".to_string();
+    profile.model_id = "gpt-5-mini".to_string();
+    profile.base_url = Some("https://api.openai.com".to_string());
+    profile.auth_env_key = Some("SHARO_TEST_MISSING_OPENAI_KEY".to_string());
+
+    let engine = IdReasoningEngine::new(OpenAiCompatibleConnector::default(), profile);
+    let error = engine
+        .plan(&ReasoningInput {
+            trace_id: "trace-task-s3".to_string(),
+            task_id: "task-s3".to_string(),
+            session_id: "session-s3".to_string(),
+            turn_id: 1,
+            goal: "read one context item".to_string(),
+            metadata: Default::default(),
+        })
+        .expect_err("missing auth env var should fail");
+    assert!(error.contains("missing auth env var SHARO_TEST_MISSING_OPENAI_KEY"));
 }

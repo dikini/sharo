@@ -6,7 +6,7 @@ use crate::model_connector::{
 };
 use crate::reasoning_context::{
     ComposePrompt, Composer, ContextState, DeterministicAdjustmentApplier, FitLoopRecord,
-    HeuristicPolicyFitter, PolicyConfig, TurnScope, run_fit_loop,
+    HeuristicPolicyFitter, PolicyConfig, ReasoningContextError, TurnScope, run_fit_loop,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,7 +75,7 @@ impl<C: ModelConnectorPort> ReasoningEnginePort for IdReasoningEngine<C> {
         let fitter = HeuristicPolicyFitter::new(PolicyConfig::from_metadata(&input.metadata));
         let mut applier = DeterministicAdjustmentApplier;
         let fit_outcome = run_fit_loop(&mut context_state, &composer, &fitter, &mut applier, 8)
-            .map_err(|error| format!("reasoning_fit_failed error={error:?}"))?;
+            .map_err(format_reasoning_context_error)?;
         let request = ModelTurnRequest {
             trace_id: input.trace_id.clone(),
             task_id: input.task_id.clone(),
@@ -141,5 +141,17 @@ fn format_connector_error(error: &ConnectorError) -> String {
         | ConnectorError::Unavailable(message)
         | ConnectorError::ProtocolMismatch(message)
         | ConnectorError::Internal(message) => message.clone(),
+    }
+}
+
+fn format_reasoning_context_error(error: ReasoningContextError) -> String {
+    match error {
+        ReasoningContextError::ContextPolicyFitFailed(message)
+        | ReasoningContextError::NonProgressDetected(message) => {
+            format!("context_policy_fit_failed reason={message}")
+        }
+        ReasoningContextError::ApplyFailed(message) => {
+            format!("context_adjustment_apply_failed reason={message}")
+        }
     }
 }

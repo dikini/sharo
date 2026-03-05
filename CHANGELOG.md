@@ -295,3 +295,9 @@ The format is based on Common Changelog:
 - Resolved post-task lint regressions in `sharo-core`:
   - derive `Default` for `HeuristicPolicyFitter` to satisfy clippy strictness
   - update `StubClient` tests to instantiate the unit struct directly
+- Added explicit acceptance coverage for fixed-point failure and provider auth failure in connector-backed reasoning tests:
+  - `s2_fit_loop_converges_under_budget_pressure`
+  - `s3_provider_auth_failure_is_explicit_and_non_success`
+  - `s4_non_convergent_fit_loop_fails_with_terminal_reason`
+- Refined reasoning fit failure semantics:
+  - over-budget prompts with no available adjustments now fail via `context_policy_fit_failed` instead of incorrectly reporting `fitted`

@@ -240,7 +240,15 @@ impl PolicyFitter for HeuristicPolicyFitter {
         }
 
         if steps.is_empty() {
-            FitDecision::Fitted
+            if prompt.prompt_text.len() > self.config.max_prompt_chars {
+                FitDecision::Adjust(AdjustmentPlan {
+                    plan_id: "policy-unfit-no-adjustments".to_string(),
+                    rationale: "policy_fit_required_but_no_adjustment_available".to_string(),
+                    steps,
+                })
+            } else {
+                FitDecision::Fitted
+            }
         } else {
             let step_tags: Vec<&str> = steps
                 .iter()
