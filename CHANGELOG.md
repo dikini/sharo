@@ -116,6 +116,12 @@ The format is based on Common Changelog:
   - `docs/plans/2026-03-05-mvp-slice-003-scenario-c-plan.md`
   - `docs/plans/2026-03-05-mvp-slice-004-protocol-cli-plan.md`
   - `docs/plans/2026-03-05-mvp-slice-005-verification-hardening-plan.md`
+- Added Scenario A runtime artifacts for MVP slice 001:
+  - `crates/sharo-core/src/runtime_types.rs`
+  - `crates/sharo-daemon/src/store.rs`
+  - `crates/sharo-core/tests/runtime_types_tests.rs`
+  - `crates/sharo-daemon/tests/scenario_a.rs`
+  - `crates/sharo-cli/tests/scenario_a_cli.rs`
 
 ### Changed
 
@@ -152,3 +158,10 @@ The format is based on Common Changelog:
   - `TASK-MVP-SLICE-003`
   - `TASK-MVP-SLICE-004`
   - `TASK-MVP-SLICE-005`
+- Updated daemon and CLI protocol handling with Scenario A operations:
+  - `register-session`
+  - `submit-task`
+  - `get-task`
+  - `get-trace`
+  - `get-artifacts`
+- Marked `TASK-MVP-SLICE-001` as done in task registry.

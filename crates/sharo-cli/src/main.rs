@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand, ValueEnum};
 use sharo_core::client::{RuntimeClient, StubClient};
 use sharo_core::protocol::{
-    DaemonRequest, DaemonResponse, SubmitTaskRequest, TaskStatusRequest,
+    DaemonRequest, DaemonResponse, GetArtifactsRequest, GetTaskRequest, GetTraceRequest,
+    RegisterSessionRequest, SubmitTaskOpRequest, SubmitTaskRequest, TaskStatusRequest,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
@@ -40,6 +41,60 @@ enum Command {
         #[arg(long)]
         task_id: String,
     },
+    Session {
+        #[command(subcommand)]
+        command: SessionCommand,
+    },
+    Task {
+        #[command(subcommand)]
+        command: TaskCommand,
+    },
+    Trace {
+        #[command(subcommand)]
+        command: TraceCommand,
+    },
+    Artifacts {
+        #[command(subcommand)]
+        command: ArtifactsCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum SessionCommand {
+    Open {
+        #[arg(long)]
+        label: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum TaskCommand {
+    Submit {
+        #[arg(long)]
+        goal: String,
+        #[arg(long)]
+        session_id: Option<String>,
+    },
+    Get {
+        #[arg(long)]
+        task_id: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum TraceCommand {
+    Get {
+        #[arg(long)]
+        task_id: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ArtifactsCommand {
+    List {
+        #[arg(long)]
+        task_id: String,
+    },
 }
 
 fn run_stub(client: &impl RuntimeClient, cli: &Cli) {
@@ -59,6 +114,10 @@ fn run_stub(client: &impl RuntimeClient, cli: &Cli) {
                 "task_id={} state={:?} summary={}",
                 response.task_id, response.state, response.summary
             );
+        }
+        _ => {
+            eprintln!("sharo_cli_error=stub_mode_only_supports_submit_status");
+            std::process::exit(1);
         }
     }
 }
@@ -121,6 +180,96 @@ async fn run_ipc(cli: &Cli) -> Result<(), String> {
                         "task_id={} state={:?} summary={}",
                         response.task_id, response.state, response.summary
                     );
+                    Ok(())
+                }
+                DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
+                other => Err(format!("unexpected_response={:?}", other)),
+            }
+        }
+        Command::Session {
+            command: SessionCommand::Open { label },
+        } => {
+            let request = DaemonRequest::RegisterSession(RegisterSessionRequest {
+                session_label: label.clone(),
+            });
+            match send_ipc(&cli.socket_path, &request).await? {
+                DaemonResponse::RegisterSession(response) => {
+                    println!("session_id={}", response.session_id);
+                    Ok(())
+                }
+                DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
+                other => Err(format!("unexpected_response={:?}", other)),
+            }
+        }
+        Command::Task {
+            command: TaskCommand::Submit { goal, session_id },
+        } => {
+            let request = DaemonRequest::SubmitTask(SubmitTaskOpRequest {
+                session_id: session_id.clone(),
+                goal: goal.clone(),
+                idempotency_key: None,
+            });
+            match send_ipc(&cli.socket_path, &request).await? {
+                DaemonResponse::SubmitTask(response) => {
+                    println!(
+                        "task_id={} task_state={} summary={}",
+                        response.task_id, response.task_state, response.summary
+                    );
+                    Ok(())
+                }
+                DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
+                other => Err(format!("unexpected_response={:?}", other)),
+            }
+        }
+        Command::Task {
+            command: TaskCommand::Get { task_id },
+        } => {
+            let request = DaemonRequest::GetTask(GetTaskRequest {
+                task_id: task_id.clone(),
+            });
+            match send_ipc(&cli.socket_path, &request).await? {
+                DaemonResponse::GetTask(response) => {
+                    println!(
+                        "task_id={} task_state={} current_step_summary={}",
+                        response.task.task_id,
+                        response.task.task_state,
+                        response.task.current_step_summary
+                    );
+                    Ok(())
+                }
+                DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
+                other => Err(format!("unexpected_response={:?}", other)),
+            }
+        }
+        Command::Trace {
+            command: TraceCommand::Get { task_id },
+        } => {
+            let request = DaemonRequest::GetTrace(GetTraceRequest {
+                task_id: task_id.clone(),
+            });
+            match send_ipc(&cli.socket_path, &request).await? {
+                DaemonResponse::GetTrace(response) => {
+                    println!(
+                        "trace_id={} task_id={} events={}",
+                        response.trace.trace_id,
+                        response.trace.task_id,
+                        response.trace.events.len()
+                    );
+                    Ok(())
+                }
+                DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
+                other => Err(format!("unexpected_response={:?}", other)),
+            }
+        }
+        Command::Artifacts {
+            command: ArtifactsCommand::List { task_id },
+        } => {
+            let request = DaemonRequest::GetArtifacts(GetArtifactsRequest {
+                task_id: task_id.clone(),
+            });
+            match send_ipc(&cli.socket_path, &request).await? {
+                DaemonResponse::GetArtifacts(response) => {
+                    println!("task_id={} artifacts={}", task_id, response.artifacts.len());
                     Ok(())
                 }
                 DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
