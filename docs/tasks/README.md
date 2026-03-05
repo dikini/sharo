@@ -31,6 +31,7 @@ This keeps task state deterministic and reduces stale registry entries.
 - List deferred: `scripts/tasks.sh --status deferred`
 - List done: `scripts/tasks.sh --status done`
 - Summary: `scripts/tasks.sh --summary`
+- Upsert task row (create/update): `scripts/tasks.sh --upsert <id> --status <status> [--type ... --title ... --source ... --blocked-by ... --notes ...]`
 - Validate registry: `scripts/check-tasks-registry.sh`
 - Validate sync gating (changed files): `scripts/check-tasks-sync.sh --changed`
 - Run Knot diff check: `scripts/check-knot-diff.sh --mapping docs/tasks/knot-diff-mapping.csv`
@@ -48,6 +49,7 @@ This keeps task state deterministic and reduces stale registry entries.
 - `TASK-DOC-TEMPLATE-TERMS-001`: strict template terminology alignment for invariant vs property-based tests.
 - `TASK-FAST-FEEDBACK-ERGONOMICS-001`: content-based marker validity and pre-commit auto-refresh for stale markers.
 - `TASK-DOC-STRICT-FILLED-001`: strict-filled scaffolding for spec/plan docs and lint guidance hints.
+- `TASK-TASKS-UPSERT-001`: task-registry upsert helper for ergonomic create/update operations.
 
 ## Completed Tooling Items
 

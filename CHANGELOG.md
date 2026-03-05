@@ -218,3 +218,9 @@ The format is based on Common Changelog:
   - updated guidance in `AGENTS.md` and `docs/templates/README.md`
   - added shell test coverage:
     - `scripts/tests/test-doc-tools.bats`
+- Improved task-sync ergonomics with deterministic helper tooling:
+  - `scripts/tasks.sh` now supports `--upsert <id>` with field updates/insert (`--type`, `--title`, `--source`, `--status`, `--blocked-by`, `--notes`)
+  - validates status enum and required fields for new task rows
+  - updated `docs/tasks/README.md` usage guidance
+  - added shell test coverage:
+    - `scripts/tests/test-tasks-tooling.bats`

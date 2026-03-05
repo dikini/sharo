@@ -16,3 +16,4 @@ TASK-MVP-SLICE-005,verification,MVP verification matrix closure,docs/tasks/READM
 TASK-DOC-TEMPLATE-TERMS-001,docs,Template terminology alignment for invariant/property-based tests,docs/tasks/README.md,done,,Aligned templates AGENTS and doc-lint to prefer Invariant and optional Property-based wording
 TASK-FAST-FEEDBACK-ERGONOMICS-001,tooling,Fast-feedback marker and pre-commit ergonomics,docs/tasks/README.md,done,,Switched marker to content hash and added one-shot pre-commit auto-refresh with tests
 TASK-DOC-STRICT-FILLED-001,docs,Strict-filled scaffolding for spec and plan doc creation,docs/tasks/README.md,done,,Added doc-new strict-filled support for spec/plan defaulted doc-start and doc-lint hinting with shell tests
+TASK-TASKS-UPSERT-001,tooling,Task registry upsert helper command,docs/tasks/README.md,done,,Added scripts/tasks.sh --upsert for deterministic create/update of task rows with validation and tests
