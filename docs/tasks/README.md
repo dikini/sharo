@@ -27,13 +27,24 @@ This keeps task state deterministic and reduces stale registry entries.
 
 - List all: `scripts/tasks.sh`
 - List planned: `scripts/tasks.sh --status planned`
+- List in-progress: `scripts/tasks.sh --status in_progress`
 - List deferred: `scripts/tasks.sh --status deferred`
+- List done: `scripts/tasks.sh --status done`
 - Summary: `scripts/tasks.sh --summary`
 - Validate registry: `scripts/check-tasks-registry.sh`
 - Validate sync gating (changed files): `scripts/check-tasks-sync.sh --changed`
 - Run Knot diff check: `scripts/check-knot-diff.sh --mapping docs/tasks/knot-diff-mapping.csv`
 - Run research reference check: `scripts/check-research-references.sh --registry docs/tasks/research-reference-rules.csv`
 - Run shell tests (Bats): `scripts/run-shell-tests.sh --all`
+
+## MVP Slice Tracking
+
+- `TASK-MVP-SLICE-000`: MVP roadmap and tracking bootstrap.
+- `TASK-MVP-SLICE-001`: Scenario A read-oriented end-to-end path.
+- `TASK-MVP-SLICE-002`: Scenario B policy and approval-gated restricted path.
+- `TASK-MVP-SLICE-003`: Scenario C overlap and coordination durability.
+- `TASK-MVP-SLICE-004`: MVP protocol and CLI surface completion.
+- `TASK-MVP-SLICE-005`: verification matrix closure and hardening.
 
 ## Completed Tooling Items
 
