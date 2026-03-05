@@ -623,6 +623,148 @@ fn scenario_b_pending_approval_survives_restart_and_can_be_resolved() {
 }
 
 #[test]
+fn scenario_b_denied_approval_blocks_without_success_records() {
+    let socket = unique_path("sharo-scenario-b-deny", ".sock");
+    let store = unique_path("sharo-scenario-b-deny", ".json");
+    let config = write_deterministic_config("sharo-scenario-b-deny");
+
+    let mut daemon = Command::new(daemon_bin())
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+            "--config-path",
+            config.to_str().expect("config path"),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let session_id = match send_request(
+        &socket,
+        &DaemonRequest::RegisterSession(RegisterSessionRequest {
+            session_label: "scenario-b-deny".to_string(),
+        }),
+    ) {
+        DaemonResponse::RegisterSession(r) => r.session_id,
+        other => panic!("unexpected response: {other:?}"),
+    };
+
+    let task_id = match send_request(
+        &socket,
+        &DaemonRequest::SubmitTask(SubmitTaskOpRequest {
+            session_id: Some(session_id),
+            goal: "restricted: write secret".to_string(),
+            idempotency_key: None,
+        }),
+    ) {
+        DaemonResponse::SubmitTask(r) => {
+            assert_eq!(r.task_state, "awaiting_approval");
+            r.task_id
+        }
+        other => panic!("unexpected response: {other:?}"),
+    };
+
+    let approval_id = match send_request(&socket, &DaemonRequest::ListPendingApprovals) {
+        DaemonResponse::ListPendingApprovals(ListPendingApprovalsResponse { approvals }) => {
+            approvals
+                .iter()
+                .find(|a| a.task_id == task_id)
+                .expect("approval for task")
+                .approval_id
+                .clone()
+        }
+        other => panic!("unexpected response: {other:?}"),
+    };
+
+    match send_request(
+        &socket,
+        &DaemonRequest::ResolveApproval(ResolveApprovalRequest {
+            approval_id: approval_id.clone(),
+            decision: "deny".to_string(),
+        }),
+    ) {
+        DaemonResponse::ResolveApproval(r) => assert_eq!(r.state, "denied"),
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    match send_request(
+        &socket,
+        &DaemonRequest::ResolveApproval(ResolveApprovalRequest {
+            approval_id,
+            decision: "deny".to_string(),
+        }),
+    ) {
+        DaemonResponse::ResolveApproval(r) => assert_eq!(r.state, "denied"),
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    match send_request(
+        &socket,
+        &DaemonRequest::GetTask(GetTaskRequest {
+            task_id: task_id.clone(),
+        }),
+    ) {
+        DaemonResponse::GetTask(r) => {
+            assert_eq!(r.task.task_state, "blocked");
+            assert_eq!(r.task.blocking_reason.as_deref(), Some("approval_denied"));
+            assert!(r.task.result_preview.is_none());
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    match send_request(
+        &socket,
+        &DaemonRequest::GetTrace(GetTraceRequest {
+            task_id: task_id.clone(),
+        }),
+    ) {
+        DaemonResponse::GetTrace(r) => {
+            let last = r.trace.events.last().expect("trace event");
+            assert_eq!(last.event_kind, "approval_resolved");
+            assert_eq!(last.details, "denied");
+            assert!(!r.trace.events.iter().any(|e| e.event_kind == "task_succeeded"));
+            assert_trace_monotonic(&r.trace);
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    match send_request(
+        &socket,
+        &DaemonRequest::GetArtifacts(GetArtifactsRequest {
+            task_id: task_id.clone(),
+        }),
+    ) {
+        DaemonResponse::GetArtifacts(r) => {
+            let kinds: Vec<&str> = r
+                .artifacts
+                .iter()
+                .map(|a: &ArtifactSummary| a.artifact_kind.as_str())
+                .collect();
+            assert!(!kinds.contains(&"final_result"));
+            assert!(kinds.contains(&"verification_result"));
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    match send_request(&socket, &DaemonRequest::ListPendingApprovals) {
+        DaemonResponse::ListPendingApprovals(ListPendingApprovalsResponse { approvals }) => {
+            assert!(!approvals.iter().any(|a| a.task_id == task_id));
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    daemon.kill().expect("kill daemon");
+    let _ = daemon.wait();
+    let _ = fs::remove_file(&socket);
+    let _ = fs::remove_file(&store);
+    let _ = fs::remove_file(&config);
+}
+
+#[test]
 fn scenario_s2_fit_loop_adjustment_is_visible_in_runtime_records() {
     let socket = unique_path("sharo-scenario-s2", ".sock");
     let store = unique_path("sharo-scenario-s2", ".json");

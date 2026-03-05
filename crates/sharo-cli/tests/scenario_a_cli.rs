@@ -366,6 +366,176 @@ fn cli_scenario_b_approval_commands() {
 }
 
 #[test]
+fn cli_scenario_b_denied_path_is_explicit() {
+    let socket = unique_path("sharo-cli-scenario-b-deny", ".sock");
+    let store = unique_path("sharo-cli-scenario-b-deny", ".json");
+    let config = write_deterministic_config("sharo-cli-scenario-b-deny");
+
+    let mut daemon = Command::new(daemon_bin())
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket"),
+            "--store-path",
+            store.to_str().expect("store"),
+            "--config-path",
+            config.to_str().expect("config"),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    for _ in 0..80 {
+        if socket.exists() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(15));
+    }
+
+    let session = Command::new(env!("CARGO_BIN_EXE_sharo"))
+        .args([
+            "--transport",
+            "ipc",
+            "--socket-path",
+            socket.to_str().expect("socket"),
+            "session",
+            "open",
+            "--label",
+            "scenario-b-deny",
+        ])
+        .output()
+        .expect("session open command");
+    assert!(session.status.success());
+    let session_id = String::from_utf8_lossy(&session.stdout)
+        .trim()
+        .trim_start_matches("session_id=")
+        .to_string();
+
+    let submit = Command::new(env!("CARGO_BIN_EXE_sharo"))
+        .args([
+            "--transport",
+            "ipc",
+            "--socket-path",
+            socket.to_str().expect("socket"),
+            "task",
+            "submit",
+            "--session-id",
+            &session_id,
+            "--goal",
+            "restricted: write secret",
+        ])
+        .output()
+        .expect("task submit command");
+    assert!(submit.status.success());
+    let submit_out = String::from_utf8_lossy(&submit.stdout);
+    let task_id = submit_out
+        .split_whitespace()
+        .find(|part| part.starts_with("task_id="))
+        .expect("task_id field")
+        .trim_start_matches("task_id=")
+        .to_string();
+
+    let list = Command::new(env!("CARGO_BIN_EXE_sharo"))
+        .args([
+            "--transport",
+            "ipc",
+            "--socket-path",
+            socket.to_str().expect("socket"),
+            "approval",
+            "list",
+        ])
+        .output()
+        .expect("approval list command");
+    assert!(list.status.success());
+    let list_out = String::from_utf8_lossy(&list.stdout);
+    let approval_id = list_out
+        .split_whitespace()
+        .find(|part| part.starts_with("approval_id="))
+        .expect("approval_id field")
+        .trim_start_matches("approval_id=")
+        .to_string();
+
+    let resolve = Command::new(env!("CARGO_BIN_EXE_sharo"))
+        .args([
+            "--transport",
+            "ipc",
+            "--socket-path",
+            socket.to_str().expect("socket"),
+            "approval",
+            "resolve",
+            "--approval-id",
+            &approval_id,
+            "--decision",
+            "deny",
+        ])
+        .output()
+        .expect("approval resolve command");
+    assert!(resolve.status.success());
+    let resolve_out = String::from_utf8_lossy(&resolve.stdout);
+    assert!(resolve_out.contains("state=denied"));
+
+    let task_get = Command::new(env!("CARGO_BIN_EXE_sharo"))
+        .args([
+            "--transport",
+            "ipc",
+            "--socket-path",
+            socket.to_str().expect("socket"),
+            "task",
+            "get",
+            "--task-id",
+            &task_id,
+        ])
+        .output()
+        .expect("task get command");
+    assert!(task_get.status.success());
+    let task_out = String::from_utf8_lossy(&task_get.stdout);
+    assert!(task_out.contains("task_state=blocked"));
+    assert!(task_out.contains("blocking_reason=approval_denied"));
+    assert!(task_out.contains("result_preview=none"));
+
+    let trace_get = Command::new(env!("CARGO_BIN_EXE_sharo"))
+        .args([
+            "--transport",
+            "ipc",
+            "--socket-path",
+            socket.to_str().expect("socket"),
+            "trace",
+            "get",
+            "--task-id",
+            &task_id,
+        ])
+        .output()
+        .expect("trace get command");
+    assert!(trace_get.status.success());
+    let trace_out = String::from_utf8_lossy(&trace_get.stdout);
+    assert!(trace_out.contains("event_kind=approval_resolved details=denied"));
+
+    let artifacts = Command::new(env!("CARGO_BIN_EXE_sharo"))
+        .args([
+            "--transport",
+            "ipc",
+            "--socket-path",
+            socket.to_str().expect("socket"),
+            "artifacts",
+            "list",
+            "--task-id",
+            &task_id,
+        ])
+        .output()
+        .expect("artifacts list command");
+    assert!(artifacts.status.success());
+    let artifacts_out = String::from_utf8_lossy(&artifacts.stdout);
+    assert!(!artifacts_out.contains("artifact_kind=final_result"));
+
+    daemon.kill().expect("kill daemon");
+    let _ = daemon.wait();
+    let _ = std::fs::remove_file(socket);
+    let _ = std::fs::remove_file(store);
+    let _ = std::fs::remove_file(config);
+}
+
+#[test]
 fn cli_scenario_c_overlap_is_visible_in_task_output() {
     let socket = unique_path("sharo-cli-scenario-c", ".sock");
     let store = unique_path("sharo-cli-scenario-c", ".json");

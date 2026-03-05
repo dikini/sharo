@@ -31,6 +31,10 @@ The format is based on Common Changelog:
 - Added explicit restart recovery evidence for successful Scenario A tasks:
   - proved `task get` state and `result_preview` survive restart unchanged
   - proved recovered trace id, event payloads, and monotonic ordering remain intact after restart
+- Added explicit denied-approval safety coverage:
+  - proved denied restricted tasks remain `blocked` with `approval_denied`
+  - proved denied path emits no success preview or `final_result` artifact
+  - proved CLI surfaces denied state and denial trace details directly
 - Persisted a succeeded-task `result_preview` derived from canonical model output:
   - successful `task get` protocol records now carry answer preview content
   - approval-gated tasks keep preview empty until approval transitions them to `succeeded`
