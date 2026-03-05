@@ -22,9 +22,15 @@ The format is based on Common Changelog:
 - Added task result preview planning artifacts:
   - `docs/plans/2026-03-05-task-result-preview-plan.md`
   - `TASK-RUNTIME-CONTENT-PREVIEW-001` in `docs/tasks/tasks.csv`
+- Added restart trace continuity hardening artifacts:
+  - `docs/plans/2026-03-05-restart-trace-continuity-hardening-plan.md`
+  - `TASK-RECOVERY-HARDENING-001` in `docs/tasks/tasks.csv`
 
 ### Fixed
 
+- Added explicit restart recovery evidence for successful Scenario A tasks:
+  - proved `task get` state and `result_preview` survive restart unchanged
+  - proved recovered trace id, event payloads, and monotonic ordering remain intact after restart
 - Persisted a succeeded-task `result_preview` derived from canonical model output:
   - successful `task get` protocol records now carry answer preview content
   - approval-gated tasks keep preview empty until approval transitions them to `succeeded`

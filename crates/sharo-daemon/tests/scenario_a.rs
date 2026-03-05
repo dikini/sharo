@@ -300,6 +300,132 @@ fn scenario_a_read_task_succeeds_with_verification_artifact() {
 }
 
 #[test]
+fn scenario_a_success_survives_restart_with_same_trace_and_preview() {
+    let socket = unique_path("sharo-scenario-a-restart", ".sock");
+    let store = unique_path("sharo-scenario-a-restart", ".json");
+    let config = write_deterministic_config("sharo-scenario-a-restart");
+
+    let mut daemon = Command::new(daemon_bin())
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+            "--config-path",
+            config.to_str().expect("config path"),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let session_id = match send_request(
+        &socket,
+        &DaemonRequest::RegisterSession(RegisterSessionRequest {
+            session_label: "scenario-a-restart".to_string(),
+        }),
+    ) {
+        DaemonResponse::RegisterSession(r) => r.session_id,
+        other => panic!("unexpected response: {other:?}"),
+    };
+
+    let task_id = match send_request(
+        &socket,
+        &DaemonRequest::SubmitTask(SubmitTaskOpRequest {
+            session_id: Some(session_id.clone()),
+            goal: "read one context item".to_string(),
+            idempotency_key: Some("idem-a-restart".to_string()),
+        }),
+    ) {
+        DaemonResponse::SubmitTask(r) => r.task_id,
+        other => panic!("unexpected response: {other:?}"),
+    };
+
+    let before_task = match send_request(
+        &socket,
+        &DaemonRequest::GetTask(GetTaskRequest {
+            task_id: task_id.clone(),
+        }),
+    ) {
+        DaemonResponse::GetTask(r) => r.task,
+        other => panic!("unexpected response: {other:?}"),
+    };
+    let before_trace = match send_request(
+        &socket,
+        &DaemonRequest::GetTrace(GetTraceRequest {
+            task_id: task_id.clone(),
+        }),
+    ) {
+        DaemonResponse::GetTrace(r) => r.trace,
+        other => panic!("unexpected response: {other:?}"),
+    };
+
+    daemon.kill().expect("kill daemon");
+    let _ = daemon.wait();
+    thread::sleep(Duration::from_millis(40));
+
+    let mut daemon = Command::new(daemon_bin())
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+            "--config-path",
+            config.to_str().expect("config path"),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let after_task = match send_request(
+        &socket,
+        &DaemonRequest::GetTask(GetTaskRequest {
+            task_id: task_id.clone(),
+        }),
+    ) {
+        DaemonResponse::GetTask(r) => r.task,
+        other => panic!("unexpected response: {other:?}"),
+    };
+    let after_trace = match send_request(
+        &socket,
+        &DaemonRequest::GetTrace(GetTraceRequest {
+            task_id: task_id.clone(),
+        }),
+    ) {
+        DaemonResponse::GetTrace(r) => r.trace,
+        other => panic!("unexpected response: {other:?}"),
+    };
+
+    assert_eq!(before_task.task_id, after_task.task_id);
+    assert_eq!(before_task.session_id, after_task.session_id);
+    assert_eq!(before_task.task_state, "succeeded");
+    assert_eq!(after_task.task_state, "succeeded");
+    assert_eq!(before_task.result_preview, after_task.result_preview);
+    assert!(
+        after_task
+            .result_preview
+            .as_deref()
+            .unwrap_or_default()
+            .contains("deterministic-response")
+    );
+
+    assert_eq!(before_trace.trace_id, after_trace.trace_id);
+    assert_eq!(before_trace.task_id, after_trace.task_id);
+    assert_eq!(before_trace.session_id, after_trace.session_id);
+    assert_eq!(before_trace.events, after_trace.events);
+    assert_trace_monotonic(&after_trace);
+
+    daemon.kill().expect("kill daemon");
+    let _ = daemon.wait();
+    let _ = fs::remove_file(&socket);
+    let _ = fs::remove_file(&store);
+    let _ = fs::remove_file(&config);
+}
+
+#[test]
 fn scenario_b_pending_approval_survives_restart_and_can_be_resolved() {
     let socket = unique_path("sharo-scenario-b", ".sock");
     let store = unique_path("sharo-scenario-b", ".json");
