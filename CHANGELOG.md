@@ -211,3 +211,10 @@ The format is based on Common Changelog:
   - added shell tests:
     - `scripts/tests/test-fast-feedback-marker.bats`
     - `scripts/tests/test-precommit-fast-feedback.bats`
+- Improved strict docs creation ergonomics:
+  - `scripts/doc-new.sh` supports `--strict-filled` for both `spec` and `plan`
+  - `scripts/doc-start.sh` now uses strict-filled scaffolding by default
+  - `scripts/doc-lint.sh` strict-section failures include guidance to use strict-filled creation commands
+  - updated guidance in `AGENTS.md` and `docs/templates/README.md`
+  - added shell test coverage:
+    - `scripts/tests/test-doc-tools.bats`

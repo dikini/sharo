@@ -15,3 +15,4 @@ TASK-MVP-SLICE-004,runtime,MVP protocol and CLI surface completion,docs/tasks/RE
 TASK-MVP-SLICE-005,verification,MVP verification matrix closure,docs/tasks/README.md,done,,Added matrix map checks restart/invariant tests and MVP readiness gate evidence updates
 TASK-DOC-TEMPLATE-TERMS-001,docs,Template terminology alignment for invariant/property-based tests,docs/tasks/README.md,done,,Aligned templates AGENTS and doc-lint to prefer Invariant and optional Property-based wording
 TASK-FAST-FEEDBACK-ERGONOMICS-001,tooling,Fast-feedback marker and pre-commit ergonomics,docs/tasks/README.md,done,,Switched marker to content hash and added one-shot pre-commit auto-refresh with tests
+TASK-DOC-STRICT-FILLED-001,docs,Strict-filled scaffolding for spec and plan doc creation,docs/tasks/README.md,done,,Added doc-new strict-filled support for spec/plan defaulted doc-start and doc-lint hinting with shell tests

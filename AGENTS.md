@@ -57,6 +57,10 @@ Example:
   - `plan.template.md` for new plans
   - `CHANGELOG.template.md` when initializing changelog structure
 - Create new specs/plans via `scripts/doc-new.sh` (or `scripts/doc-start.sh`).
+- For strict-profile docs, use `--strict-filled`:
+  - `scripts/doc-new.sh spec <slug> --strict-filled`
+  - `scripts/doc-new.sh plan <slug> --strict-filled`
+  - `scripts/doc-start.sh` applies strict-filled scaffolding by default.
 - Specs and plans should use `Template-Profile: tdd-strict-v1` unless explicitly waived.
 - Under the strict profile, each task should include:
   - Preconditions

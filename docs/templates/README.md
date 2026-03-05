@@ -29,8 +29,12 @@ This allows gradual adoption:
 - Create new docs with:
   - `scripts/doc-new.sh spec <slug>`
   - `scripts/doc-new.sh plan <slug>`
+- Recommended for strict-profile docs:
+  - `scripts/doc-new.sh spec <slug> --strict-filled`
+  - `scripts/doc-new.sh plan <slug> --strict-filled`
 - Start docs task with:
   - `scripts/doc-start.sh spec <slug>`
   - `scripts/doc-start.sh plan <slug>`
+  - `doc-start` applies strict-filled scaffolding by default.
 - Run lint at task start and before commit:
   - `scripts/doc-lint.sh --changed --strict-new`
