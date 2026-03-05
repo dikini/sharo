@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 use sharo_core::context_resolvers::{ResolverBundle, StaticTextResolver};
 use sharo_core::kernel::{
@@ -7,6 +8,7 @@ use sharo_core::kernel::{
 use sharo_core::model_connector::{DeterministicConnector, ModelCapabilityFlags, ModelProfile};
 use sharo_core::model_connectors::{OllamaConnector, OpenAiCompatibleConnector};
 use sharo_core::reasoning::{IdReasoningEngine, ReasoningEnginePort, ReasoningInput};
+use sharo_core::reasoning_context::PolicyConfig;
 
 use crate::config::{
     ConnectorPoolConfig, DaemonConfigFile, ReasoningContextConfig, ReasoningPolicyConfig,
@@ -258,14 +260,25 @@ impl KernelPort for DaemonKernelRuntime<'_> {
         if let Some(value) = self.kernel.reasoning_policy_forbidden_runtime_fields() {
             metadata.insert("policy.forbidden_runtime_fields".to_string(), value);
         }
-        let reasoning = self.kernel.reasoning.plan(&ReasoningInput {
+        let reasoning_input = ReasoningInput {
             trace_id: format!("trace-{}", task_id_hint),
             task_id: task_id_hint,
             session_id: session_id_hint.clone(),
             turn_id: turn_id_hint,
             goal: input.request.goal.clone(),
             metadata,
-        })?;
+        };
+        let reasoning = match self.kernel.reasoning.plan(&reasoning_input) {
+            Ok(reasoning) => reasoning,
+            Err(message) => {
+                let response = self.store.submit_failed_task(
+                    input.request,
+                    &session_id_hint,
+                    &message,
+                )?;
+                return Ok(KernelSubmitResult { response });
+            }
+        };
 
         let response = self.store.submit_task_with_route(
             input.request,
@@ -295,13 +308,25 @@ impl DaemonKernel {
     }
 
     fn reasoning_policy_forbidden_runtime_fields(&self) -> Option<String> {
-        self.reasoning_policy.forbidden_runtime_fields.as_ref().map(|fields| fields.join(","))
+        let mut merged: BTreeSet<String> = PolicyConfig::default()
+            .forbidden_runtime_fields
+            .into_iter()
+            .collect();
+        if let Some(configured) = &self.reasoning_policy.forbidden_runtime_fields {
+            merged.extend(configured.iter().cloned());
+        }
+        if merged.is_empty() {
+            None
+        } else {
+            Some(merged.into_iter().collect::<Vec<_>>().join(","))
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{ConnectorKind, KernelRuntimeConfig};
+    use sharo_core::reasoning_context::PolicyConfig;
     use crate::config::{ConnectorPoolConfig, DaemonConfigFile, ModelRuntimeConfig};
 
     #[test]
@@ -361,5 +386,30 @@ mod tests {
         };
         let err = KernelRuntimeConfig::from_daemon_config(&cfg).expect_err("expected threshold error");
         assert!(err.contains("connector_pool_scale_up_threshold_invalid"));
+    }
+
+    #[test]
+    fn configured_forbidden_fields_extend_default_redactions() {
+        let cfg = DaemonConfigFile {
+            reasoning_policy: crate::config::ReasoningPolicyConfig {
+                forbidden_runtime_fields: Some(vec!["session_id".to_string(), "token".to_string()]),
+                ..crate::config::ReasoningPolicyConfig::default()
+            },
+            ..DaemonConfigFile::default()
+        };
+        let runtime = KernelRuntimeConfig::from_daemon_config(&cfg).expect("runtime config");
+        let kernel = super::DaemonKernel::new(&runtime);
+        let merged = kernel
+            .reasoning_policy_forbidden_runtime_fields()
+            .expect("merged forbidden fields");
+        let fields: std::collections::BTreeSet<&str> = merged.split(',').collect();
+        let default_policy = PolicyConfig::default();
+        let defaults: std::collections::BTreeSet<&str> = default_policy
+            .forbidden_runtime_fields
+            .iter()
+            .map(String::as_str)
+            .collect();
+        assert!(defaults.is_subset(&fields));
+        assert!(fields.contains("session_id"));
     }
 }

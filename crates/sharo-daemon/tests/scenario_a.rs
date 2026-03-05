@@ -586,16 +586,80 @@ fn scenario_s4_non_convergent_fit_loop_fails_without_success_records() {
         other => panic!("unexpected response: {other:?}"),
     };
 
-    match send_request(
+    let task_id = match send_request(
         &socket,
         &DaemonRequest::SubmitTask(SubmitTaskOpRequest {
             session_id: Some(session_id),
             goal: "this goal is intentionally too long".to_string(),
-            idempotency_key: None,
+            idempotency_key: Some("idem-s4".to_string()),
         }),
     ) {
-        DaemonResponse::Error { message } => {
-            assert!(message.contains("context_policy_fit_failed"));
+        DaemonResponse::SubmitTask(r) => {
+            assert_eq!(r.task_state, "failed");
+            assert!(r.summary.contains("context_policy_fit_failed"));
+            r.task_id
+        }
+        other => panic!("unexpected response: {other:?}"),
+    };
+
+    match send_request(
+        &socket,
+        &DaemonRequest::SubmitTask(SubmitTaskOpRequest {
+            session_id: Some("session-000001".to_string()),
+            goal: "this goal is intentionally too long".to_string(),
+            idempotency_key: Some("idem-s4".to_string()),
+        }),
+    ) {
+        DaemonResponse::SubmitTask(r) => {
+            assert_eq!(r.task_id, task_id);
+            assert_eq!(r.task_state, "failed");
+        }
+        other => panic!("unexpected response: {other:?}"),
+    };
+
+    match send_request(
+        &socket,
+        &DaemonRequest::GetTask(GetTaskRequest {
+            task_id: task_id.clone(),
+        }),
+    ) {
+        DaemonResponse::GetTask(r) => {
+            assert_eq!(r.task.task_state, "failed");
+            assert!(
+                r.task
+                    .blocking_reason
+                    .as_deref()
+                    .unwrap_or("")
+                    .contains("context_policy_fit_failed")
+            );
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    match send_request(
+        &socket,
+        &DaemonRequest::GetTrace(GetTraceRequest {
+            task_id: task_id.clone(),
+        }),
+    ) {
+        DaemonResponse::GetTrace(r) => {
+            assert!(r.trace.events.iter().any(|e| e.event_kind == "fit_loop_failed"));
+            assert!(!r.trace.events.iter().any(|e| e.event_kind == "model_output_received"));
+            assert_trace_monotonic(&r.trace);
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    match send_request(
+        &socket,
+        &DaemonRequest::GetArtifacts(GetArtifactsRequest { task_id }),
+    ) {
+        DaemonResponse::GetArtifacts(r) => {
+            let kinds: Vec<&str> = r.artifacts.iter().map(|a| a.artifact_kind.as_str()).collect();
+            assert!(kinds.contains(&"fit_loop_decision"));
+            assert!(kinds.contains(&"failure_record"));
+            assert!(!kinds.contains(&"model_output"));
+            assert!(!kinds.contains(&"final_result"));
         }
         other => panic!("unexpected response: {other:?}"),
     }

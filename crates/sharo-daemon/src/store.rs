@@ -485,6 +485,82 @@ impl Store {
         })
     }
 
+    pub fn submit_failed_task(
+        &mut self,
+        request: SubmitTaskOpRequest,
+        fallback_session_id: &str,
+        failure_message: &str,
+    ) -> Result<SubmitTaskOpResponse, String> {
+        let session_id = request
+            .session_id
+            .clone()
+            .unwrap_or_else(|| fallback_session_id.to_string());
+        let namespaced_idempotency_key = request
+            .idempotency_key
+            .as_deref()
+            .map(|key| format!("{}:{}", session_id, key));
+        if let Some(replay) = self.replay_by_idempotency(&session_id, request.idempotency_key.as_deref())? {
+            return Ok(replay);
+        }
+
+        let task_id = format!("task-{:06}", self.state.next_task_id);
+        self.state.next_task_id += 1;
+        let step_id = format!("step-{}", task_id);
+
+        let task = TaskSummary {
+            task_id: task_id.clone(),
+            session_id: session_id.clone(),
+            task_state: "failed".to_string(),
+            current_step_summary: "reasoning policy fit failed".to_string(),
+            blocking_reason: Some(failure_message.to_string()),
+            coordination_summary: None,
+        };
+
+        let mut trace = TraceSummary {
+            trace_id: format!("trace-{}", task_id),
+            task_id: task_id.clone(),
+            session_id: session_id.clone(),
+            events: vec![TraceEventSummary {
+                event_sequence: 1,
+                event_kind: "task_submitted".to_string(),
+                details: request.goal.clone(),
+            }],
+        };
+        push_trace_event(&mut trace, "fit_loop_failed", failure_message);
+
+        let artifacts = vec![
+            ArtifactSummary {
+                artifact_id: format!("artifact-{}-fit-loop", task_id),
+                artifact_kind: "fit_loop_decision".to_string(),
+                summary: "fit_loop iterations=0 final_decision=failed".to_string(),
+                produced_by_step_id: step_id.clone(),
+                produced_by_trace_event_sequence: event_sequence_by_kind(&trace, "fit_loop_failed"),
+            },
+            ArtifactSummary {
+                artifact_id: format!("artifact-{}-failure", task_id),
+                artifact_kind: "failure_record".to_string(),
+                summary: failure_message.to_string(),
+                produced_by_step_id: step_id,
+                produced_by_trace_event_sequence: event_sequence_by_kind(&trace, "fit_loop_failed"),
+            },
+        ];
+
+        self.state.tasks.insert(task_id.clone(), task);
+        self.state.traces.insert(task_id.clone(), trace);
+        self.state.artifacts.insert(task_id.clone(), artifacts);
+        self.state.bindings.insert(task_id.clone(), Vec::new());
+        if let Some(idempotency_key) = namespaced_idempotency_key {
+            self.state.idempotency_keys.insert(idempotency_key, task_id.clone());
+        }
+        self.save()?;
+
+        Ok(SubmitTaskOpResponse {
+            task_id,
+            task_state: "failed".to_string(),
+            summary: failure_message.to_string(),
+        })
+    }
+
     pub fn get_task(&self, task_id: &str) -> Option<TaskSummary> {
         self.state.tasks.get(task_id).cloned()
     }

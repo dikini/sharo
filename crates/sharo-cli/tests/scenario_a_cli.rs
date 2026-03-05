@@ -648,9 +648,52 @@ fn cli_scenario_s4_non_convergent_fit_loop_is_explicit() {
         ])
         .output()
         .expect("task submit command");
-    assert!(!submit.status.success());
-    let submit_err = String::from_utf8_lossy(&submit.stderr);
-    assert!(submit_err.contains("context_policy_fit_failed"));
+    assert!(submit.status.success());
+    let submit_out = String::from_utf8_lossy(&submit.stdout);
+    assert!(submit_out.contains("task_state=failed"));
+    assert!(submit_out.contains("context_policy_fit_failed"));
+    let task_id = submit_out
+        .split_whitespace()
+        .find(|part| part.starts_with("task_id="))
+        .expect("task id")
+        .trim_start_matches("task_id=")
+        .to_string();
+
+    let task_get = Command::new(env!("CARGO_BIN_EXE_sharo"))
+        .args([
+            "--transport",
+            "ipc",
+            "--socket-path",
+            socket.to_str().expect("socket"),
+            "task",
+            "get",
+            "--task-id",
+            &task_id,
+        ])
+        .output()
+        .expect("task get command");
+    assert!(task_get.status.success());
+    let task_out = String::from_utf8_lossy(&task_get.stdout);
+    assert!(task_out.contains("task_state=failed"));
+    assert!(task_out.contains("context_policy_fit_failed"));
+
+    let trace_get = Command::new(env!("CARGO_BIN_EXE_sharo"))
+        .args([
+            "--transport",
+            "ipc",
+            "--socket-path",
+            socket.to_str().expect("socket"),
+            "trace",
+            "get",
+            "--task-id",
+            &task_id,
+        ])
+        .output()
+        .expect("trace get command");
+    assert!(trace_get.status.success());
+    let trace_out = String::from_utf8_lossy(&trace_get.stdout);
+    assert!(trace_out.contains("event_kind=fit_loop_failed"));
+    assert!(!trace_out.contains("event_kind=model_output_received"));
 
     daemon.kill().expect("kill daemon");
     let _ = daemon.wait();

@@ -30,6 +30,10 @@ The format is based on Common Changelog:
   - added `[reasoning_policy]` and `[reasoning_context]` config parsing in `sharo-daemon`
   - passed policy metadata and static resolver context through kernel reasoning
   - added daemon and CLI acceptance coverage for fit-loop adjusted success and explicit non-convergent failure
+- Hardened runtime fit-loop failure handling and redaction policy merging:
+  - persisted non-convergent reasoning failures as inspectable failed tasks with trace/artifact records
+  - kept idempotent replay working for persisted failed submit outcomes
+  - merged configured forbidden runtime fields with the built-in default redaction set
 - Added planning docs:
   - `docs/plans/2026-03-04-design-note-alignment-plan.md`
   - `docs/plans/2026-03-04-research-note-alignment-plan.md`
