@@ -1,6 +1,6 @@
 use sharo_core::protocol::{
-    DaemonRequest, DaemonResponse, SubmitTaskRequest, SubmitTaskResponse, TaskState,
-    TaskStatusRequest, TaskStatusResponse,
+    DaemonRequest, DaemonResponse, ResolveApprovalRequest, ResolveApprovalResponse,
+    SubmitTaskRequest, SubmitTaskResponse, TaskState, TaskStatusRequest, TaskStatusResponse,
 };
 
 #[test]
@@ -67,4 +67,32 @@ fn response_variant_matches_request_kind() {
     assert!(matches!(submit_resp, DaemonResponse::Submit(_)));
     assert!(matches!(status_req, DaemonRequest::Status(_)));
     assert!(matches!(status_resp, DaemonResponse::Status(_)));
+}
+
+#[test]
+fn approval_envelope_roundtrip() {
+    let resolve_req = DaemonRequest::ResolveApproval(ResolveApprovalRequest {
+        approval_id: "approval-000001".to_string(),
+        decision: "approve".to_string(),
+    });
+    let resolve_req_json = serde_json::to_string(&resolve_req).expect("serialize resolve request");
+    let resolve_req_parsed: DaemonRequest =
+        serde_json::from_str(&resolve_req_json).expect("deserialize resolve request");
+    assert!(matches!(resolve_req_parsed, DaemonRequest::ResolveApproval(_)));
+
+    let resolve_resp = DaemonResponse::ResolveApproval(ResolveApprovalResponse {
+        approval_id: "approval-000001".to_string(),
+        task_id: "task-000001".to_string(),
+        state: "approved".to_string(),
+    });
+    let resolve_resp_json = serde_json::to_string(&resolve_resp).expect("serialize resolve response");
+    let resolve_resp_parsed: DaemonResponse =
+        serde_json::from_str(&resolve_resp_json).expect("deserialize resolve response");
+    assert!(matches!(resolve_resp_parsed, DaemonResponse::ResolveApproval(_)));
+
+    let list_req = DaemonRequest::ListPendingApprovals;
+    let list_req_json = serde_json::to_string(&list_req).expect("serialize list request");
+    let list_req_parsed: DaemonRequest =
+        serde_json::from_str(&list_req_json).expect("deserialize list request");
+    assert!(matches!(list_req_parsed, DaemonRequest::ListPendingApprovals));
 }

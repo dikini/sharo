@@ -69,6 +69,7 @@ pub struct TaskSummary {
     pub task_state: String,
     pub current_step_summary: String,
     pub blocking_reason: Option<String>,
+    pub coordination_summary: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -118,6 +119,32 @@ pub struct GetArtifactsResponse {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListPendingApprovalsResponse {
+    pub approvals: Vec<ApprovalSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApprovalSummary {
+    pub approval_id: String,
+    pub task_id: String,
+    pub state: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResolveApprovalRequest {
+    pub approval_id: String,
+    pub decision: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResolveApprovalResponse {
+    pub approval_id: String,
+    pub task_id: String,
+    pub state: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DaemonRequest {
     Submit(SubmitTaskRequest),
     Status(TaskStatusRequest),
@@ -126,6 +153,8 @@ pub enum DaemonRequest {
     GetTask(GetTaskRequest),
     GetTrace(GetTraceRequest),
     GetArtifacts(GetArtifactsRequest),
+    ListPendingApprovals,
+    ResolveApproval(ResolveApprovalRequest),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -137,5 +166,7 @@ pub enum DaemonResponse {
     GetTask(GetTaskResponse),
     GetTrace(GetTraceResponse),
     GetArtifacts(GetArtifactsResponse),
+    ListPendingApprovals(ListPendingApprovalsResponse),
+    ResolveApproval(ResolveApprovalResponse),
     Error { message: String },
 }

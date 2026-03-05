@@ -74,6 +74,15 @@ fn handle_request(request: DaemonRequest, client: &impl RuntimeClient, store: &m
         DaemonRequest::GetArtifacts(payload) => DaemonResponse::GetArtifacts(GetArtifactsResponse {
             artifacts: store.get_artifacts(&payload.task_id),
         }),
+        DaemonRequest::ListPendingApprovals => {
+            DaemonResponse::ListPendingApprovals(store.list_pending_approvals())
+        }
+        DaemonRequest::ResolveApproval(payload) => {
+            match store.resolve_approval(&payload.approval_id, &payload.decision) {
+                Ok(response) => DaemonResponse::ResolveApproval(response),
+                Err(message) => DaemonResponse::Error { message },
+            }
+        }
     }
 }
 

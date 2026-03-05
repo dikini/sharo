@@ -1094,6 +1094,9 @@ Three scenarios are mandatory.
 | Binding can remain opaque | Reasoning / memory | A | unit + integration | binding handle present without raw value leakage |
 | Verification and observability artifacts are first-class | Harness / memory | A | integration | verification or health artifacts retrievable with provenance |
 
+Verification evidence map: `docs/tasks/mvp-verification-matrix-map.csv`.
+Quality gate command: `scripts/check-mvp-matrix-map.sh`.
+
 ## 22. Enrichment Roadmap
 
 Enrichment is risk-first and must be justified either by research or by observed MVP limitations.
