@@ -139,6 +139,9 @@ The format is based on Common Changelog:
   - `crates/sharo-core/src/model_connector.rs`
   - `crates/sharo-core/src/model_connectors.rs`
   - `crates/sharo-core/tests/reasoning_connector_tests.rs`
+- Added persisted technical design and implementation planning artifacts for kernel/reasoning rollout:
+  - `docs/plans/2026-03-05-agent-kernel-reasoning-design-plan.md`
+  - `docs/plans/2026-03-05-agent-kernel-reasoning-implementation-plan.md`
 
 ### Changed
 
@@ -241,3 +244,9 @@ The format is based on Common Changelog:
 - Hardened OpenAI-compatible connector contract behavior:
   - enforce `ModelProfile.timeout_ms` for outbound HTTP requests
   - treat missing/empty provider output text as `ProtocolMismatch` instead of successful empty response
+- Updated task registry with kernel design and implementation tracking rows:
+  - `TASK-KERNEL-DESIGN-001`
+  - `TASK-KERNEL-DESIGN-002`
+  - `TASK-KERNEL-IMPL-001`
+  - `TASK-KERNEL-IMPL-002`
+  - `TASK-KERNEL-IMPL-003`
