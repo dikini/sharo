@@ -100,6 +100,21 @@ fn state_hash_uses_collision_safe_encoding_for_delimiter_rich_values() {
 }
 
 #[test]
+fn state_hash_does_not_expose_raw_context_text() {
+    let state = ContextState {
+        system: "super-secret-system".to_string(),
+        persona: "super-secret-persona".to_string(),
+        memory: "super-secret-memory".to_string(),
+        runtime: "super-secret-runtime".to_string(),
+        goal: "super-secret-goal".to_string(),
+    };
+
+    let fingerprint = state.state_hash();
+    assert!(!fingerprint.contains("super-secret"));
+    assert_eq!(fingerprint.len(), 64);
+}
+
+#[test]
 fn id_reasoning_engine_compatibility_with_context_defaults() {
     let input = ReasoningInput {
         trace_id: "trace-task-1".to_string(),

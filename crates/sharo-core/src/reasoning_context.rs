@@ -1,5 +1,7 @@
 use std::collections::BTreeSet;
 
+use sha2::{Digest, Sha256};
+
 use crate::reasoning::ReasoningInput;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,7 +42,7 @@ impl ContextState {
     }
 
     pub fn state_hash(&self) -> String {
-        serde_json::to_string(&(
+        let payload = serde_json::to_vec(&(
             self.system.as_str(),
             self.persona.as_str(),
             self.memory.as_str(),
@@ -56,7 +58,15 @@ impl ContextState {
                 self.runtime.len(),
                 self.goal.len()
             )
-        })
+            .into_bytes()
+        });
+        let digest = Sha256::digest(payload);
+        let mut out = String::with_capacity(digest.len() * 2);
+        for byte in digest {
+            use std::fmt::Write as _;
+            let _ = write!(&mut out, "{byte:02x}");
+        }
+        out
     }
 }
 

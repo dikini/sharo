@@ -286,3 +286,6 @@ The format is based on Common Changelog:
 - Fixed follow-up review findings for replay correctness and fit-loop progress detection:
   - kernel now checks idempotency replay before invoking reasoning, preventing duplicate model/context execution on replay requests
   - fit-loop state fingerprinting now uses collision-safe JSON encoding instead of delimiter-based concatenation
+- Hardened fit-loop fingerprint privacy and storage behavior:
+  - `ContextState::state_hash` now returns SHA-256 digests instead of raw serialized context content
+  - prevents sensitive context text from leaking into persisted fit-loop trace fields
