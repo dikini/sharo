@@ -1,5 +1,5 @@
 use sharo_core::protocol::{
-    SubmitTaskRequest, SubmitTaskResponse, TaskState, TaskStatusRequest, TaskStatusResponse,
+    SubmitTaskRequest, SubmitTaskResponse, TaskState, TaskStatusRequest, TaskStatusResponse, TaskSummary,
 };
 
 #[test]
@@ -35,4 +35,20 @@ fn status_request_response_roundtrip() {
     assert_eq!(response.task_id, "task-0007");
     assert_eq!(response.state, TaskState::Running);
     assert_eq!(response.summary, "in progress");
+}
+
+#[test]
+fn protocol_includes_optional_coordination_summary() {
+    let task = TaskSummary {
+        task_id: "task-42".to_string(),
+        session_id: "session-1".to_string(),
+        task_state: "awaiting_approval".to_string(),
+        current_step_summary: "restricted write pending approval".to_string(),
+        blocking_reason: Some("approval_required approval_id=approval-000001".to_string()),
+        coordination_summary: Some("conflict_id=conflict-000001 scope=notes related_task_id=task-41".to_string()),
+    };
+
+    let payload = serde_json::to_string(&task).expect("serialize task summary");
+    let roundtrip: TaskSummary = serde_json::from_str(&payload).expect("parse task summary");
+    assert_eq!(roundtrip.coordination_summary, task.coordination_summary);
 }

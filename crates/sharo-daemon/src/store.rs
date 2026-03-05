@@ -3,6 +3,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use sharo_core::coordination::{
+    CoordinationChannelRecord, CoordinationClaimRecord, CoordinationConflictRecord, CoordinationIntentRecord,
+};
 use sharo_core::policy::{ActionClass, PolicyContext, PolicyDecisionKind, PolicyEngine};
 use sharo_core::protocol::{
     ApprovalSummary, ArtifactSummary, ResolveApprovalResponse, SubmitTaskOpRequest,
@@ -31,9 +34,17 @@ struct PersistedState {
     traces: BTreeMap<String, TraceSummary>,
     artifacts: BTreeMap<String, Vec<ArtifactSummary>>,
     approvals: BTreeMap<String, ApprovalRecord>,
+    coordination_intents: BTreeMap<String, CoordinationIntentRecord>,
+    coordination_claims: BTreeMap<String, CoordinationClaimRecord>,
+    coordination_conflicts: BTreeMap<String, CoordinationConflictRecord>,
+    coordination_channels: BTreeMap<String, CoordinationChannelRecord>,
     next_session_id: u64,
     next_task_id: u64,
     next_approval_id: u64,
+    next_intent_id: u64,
+    next_claim_id: u64,
+    next_conflict_id: u64,
+    next_channel_id: u64,
 }
 
 impl Default for PersistedState {
@@ -44,9 +55,17 @@ impl Default for PersistedState {
             traces: BTreeMap::new(),
             artifacts: BTreeMap::new(),
             approvals: BTreeMap::new(),
+            coordination_intents: BTreeMap::new(),
+            coordination_claims: BTreeMap::new(),
+            coordination_conflicts: BTreeMap::new(),
+            coordination_channels: BTreeMap::new(),
             next_session_id: 1,
             next_task_id: 1,
             next_approval_id: 1,
+            next_intent_id: 1,
+            next_claim_id: 1,
+            next_conflict_id: 1,
+            next_channel_id: 1,
         }
     }
 }
@@ -58,6 +77,25 @@ pub struct Store {
 }
 
 impl Store {
+    fn extract_scope(goal: &str) -> String {
+        for token in goal.split_whitespace() {
+            if let Some(rest) = token.strip_prefix("scope:") {
+                if !rest.is_empty() {
+                    return rest.to_string();
+                }
+            }
+        }
+        "general".to_string()
+    }
+
+    fn find_overlap_task(&self, task_id: &str, scope: &str) -> Option<String> {
+        self.state
+            .coordination_claims
+            .values()
+            .find(|claim| claim.scope == scope && claim.task_id != task_id && claim.state == "active")
+            .map(|claim| claim.task_id.clone())
+    }
+
     pub fn open(path: impl AsRef<Path>) -> Result<Self, String> {
         let path = path.as_ref().to_path_buf();
         if !path.exists() {
@@ -113,6 +151,33 @@ impl Store {
         self.state.next_task_id += 1;
 
         let step_id = format!("step-{}-001", task_id);
+        let scope = Self::extract_scope(&request.goal);
+
+        let intent_id = format!("intent-{:06}", self.state.next_intent_id);
+        self.state.next_intent_id += 1;
+        self.state.coordination_intents.insert(
+            intent_id.clone(),
+            CoordinationIntentRecord {
+                intent_id,
+                task_id: task_id.clone(),
+                scope: scope.clone(),
+                goal: request.goal.clone(),
+            },
+        );
+
+        let claim_id = format!("claim-{:06}", self.state.next_claim_id);
+        self.state.next_claim_id += 1;
+        self.state.coordination_claims.insert(
+            claim_id.clone(),
+            CoordinationClaimRecord {
+                claim_id,
+                task_id: task_id.clone(),
+                scope: scope.clone(),
+                state: "active".to_string(),
+            },
+        );
+
+        let overlap_task_id = self.find_overlap_task(&task_id, &scope);
 
         let action_class = if request.goal.contains("write") || request.goal.contains("draft") {
             ActionClass::RestrictedWrite
@@ -150,11 +215,51 @@ impl Store {
             artifact_kind: "route_decision".to_string(),
             summary: "selected local mock route".to_string(),
         }];
+        let mut coordination_summary = None;
+
+        if let Some(related_task_id) = overlap_task_id {
+            let conflict_id = format!("conflict-{:06}", self.state.next_conflict_id);
+            self.state.next_conflict_id += 1;
+            self.state.coordination_conflicts.insert(
+                conflict_id.clone(),
+                CoordinationConflictRecord {
+                    conflict_id: conflict_id.clone(),
+                    task_id: task_id.clone(),
+                    related_task_id: related_task_id.clone(),
+                    scope: scope.clone(),
+                },
+            );
+
+            let channel_id = format!("channel-{:06}", self.state.next_channel_id);
+            self.state.next_channel_id += 1;
+            self.state.coordination_channels.insert(
+                channel_id.clone(),
+                CoordinationChannelRecord {
+                    channel_id,
+                    conflict_id: conflict_id.clone(),
+                    task_id: task_id.clone(),
+                    related_task_id: related_task_id.clone(),
+                },
+            );
+
+            events.push(TraceEventSummary {
+                event_sequence: 4,
+                event_kind: "coordination_conflict".to_string(),
+                details: format!(
+                    "conflict_id={} scope={} related_task_id={}",
+                    conflict_id, scope, related_task_id
+                ),
+            });
+            coordination_summary = Some(format!(
+                "conflict_id={} scope={} related_task_id={}",
+                conflict_id, scope, related_task_id
+            ));
+        }
 
         let (task_state, current_step_summary, blocking_reason) = match decision.decision {
             PolicyDecisionKind::Allow => {
                 events.push(TraceEventSummary {
-                    event_sequence: 4,
+                    event_sequence: events.len() as u64 + 1,
                     event_kind: "verification_completed".to_string(),
                     details: "postconditions_satisfied".to_string(),
                 });
@@ -189,7 +294,7 @@ impl Store {
                 );
 
                 events.push(TraceEventSummary {
-                    event_sequence: 4,
+                    event_sequence: events.len() as u64 + 1,
                     event_kind: "approval_requested".to_string(),
                     details: approval_id.clone(),
                 });
@@ -202,7 +307,7 @@ impl Store {
             }
             PolicyDecisionKind::Deny => {
                 events.push(TraceEventSummary {
-                    event_sequence: 4,
+                    event_sequence: events.len() as u64 + 1,
                     event_kind: "policy_denied".to_string(),
                     details: decision.reason.clone(),
                 });
@@ -220,6 +325,7 @@ impl Store {
             task_state: task_state.clone(),
             current_step_summary,
             blocking_reason,
+            coordination_summary,
         };
 
         let trace = TraceSummary {

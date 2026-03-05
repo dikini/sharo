@@ -127,6 +127,12 @@ The format is based on Common Changelog:
   - `crates/sharo-core/tests/policy_tests.rs`
   - `crates/sharo-daemon/tests/approval_flow.rs`
   - `crates/sharo-cli/tests/approval_cli.rs`
+- Added Scenario C coordination overlap artifacts for MVP slice 003:
+  - `crates/sharo-core/src/coordination.rs`
+  - `crates/sharo-core/tests/coordination_tests.rs`
+  - `crates/sharo-daemon/tests/coordination_store.rs`
+  - `crates/sharo-daemon/tests/scenario_c_overlap.rs`
+  - `crates/sharo-cli/tests/coordination_cli.rs`
 
 ### Changed
 
@@ -174,4 +180,6 @@ The format is based on Common Changelog:
   - `list-pending-approvals`
   - `resolve-approval`
 - Marked `TASK-MVP-SLICE-002` as done in task registry.
+- Updated task/read surfaces to include optional coordination summary when overlap conflicts exist.
+- Marked `TASK-MVP-SLICE-003` as done in task registry.
 - Updated `Cargo.lock` to include the `serde` dependency used by `sharo-daemon` runtime store serialization.

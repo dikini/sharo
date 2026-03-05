@@ -69,6 +69,7 @@ pub struct TaskSummary {
     pub task_state: String,
     pub current_step_summary: String,
     pub blocking_reason: Option<String>,
+    pub coordination_summary: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
