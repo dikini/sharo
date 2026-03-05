@@ -14,6 +14,56 @@ Task-Registry-Refs: TASK-REASONING-FIT-DESIGN-001, TASK-REASONING-FIT-PLAN-001
 - Make policy fit explicit: context must pass fit checks before model call.
 - Keep component argument shape uniform, while allowing each resolver to use only needed fields.
 
+## Target Scenarios And Acceptance Goals
+
+### S1: OpenAI End-To-End Single Turn (Happy Path)
+
+Given a valid OpenAI-compatible config and credentials, and a task goal, kernel reasoning should complete one end-to-end turn and persist the answer content.
+
+Acceptance:
+
+- task reaches `succeeded`
+- model answer content is visible via trace (`model_output_received`) and artifacts (`model_output`)
+- CLI surfaces non-empty answer text in `trace get` / `artifacts list`
+- trace event ordering is monotonic
+- `final_result` artifact exists
+
+### S2: Fit Loop Converges Under Budget Pressure
+
+Given oversized context (memory/runtime/persona/system), fit loop should apply ordered adjustments and converge to a policy-fit prompt.
+
+Acceptance:
+
+- at least one adjustment plan is emitted with multiple ordered steps
+- adjustments apply deterministically
+- loop converges within `MAX_FIT_ITERS`
+- final prompt is policy-fit and produces model output
+- trace contains iteration/apply reports with before/after state hashes
+
+### S3: Provider/Auth Failure Handling
+
+Given missing/invalid provider credentials or provider-side auth rejection, runtime should fail safely and explicitly.
+
+Acceptance:
+
+- provider/auth error is returned with explicit failure reason
+- task is not marked `succeeded`
+- no false-positive `final_result` artifact is emitted
+- idempotent retry replays the same failure outcome
+- per-session/task ordering invariants remain intact
+
+### S4: Non-Convergent Fit Loop Failure Handling
+
+Given policy constraints that cannot be satisfied by available adjustments, fit loop should terminate with explicit non-convergence failure.
+
+Acceptance:
+
+- loop stops at `MAX_FIT_ITERS` or non-progress guard
+- terminal error is explicit (`context_policy_fit_failed`)
+- task is not marked `succeeded`
+- trace records iteration attempts and terminal failure reason
+- no success artifacts are emitted
+
 ## Design Decisions And Justification
 
 1. Two-phase pipeline (`resolve -> compose`) is mandatory.
@@ -168,6 +218,68 @@ This preserves one composition engine with multiple rendering adapters.
 - Tool call results are modeled as part of `runtime` context (for example `runtime.tool_outputs`).
 - Tool outputs are never injected directly into prompts without passing through component-local filtering and global fit-loop policy checks.
 - Future tool orchestration should use the same resolve/compose/fix-point pipeline so model, memory, and tool-derived context share one policy boundary and one trace model.
+
+## Concurrency And Persistence Model (Near-Term)
+
+Goal: preserve deterministic ordering where it matters (task/session) without introducing global hot locks.
+
+### Ordering Policy
+
+- Per-task and per-session FIFO ordering is required for mutating operations.
+- Global total order is required for persisted trace/artifact event sequencing, but not for execution scheduling.
+- Read-only operations may run concurrently against consistent snapshots.
+
+### Execution Strategy
+
+- Kernel operations execute concurrently, but mutating requests are routed through keyed executors:
+  - key by `task_id` where present
+  - fallback key by `session_id` for task creation paths
+- This avoids a single global kernel lock while preserving local determinism.
+
+### Persistence Strategy
+
+- Use a single-writer actor/thread for durable state updates.
+- Kernel emits `WriterCommand` records; writer owns commit order and sequence assignment.
+- Writer appends/commits updates atomically and emits `CommitReceipt` (including assigned global sequence range).
+
+### Suggested Interfaces
+
+```rust
+pub enum KernelCommand {
+    SubmitTask(SubmitTaskCmd),
+    ResolveApproval(ResolveApprovalCmd),
+}
+
+pub enum WriterCommand {
+    ApplyStateDelta(StateDelta),
+}
+
+pub trait SequenceAllocator {
+    fn next_global_sequence(&mut self) -> u64;
+}
+
+pub trait KeyedExecutor {
+    fn submit<K, F>(&self, key: K, work: F)
+    where
+        K: Into<String>,
+        F: FnOnce() + Send + 'static;
+}
+```
+
+### Determinism Invariants
+
+- All persisted events have strictly monotonic global sequence values assigned by writer.
+- Per-key command processing is FIFO.
+- Idempotency is validated at admission and revalidated before commit.
+- No global mutex is on the hot execution path for all requests.
+
+### Risks To Monitor
+
+- queue backpressure between kernel and writer
+- head-of-line blocking for hot keys
+- divergence between in-memory optimistic view and committed state
+
+Mitigation: bounded queues, explicit rejection/backoff policy, commit receipts, and lag metrics.
 
 ---
 
@@ -327,7 +439,10 @@ Property:
 - `loop_terminates_within_max_iters`
 
 Integration:
-- `trace_and_artifacts_expose_fit_loop_decisions`
+- `s1_openai_end_to_end_turn_returns_visible_content`
+- `s2_fit_loop_converges_under_budget_pressure`
+- `s3_provider_auth_failure_is_explicit_and_non_success`
+- `s4_non_convergent_fit_loop_fails_with_terminal_reason`
 
 **Red Phase (required before code changes)**
 

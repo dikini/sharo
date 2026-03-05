@@ -264,3 +264,4 @@ The format is based on Common Changelog:
   - defines resolve/compose split, policy-fit fixed-point loop, outward subsystem interfaces, and inward filtering/composition interfaces
   - clarified adjustment execution as an ordered declarative `AdjustmentPlan` collection with explicit apply semantics and iteration traceability
   - includes a future-integration note that tool call results are treated as runtime context and must pass the same fit/filter policy pipeline
+  - adds near-term concurrency/persistence design for per-key ordering plus single-writer actor sequencing without global hot locks
