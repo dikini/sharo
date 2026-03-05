@@ -76,7 +76,7 @@ files="$(changed_files | sed '/^$/d' || true)"
 
 # Run tests only when Rust-relevant files changed unless --all is requested.
 if [[ "$mode" != "all" ]]; then
-  if ! echo "$files" | rg -n '^(Cargo\.toml|Cargo\.lock|rust-toolchain\.toml|crates/.+\.rs|crates/.+/Cargo\.toml|scripts/check-rust-policy\.sh|scripts/tests/test-rust-policy\.sh)$' >/dev/null 2>&1; then
+  if ! echo "$files" | rg -n '^(Cargo\.toml|Cargo\.lock|rust-toolchain\.toml|crates/.+\.rs|crates/.+/Cargo\.toml|scripts/check-rust-policy\.sh|scripts/tests/test-rust-policy\.(sh|bats))$' >/dev/null 2>&1; then
     echo "rust-tests: no Rust-impacting files changed, skipping"
     exit 0
   fi
