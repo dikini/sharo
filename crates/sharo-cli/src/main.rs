@@ -274,9 +274,10 @@ async fn run_ipc(cli: &Cli) -> Result<(), String> {
             match send_ipc(&cli.socket_path, &request).await? {
                 DaemonResponse::GetTrace(response) => {
                     println!(
-                        "trace_id={} task_id={} events={}",
+                        "trace_id={} task_id={} session_id={} events={}",
                         response.trace.trace_id,
                         response.trace.task_id,
+                        response.trace.session_id,
                         response.trace.events.len()
                     );
                     Ok(())

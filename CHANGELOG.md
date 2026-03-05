@@ -218,3 +218,10 @@ The format is based on Common Changelog:
 - Clarified platform support for daemon persistence:
   - `sharo-daemon` store implementation now explicitly requires Unix targets
   - non-Unix builds fail fast at compile time instead of providing unmaintained fallback behavior
+- Improved MVP security and conformance for daemon runtime inspection:
+  - enforce Unix socket permissions to `0600` after daemon bind
+  - include `session_id` in trace summaries returned by IPC (`get-trace`)
+  - expose artifact provenance in IPC summaries (`produced_by_step_id`, `produced_by_trace_event_sequence`)
+  - extend daemon/core scenario coverage to assert socket permissions and trace/artifact conformance fields
+- Documented pre-1.0 persisted-state posture:
+  - persisted daemon store schema is intentionally not backward-compatible between unreleased MVP revisions

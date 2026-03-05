@@ -165,3 +165,38 @@ fn daemon_ipc_oversized_request_is_rejected() {
         let _ = fs::remove_file(&socket);
     }
 }
+
+#[test]
+fn daemon_socket_permissions_are_owner_only() {
+    let socket = socket_path();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sharo-daemon"))
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    for _ in 0..80 {
+        if socket.exists() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(15));
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = fs::metadata(&socket).expect("socket metadata").permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+    }
+
+    child.kill().expect("kill daemon");
+    let _ = child.wait();
+    if socket.exists() {
+        let _ = fs::remove_file(&socket);
+    }
+}

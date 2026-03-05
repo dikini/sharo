@@ -12,4 +12,4 @@ TASK-MVP-SLICE-001,runtime,Scenario A read-oriented end-to-end flow,docs/tasks/R
 TASK-MVP-SLICE-002,runtime,Scenario B restricted flow with approvals,docs/tasks/README.md,done,,Implemented durable pending approvals list/resolve API restart-safe approval state and CLI approval commands
 TASK-MVP-SLICE-003,runtime,Scenario C overlap and coordination records,docs/tasks/README.md,done,,Implemented overlap detection via resource claims with durable conflict summary and trace visibility across restart
 TASK-MVP-SLICE-004,runtime,MVP protocol and CLI surface completion,docs/tasks/README.md,done,,Extended protocol with approval operations and task retrieval coordination and blocking visibility in CLI
-TASK-MVP-SLICE-005,verification,MVP verification matrix closure,docs/tasks/README.md,done,,Added matrix-to-test mapping Bats quality gate and explicit CI/pre-commit/fast-feedback wiring for matrix-map checks
+TASK-MVP-SLICE-005,verification,MVP verification matrix closure,docs/tasks/README.md,done,,Added matrix-to-test mapping Bats quality gate explicit CI/pre-commit/fast-feedback wiring and documented pre-1.0 persisted-state schema non-compatibility posture

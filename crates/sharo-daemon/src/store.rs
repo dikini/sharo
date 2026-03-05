@@ -224,6 +224,7 @@ impl Store {
         let mut trace = TraceSummary {
             trace_id: format!("trace-{}", task_id),
             task_id: task_id.clone(),
+            session_id: session_id.clone(),
             events: vec![
                 TraceEventSummary {
                     event_sequence: 1,
@@ -320,11 +321,18 @@ impl Store {
                 artifact_id: format!("artifact-{}-route", task_id),
                 artifact_kind: "route_decision".to_string(),
                 summary: "selected local mock route".to_string(),
+                produced_by_step_id: step_id.clone(),
+                produced_by_trace_event_sequence: event_sequence_by_kind(&trace, "route_decision"),
             },
             ArtifactSummary {
                 artifact_id: format!("artifact-{}-verification", task_id),
                 artifact_kind: "verification_result".to_string(),
                 summary: "postconditions satisfied".to_string(),
+                produced_by_step_id: step_id.clone(),
+                produced_by_trace_event_sequence: event_sequence_by_kind(
+                    &trace,
+                    "verification_completed",
+                ),
             },
         ];
         if task.task_state == "succeeded" {
@@ -332,6 +340,11 @@ impl Store {
                 artifact_id: format!("artifact-{}-final", task_id),
                 artifact_kind: "final_result".to_string(),
                 summary: "task succeeded".to_string(),
+                produced_by_step_id: step_id.clone(),
+                produced_by_trace_event_sequence: event_sequence_by_kind(
+                    &trace,
+                    "verification_completed",
+                ),
             });
         }
         if invalid_manifest {
@@ -339,12 +352,19 @@ impl Store {
                 artifact_id: format!("artifact-{}-manifest", task_id),
                 artifact_kind: "failure_record".to_string(),
                 summary: "capability manifest invalid".to_string(),
+                produced_by_step_id: step_id.clone(),
+                produced_by_trace_event_sequence: event_sequence_by_kind(
+                    &trace,
+                    "manifest_validation_failed",
+                ),
             });
         } else if restricted {
             artifacts.push(ArtifactSummary {
                 artifact_id: format!("artifact-{}-approval", task_id),
                 artifact_kind: "verification_result".to_string(),
                 summary: "restricted step is approval gated".to_string(),
+                produced_by_step_id: step_id.clone(),
+                produced_by_trace_event_sequence: event_sequence_by_kind(&trace, "approval_requested"),
             });
         }
         if task.coordination_summary.is_some() {
@@ -352,6 +372,8 @@ impl Store {
                 artifact_id: format!("artifact-{}-coordination", task_id),
                 artifact_kind: "verification_result".to_string(),
                 summary: "coordination summary recorded".to_string(),
+                produced_by_step_id: step_id.clone(),
+                produced_by_trace_event_sequence: event_sequence_by_kind(&trace, "conflict_detected"),
             });
         }
 
@@ -462,10 +484,18 @@ impl Store {
             let artifacts = self.state.artifacts.entry(task_id.clone()).or_default();
             let has_final = artifacts.iter().any(|a| a.artifact_kind == "final_result");
             if !has_final {
+                let final_sequence = self
+                    .state
+                    .traces
+                    .get(&task_id)
+                    .map(|trace| trace.events.len() as u64 + 1)
+                    .unwrap_or(1);
                 artifacts.push(ArtifactSummary {
                     artifact_id: format!("artifact-{}-final", task_id),
                     artifact_kind: "final_result".to_string(),
                     summary: "task succeeded".to_string(),
+                    produced_by_step_id: format!("step-{}", task_id),
+                    produced_by_trace_event_sequence: final_sequence,
                 });
             }
         }
@@ -500,6 +530,16 @@ fn push_trace_event(trace: &mut TraceSummary, event_kind: &str, details: &str) {
         event_kind: event_kind.to_string(),
         details: details.to_string(),
     });
+}
+
+fn event_sequence_by_kind(trace: &TraceSummary, event_kind: &str) -> u64 {
+    trace
+        .events
+        .iter()
+        .rev()
+        .find(|e| e.event_kind == event_kind)
+        .map(|e| e.event_sequence)
+        .unwrap_or(0)
 }
 
 impl Store {

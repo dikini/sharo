@@ -93,6 +93,7 @@ pub struct TraceEventSummary {
 pub struct TraceSummary {
     pub trace_id: String,
     pub task_id: String,
+    pub session_id: String,
     pub events: Vec<TraceEventSummary>,
 }
 
@@ -111,6 +112,8 @@ pub struct ArtifactSummary {
     pub artifact_id: String,
     pub artifact_kind: String,
     pub summary: String,
+    pub produced_by_step_id: String,
+    pub produced_by_trace_event_sequence: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

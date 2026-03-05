@@ -147,6 +147,7 @@ fn scenario_a_read_task_succeeds_with_verification_artifact() {
     ) {
         DaemonResponse::GetTrace(r) => {
             assert!(r.trace.events.len() >= 3);
+            assert_eq!(r.trace.session_id, session_id);
             assert!(r.trace.events.iter().any(|e| e.event_kind == "route_decision"));
             assert!(r.trace.events.iter().any(|e| e.event_kind == "binding_created"));
             assert!(
@@ -174,6 +175,10 @@ fn scenario_a_read_task_succeeds_with_verification_artifact() {
                 .collect();
             assert!(kinds.contains(&"verification_result"));
             assert!(kinds.contains(&"final_result"));
+            for artifact in &r.artifacts {
+                assert!(!artifact.produced_by_step_id.is_empty());
+                assert!(artifact.produced_by_trace_event_sequence > 0);
+            }
         }
         other => panic!("unexpected response: {other:?}"),
     }
@@ -275,6 +280,7 @@ fn scenario_b_pending_approval_survives_restart_and_can_be_resolved() {
         }),
     ) {
         DaemonResponse::GetTrace(r) => {
+            assert_eq!(r.trace.session_id, "session-000001");
             assert!(r.trace.events.iter().any(|e| {
                 e.event_kind == "binding_created" && e.details.contains("visibility=approval_gated")
             }));
@@ -303,6 +309,10 @@ fn scenario_b_pending_approval_survives_restart_and_can_be_resolved() {
                 .collect();
             assert!(!kinds.contains(&"final_result"));
             assert!(kinds.contains(&"verification_result"));
+            for artifact in &r.artifacts {
+                assert!(!artifact.produced_by_step_id.is_empty());
+                assert!(artifact.produced_by_trace_event_sequence > 0);
+            }
         }
         other => panic!("unexpected response: {other:?}"),
     }
@@ -352,6 +362,10 @@ fn scenario_b_pending_approval_survives_restart_and_can_be_resolved() {
                 .map(|a: &ArtifactSummary| a.artifact_kind.as_str())
                 .collect();
             assert!(kinds.contains(&"final_result"));
+            for artifact in &r.artifacts {
+                assert!(!artifact.produced_by_step_id.is_empty());
+                assert!(artifact.produced_by_trace_event_sequence > 0);
+            }
         }
         other => panic!("unexpected response: {other:?}"),
     }
@@ -470,6 +484,7 @@ fn scenario_c_overlap_visibility_survives_restart() {
         }),
     ) {
         DaemonResponse::GetTrace(r) => {
+            assert_eq!(r.trace.session_id, "session-000002");
             assert!(r.trace.events.iter().any(|e| e.event_kind == "conflict_detected"));
             assert_trace_monotonic(&r.trace);
         }
@@ -550,6 +565,10 @@ fn invalid_manifest_is_blocked_with_explicit_reason() {
                 .collect();
             assert!(!kinds.contains(&"final_result"));
             assert!(kinds.contains(&"failure_record"));
+            for artifact in &r.artifacts {
+                assert!(!artifact.produced_by_step_id.is_empty());
+                assert!(artifact.produced_by_trace_event_sequence > 0);
+            }
         }
         other => panic!("unexpected response: {other:?}"),
     }

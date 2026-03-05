@@ -1,4 +1,6 @@
 use std::path::PathBuf;
+#[cfg(unix)]
+use std::{fs, os::unix::fs::PermissionsExt};
 
 use clap::{Parser, Subcommand};
 use sharo_core::client::{RuntimeClient, StubClient};
@@ -202,6 +204,11 @@ async fn main() {
                     std::process::exit(1);
                 }
             };
+            #[cfg(unix)]
+            if let Err(error) = fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600)) {
+                eprintln!("daemon_error=socket_permission_failed message={}", error);
+                std::process::exit(1);
+            }
 
             let mut store = match Store::open(&store_path) {
                 Ok(store) => store,

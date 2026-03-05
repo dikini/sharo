@@ -1,6 +1,7 @@
 use sharo_core::protocol::{
-    DaemonRequest, DaemonResponse, ResolveApprovalRequest, ResolveApprovalResponse,
-    SubmitTaskRequest, SubmitTaskResponse, TaskState, TaskStatusRequest, TaskStatusResponse,
+    ArtifactSummary, DaemonRequest, DaemonResponse, GetArtifactsResponse, GetTraceResponse,
+    ResolveApprovalRequest, ResolveApprovalResponse, SubmitTaskRequest, SubmitTaskResponse,
+    TaskState, TaskStatusRequest, TaskStatusResponse, TraceEventSummary, TraceSummary,
 };
 
 #[test]
@@ -95,4 +96,48 @@ fn approval_envelope_roundtrip() {
     let list_req_parsed: DaemonRequest =
         serde_json::from_str(&list_req_json).expect("deserialize list request");
     assert!(matches!(list_req_parsed, DaemonRequest::ListPendingApprovals));
+}
+
+#[test]
+fn trace_and_artifact_envelopes_include_conformance_fields() {
+    let trace_resp = DaemonResponse::GetTrace(GetTraceResponse {
+        trace: TraceSummary {
+            trace_id: "trace-1".to_string(),
+            task_id: "task-1".to_string(),
+            session_id: "session-1".to_string(),
+            events: vec![TraceEventSummary {
+                event_sequence: 1,
+                event_kind: "task_submitted".to_string(),
+                details: "goal".to_string(),
+            }],
+        },
+    });
+    let trace_json = serde_json::to_string(&trace_resp).expect("serialize trace response");
+    let trace_parsed: DaemonResponse = serde_json::from_str(&trace_json).expect("deserialize trace response");
+    match trace_parsed {
+        DaemonResponse::GetTrace(payload) => {
+            assert_eq!(payload.trace.session_id, "session-1");
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    let artifacts_resp = DaemonResponse::GetArtifacts(GetArtifactsResponse {
+        artifacts: vec![ArtifactSummary {
+            artifact_id: "artifact-1".to_string(),
+            artifact_kind: "verification_result".to_string(),
+            summary: "ok".to_string(),
+            produced_by_step_id: "step-1".to_string(),
+            produced_by_trace_event_sequence: 3,
+        }],
+    });
+    let artifacts_json = serde_json::to_string(&artifacts_resp).expect("serialize artifacts response");
+    let artifacts_parsed: DaemonResponse =
+        serde_json::from_str(&artifacts_json).expect("deserialize artifacts response");
+    match artifacts_parsed {
+        DaemonResponse::GetArtifacts(payload) => {
+            assert_eq!(payload.artifacts[0].produced_by_step_id, "step-1");
+            assert_eq!(payload.artifacts[0].produced_by_trace_event_sequence, 3);
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
 }

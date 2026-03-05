@@ -751,6 +751,7 @@ The daemon control plane owns process lifetime, session and task admission, task
 - Restart restores task state, session state, approvals, and trace position from durable store.
 - Lost worker does not imply completed task.
 - In-flight step after restart must re-enter a recoverable explicit state, never implicit success.
+- Pre-1.0 persisted store schema compatibility is not guaranteed; schema changes may require resetting local daemon state.
 
 ### Conflict / Coordination Posture
 
