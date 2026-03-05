@@ -31,6 +31,7 @@ The format is based on Common Changelog:
 - Surfaced task result previews in CLI output:
   - `sharo task get` now prints `result_preview=<content|none>`
   - protocol round-trip and CLI scenario coverage pin the preview field behavior
+  - preview content is percent-encoded so whitespace and newlines cannot break the single-line `key=value` CLI format
 - Hardened `scripts/openai-live-smoke.sh` failure and parsing behavior:
   - preserves `daemon_log` on readiness failure so diagnostics remain available
   - safely strips inline TOML comments before reading `model.auth_env_key`

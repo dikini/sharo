@@ -12,6 +12,22 @@ use tokio::net::UnixStream;
 
 const DEFAULT_SOCKET_PATH: &str = "/tmp/sharo-daemon.sock";
 
+fn encode_field_value(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(byte as char);
+            }
+            _ => {
+                encoded.push('%');
+                encoded.push_str(&format!("{byte:02X}"));
+            }
+        }
+    }
+    encoded
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum Transport {
     Ipc,
@@ -261,6 +277,7 @@ async fn run_ipc(cli: &Cli) -> Result<(), String> {
                         response
                             .task
                             .result_preview
+                            .map(|value| encode_field_value(&value))
                             .unwrap_or_else(|| "none".to_string())
                     );
                     Ok(())
@@ -381,5 +398,23 @@ async fn main() {
     if let Err(error) = result {
         eprintln!("sharo_cli_error={}", error);
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::encode_field_value;
+
+    #[test]
+    fn encode_field_value_preserves_single_token_output() {
+        assert_eq!(
+            encode_field_value("hello world\nnext=line"),
+            "hello%20world%0Anext%3Dline"
+        );
+    }
+
+    #[test]
+    fn encode_field_value_keeps_safe_ascii_readable() {
+        assert_eq!(encode_field_value("deterministic-response"), "deterministic-response");
     }
 }
