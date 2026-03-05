@@ -14,6 +14,7 @@ use tokio::net::{UnixListener, UnixStream};
 
 mod store;
 mod config;
+mod connector_pool;
 mod kernel;
 use config::{default_daemon_config_path, load_daemon_config};
 use kernel::{DaemonKernelRuntime, KernelRuntimeConfig};

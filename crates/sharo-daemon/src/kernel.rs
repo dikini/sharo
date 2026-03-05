@@ -8,6 +8,7 @@ use sharo_core::model_connectors::{OllamaConnector, OpenAiCompatibleConnector};
 use sharo_core::reasoning::{IdReasoningEngine, ReasoningEnginePort, ReasoningInput};
 
 use crate::config::ModelRuntimeConfig;
+use crate::connector_pool::{PoolError, shared_connector_pool};
 use crate::store::Store;
 
 #[derive(Debug, Clone)]
@@ -94,28 +95,40 @@ impl sharo_core::model_connector::ModelConnectorPort for DaemonConnector {
     {
         match self {
             DaemonConnector::Deterministic => DeterministicConnector.run_turn(profile, request),
-            DaemonConnector::OpenAiCompatible => run_blocking_connector_in_thread(
-                OpenAiCompatibleConnector::default(),
+            DaemonConnector::OpenAiCompatible => execute_via_pool(
+                OpenAiCompatibleConnector,
                 profile,
                 request,
             ),
-            DaemonConnector::Ollama => {
-                run_blocking_connector_in_thread(OllamaConnector::default(), profile, request)
-            }
+            DaemonConnector::Ollama => execute_via_pool(OllamaConnector::default(), profile, request),
         }
     }
 }
 
-fn run_blocking_connector_in_thread<C: sharo_core::model_connector::ModelConnectorPort + Send + 'static>(
+fn execute_via_pool<C: sharo_core::model_connector::ModelConnectorPort + Send + 'static>(
     connector: C,
     profile: &ModelProfile,
     request: &sharo_core::model_connector::ModelTurnRequest,
 ) -> Result<sharo_core::model_connector::ModelTurnResponse, sharo_core::model_connector::ConnectorError> {
     let profile = profile.clone();
     let request = request.clone();
-    std::thread::spawn(move || connector.run_turn(&profile, &request))
-        .join()
-        .map_err(|_| sharo_core::model_connector::ConnectorError::Internal("connector_thread_panicked".to_string()))?
+    shared_connector_pool()
+        .execute_with_result(move || connector.run_turn(&profile, &request))
+        .map_err(map_pool_error)?
+}
+
+fn map_pool_error(error: PoolError) -> sharo_core::model_connector::ConnectorError {
+    match error {
+        PoolError::Overloaded => {
+            sharo_core::model_connector::ConnectorError::Unavailable("connector_pool_overloaded".to_string())
+        }
+        PoolError::Disconnected => {
+            sharo_core::model_connector::ConnectorError::Internal("connector_pool_disconnected".to_string())
+        }
+        PoolError::WorkerFailed => {
+            sharo_core::model_connector::ConnectorError::Internal("connector_pool_worker_failed".to_string())
+        }
+    }
 }
 
 pub struct DaemonKernel {

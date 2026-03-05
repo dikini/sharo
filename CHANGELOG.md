@@ -316,3 +316,6 @@ The format is based on Common Changelog:
 - Hardened daemon and CLI scenario tests against user-level default config leakage:
   - scenario tests now pass explicit deterministic `--config-path` fixtures
   - prevents local `~/.config/sharo/daemon.toml` from changing test behavior
+- Replaced per-request connector thread spawning with bounded worker-pool execution:
+  - daemon blocking connectors now submit to shared bounded pool (`worker_count=4`, `queue_capacity=64`)
+  - overload/disconnect/worker-failure states are surfaced as explicit connector errors
