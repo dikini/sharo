@@ -60,6 +60,7 @@ else
   scripts/check-rust-tests.sh --changed
 fi
 scripts/check-sync-manifest.sh --changed
+scripts/check-mvp-matrix-map.sh
 scripts/check-knot-diff.sh --mapping docs/tasks/knot-diff-mapping.csv
 scripts/check-research-references.sh --registry docs/tasks/research-reference-rules.csv
 if [[ "$mode" == "all" ]]; then

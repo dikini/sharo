@@ -26,6 +26,9 @@ jobs:
       - name: Install bats-core
         run: scripts/install-bats.sh >/dev/null
 
+      - name: Enforce MVP matrix mapping gate
+        run: scripts/check-mvp-matrix-map.sh
+
       - name: Run shell tests
         run: scripts/run-shell-tests.sh --all
 
