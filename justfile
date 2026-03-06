@@ -23,3 +23,6 @@ workflow-lint:
 
 rust-hygiene:
     scripts/check-rust-hygiene.sh --advisory --check all
+
+openai-live-smoke:
+    scripts/openai-live-smoke.sh

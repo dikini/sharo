@@ -53,6 +53,8 @@ This keeps task state deterministic and reduces stale registry entries.
 - Strict docs lint now enforces prompt-contract headings for strict-profile specs/plans on changed files.
 - Run protocol property tests: `cargo test -p sharo-core --test protocol_tests prop_protocol_roundtrip_preserves_task_summary_fields`
 - Run daemon loom model checks: `cargo test -p sharo-daemon --test loom_submit_shutdown -- --nocapture`
+- Run live OpenAI smoke manually (opt-in): `scripts/openai-live-smoke.sh`
+- Enable live OpenAI smoke in fast-feedback (opt-in): `SHARO_ENABLE_LIVE_OPENAI_SMOKE=true scripts/check-fast-feedback.sh --changed`
 - MVP matrix mapping file: `docs/tasks/mvp-verification-matrix-map.csv`
 
 ## MVP Slice Tracking
@@ -88,6 +90,8 @@ Current state: slices 000 through 005 are marked `done` in `docs/tasks/tasks.csv
 - Use `scripts/check-rust-hygiene.sh --advisory --check all` during feature work for dependency hygiene signal without blocking iteration.
 - Use `scripts/check-rust-hygiene.sh --strict --check all` before dependency bumps or release preparation.
 - `cargo semver-checks` is scoped to `sharo-core` because that crate is the public library surface in this workspace.
+- Live OpenAI checks are opt-in only (cost/time sensitive); default hooks/fast-feedback remain non-network by default.
+- Default smoke coverage still validates daemon CLI path via deterministic and fake-daemon scenarios in `scripts/tests/test-openai-live-smoke.bats`.
 
 ## Fresh Clone Tool Bootstrap
 

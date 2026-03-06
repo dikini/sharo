@@ -9,6 +9,10 @@ The format is based on Common Changelog:
 
 ### Added
 
+- Added explicit opt-in control for real OpenAI smoke checks:
+  - `scripts/check-fast-feedback.sh` now skips live OpenAI smoke by default and only runs it when `SHARO_ENABLE_LIVE_OPENAI_SMOKE=true`
+  - `.github/workflows/openai-live-smoke.yml` adds manual (`workflow_dispatch`) CI smoke execution with required `OPENAI_API_KEY` secret
+  - `scripts/tests/test-openai-live-smoke-gating.bats` validates opt-in gate wiring
 - Added daemon env loading helper:
   - `scripts/load-daemon-env.sh` to source `~/.config/sharo/daemon.env` (or custom path) with exported variables for downstream scripts
 - Added prompt-guidance template hardening planning artifacts:

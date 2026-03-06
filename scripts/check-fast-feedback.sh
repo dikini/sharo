@@ -91,6 +91,13 @@ else
   scripts/run-shell-tests.sh --changed
 fi
 
+if [[ "${SHARO_ENABLE_LIVE_OPENAI_SMOKE:-false}" == "true" ]]; then
+  echo "fast-feedback: running opt-in live OpenAI smoke"
+  scripts/openai-live-smoke.sh
+else
+  echo "fast-feedback: skipping live OpenAI smoke (set SHARO_ENABLE_LIVE_OPENAI_SMOKE=true to enable)"
+fi
+
 if [[ "$write_marker" == true ]]; then
   {
     echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
