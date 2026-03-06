@@ -40,7 +40,7 @@ Keep in-memory and on-disk store state consistent when the parent-directory fsyn
 ## Interfaces / Contracts
 
 - If the canonical store file has already been replaced with new state, the in-memory store must converge to the same state even if directory fsync fails.
-- Reported errors may indicate reduced crash durability, but not stale in-memory state.
+- Post-rename directory-fsync failure is a degraded-durability warning, not a failed logical mutation.
 - Save-path tests must distinguish pre-rename write failures from post-rename durability failures.
 
 ## Invariants
@@ -61,16 +61,18 @@ Keep in-memory and on-disk store state consistent when the parent-directory fsyn
 
 - Pre-rename save failures still return without mutating `self.state`.
 - Post-rename failures cannot reintroduce ghost stale memory.
+- Post-rename durability warnings must not cause callers to retry non-idempotent operations as though nothing committed.
 
 **Postconditions**
 
 - A simulated directory-fsync failure after rename leaves in-memory state matching the new on-disk file.
-- The returned error explicitly signals degraded durability rather than failed logical commit.
+- The mutation still returns success to the caller after rename, so non-idempotent retries are not induced by a false failure signal.
 
 **Tests (must exist before implementation)**
 
 Unit:
 - `post_rename_directory_sync_failure_keeps_memory_and_disk_consistent`
+- `post_rename_directory_sync_failure_returns_committed_result`
 
 Property:
 - `commit_outcome_never_leaves_memory_behind_disk`
@@ -86,7 +88,7 @@ Integration:
 ## Risks and Failure Modes
 
 - Treating a logically committed mutation as rolled back
-- Silently downgrading durability errors into success without traceability
+- Inducing duplicate non-idempotent retries from a false failed-mutation signal
 - Regressing existing rollback semantics for pre-rename failures
 
 ## Open Questions

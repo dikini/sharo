@@ -38,6 +38,7 @@ Task-Registry-Refs: TASK-SUBMIT-IDENTITY-SPEC-001, TASK-SUBMIT-IDENTITY-PLAN-001
 - Reopened stores allocate subsequent reservations from the persisted high-water marks.
 - Reasoning input uses the durably reserved identities rather than derived read-time hints.
 - Same-process retries after a terminal submit save failure can prepare the same idempotency key again.
+- Same-process retries after connector or resolver failure memoization save errors can prepare the same idempotency key again.
 
 **Tests (must exist before implementation)**
 
@@ -53,6 +54,7 @@ Property:
 Integration:
 - `parallel_same_session_submits_produce_distinct_trace_scopes`
 - `duplicate_submit_during_inflight_reasoning_does_not_double_execute_provider`
+- `same_process_retry_after_failure_memoization_save_failure_is_not_stuck_in_progress`
 
 **Red Phase (required before code changes)**
 
@@ -67,7 +69,8 @@ Expected: FAIL because the current preparation does not durably reserve in-fligh
 4. Refactor `prepare_submit` to commit reservations before returning `Ready`, and return a non-executing replay outcome for duplicate in-flight idempotency keys.
 5. Update terminal submit paths to finalize or release reservations consistently on success, fit-loop failure, connector/resolver failure, and final persist failure.
 6. Recover stale in-flight idempotency reservations during `Store::open()` before serving new submits.
-7. Re-run focused tests and the daemon crate suite.
+7. Ensure connector and resolver failure terminal paths release in-memory retry locks when failure memoization persistence itself fails.
+8. Re-run focused tests and the daemon crate suite.
 
 **Green Phase (required)**
 

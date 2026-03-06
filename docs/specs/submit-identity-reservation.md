@@ -78,6 +78,7 @@ Reserve submit identities and idempotency ownership durably before reasoning sta
 - Regression coverage proves a restart after reservation cannot reuse the previously exposed task or turn identity.
 - Regression coverage proves reopening the store converts stale in-flight idempotency ownership into a replayable failure outcome.
 - Regression coverage proves a terminal submit persist failure does not leave the idempotency key stuck in `submit_in_progress` for same-process retries.
+- Regression coverage proves connector/resolver failure memoization save errors also release the same-process retry lock.
 
 **Tests (must exist before implementation)**
 
@@ -93,6 +94,7 @@ Property:
 Integration:
 - `parallel_same_session_submits_produce_distinct_trace_scopes`
 - `duplicate_submit_during_inflight_reasoning_does_not_double_execute_provider`
+- `same_process_retry_after_failure_memoization_save_failure_is_not_stuck_in_progress`
 
 ## Verification
 
@@ -105,6 +107,7 @@ Integration:
 
 - Leaking durable reservations so duplicates remain blocked forever after terminal commit
 - Leaking in-memory reservations after a terminal submit save failure
+- Leaking in-memory reservations after connector or resolver failure memoization itself cannot be persisted
 - Reusing preallocated turn IDs under contention or after restart
 - Returning an in-flight replay signal that callers mis-handle as a terminal failure
 - Diverging high-water marks between committed tasks and reservation ledger

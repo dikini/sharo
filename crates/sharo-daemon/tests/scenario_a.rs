@@ -118,6 +118,24 @@ timeout_ms = 2000
     config
 }
 
+fn write_openai_status_config(prefix: &str, base_url: &str, status_line: &str) -> PathBuf {
+    let config = unique_path(prefix, ".toml");
+    fs::write(
+        &config,
+        format!(
+            r#"[model]
+provider = "openai"
+model_id = "gpt-5-mini"
+base_url = "{base_url}"
+timeout_ms = 2000
+"#
+        ),
+    )
+    .expect("write openai status config");
+    let _ = status_line;
+    config
+}
+
 fn write_bounded_openai_config(
     prefix: &str,
     base_url: &str,
@@ -334,6 +352,66 @@ fn start_observed_request_server(
 
         for worker in workers {
             worker.join().expect("join observed response worker");
+        }
+    });
+
+    (address, observed, handle)
+}
+
+fn start_observed_status_server(
+    status_line: &str,
+    delay: Duration,
+    accept_window: Duration,
+) -> (String, Arc<AtomicUsize>, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind observed status server");
+    listener
+        .set_nonblocking(true)
+        .expect("set observed status listener nonblocking");
+    let address = format!("http://{}", listener.local_addr().expect("local addr"));
+    let observed = Arc::new(AtomicUsize::new(0));
+    let observed_for_thread = Arc::clone(&observed);
+    let status_line = status_line.to_string();
+    let handle = thread::spawn(move || {
+        let deadline = std::time::Instant::now() + accept_window;
+        let mut workers = Vec::new();
+        while std::time::Instant::now() < deadline {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    observed_for_thread.fetch_add(1, Ordering::SeqCst);
+                    let status_line = status_line.clone();
+                    workers.push(thread::spawn(move || {
+                        let cloned = stream.try_clone().expect("clone observed status stream");
+                        let mut reader = BufReader::new(cloned);
+                        let mut line = String::new();
+                        loop {
+                            line.clear();
+                            let bytes = reader.read_line(&mut line).expect("read observed status request");
+                            if bytes == 0 || line == "\r\n" {
+                                break;
+                            }
+                        }
+
+                        thread::sleep(delay);
+                        let body = "{\"error\":\"simulated\"}";
+                        write!(
+                            stream,
+                            "HTTP/1.1 {status_line}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                            body.len(),
+                            body
+                        )
+                        .expect("write observed status response");
+                        stream.flush().expect("flush observed status response");
+                    }));
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => panic!("accept observed status connection: {error}"),
+            }
+        }
+
+        for worker in workers {
+            worker.join().expect("join observed status worker");
         }
     });
 
@@ -740,6 +818,106 @@ fn same_process_retry_after_terminal_save_failure_is_not_stuck_in_progress() {
         observed_requests.load(Ordering::SeqCst),
         2,
         "retry after terminal save failure should be able to reach the provider again",
+    );
+
+    daemon.kill().expect("kill daemon");
+    let _ = daemon.wait();
+    server_thread.join().expect("join observed server");
+    let _ = fs::remove_file(&socket);
+    let _ = fs::remove_dir_all(&store_dir);
+    let _ = fs::remove_file(&config);
+}
+
+#[test]
+fn same_process_retry_after_failure_memoization_save_failure_is_not_stuck_in_progress() {
+    let socket = unique_path("sharo-scenario-failure-memo-retry-unlocked", ".sock");
+    let store_dir = unique_path("sharo-scenario-failure-memo-retry-unlocked", ".d");
+    fs::create_dir_all(&store_dir).expect("create store dir");
+    let store = store_dir.join("daemon-store.json");
+    let (base_url, observed_requests, server_thread) = start_observed_status_server(
+        "503 Service Unavailable",
+        Duration::from_millis(180),
+        Duration::from_millis(900),
+    );
+    let config = write_openai_status_config(
+        "sharo-scenario-failure-memo-retry-unlocked",
+        &base_url,
+        "503 Service Unavailable",
+    );
+
+    let mut daemon = Command::new(daemon_bin())
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+            "--config-path",
+            config.to_str().expect("config path"),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let session_id = match send_request(
+        &socket,
+        &DaemonRequest::RegisterSession(RegisterSessionRequest {
+            session_label: "scenario-failure-memo-retry-unlocked".to_string(),
+        }),
+    ) {
+        DaemonResponse::RegisterSession(r) => r.session_id,
+        other => panic!("unexpected response: {other:?}"),
+    };
+
+    let request = SubmitTaskOpRequest {
+        session_id: Some(session_id),
+        goal: "retry after failure memoization save failure".to_string(),
+        idempotency_key: Some("idem-failure-memo-retry-unlocked".to_string()),
+    };
+
+    let socket_for_submit = socket.clone();
+    let request_for_submit = request.clone();
+    let submit_thread = thread::spawn(move || {
+        send_request(
+            &socket_for_submit,
+            &DaemonRequest::SubmitTask(request_for_submit),
+        )
+    });
+
+    thread::sleep(Duration::from_millis(40));
+    fs::remove_dir_all(&store_dir).expect("remove store dir during reasoning");
+
+    match submit_thread.join().expect("submit thread join") {
+        DaemonResponse::Error { message } => {
+            assert!(
+                message.contains("store_parent_missing") || message.contains("store_open_failed"),
+                "unexpected failure memoization save failure: {message}",
+            );
+        }
+        other => panic!("unexpected first submit response: {other:?}"),
+    }
+
+    fs::create_dir_all(&store_dir).expect("recreate store dir");
+
+    match send_request(&socket, &DaemonRequest::SubmitTask(request)) {
+        DaemonResponse::Error { message } => {
+            assert!(
+                !message.contains("submit_in_progress"),
+                "retry should not remain submit_in_progress: {message}",
+            );
+            assert!(
+                message.contains("provider unavailable"),
+                "retry should surface the provider failure, got: {message}",
+            );
+        }
+        other => panic!("unexpected retry response: {other:?}"),
+    }
+
+    assert_eq!(
+        observed_requests.load(Ordering::SeqCst),
+        2,
+        "retry after failure memoization save failure should reach the provider again",
     );
 
     daemon.kill().expect("kill daemon");
