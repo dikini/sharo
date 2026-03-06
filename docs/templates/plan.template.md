@@ -4,7 +4,8 @@
 > - Keep `Template-Profile: tdd-strict-v1`.
 > - Tests must be defined before implementation.
 > - Every task must include Preconditions, Invariants, and Postconditions.
-> - Use Unit, Property, and Integration tests.
+> - Use Unit, Invariant, and Integration checks.
+> - Use Property-based tests only when a generative framework is actually used.
 > - Red phase before code changes; Green phase before completion.
 > - Run `scripts/doc-lint.sh --changed --strict-new` before commit.
 
@@ -42,11 +43,14 @@ Template-Profile: tdd-strict-v1
 Unit:
 - <test id or test name>
 
-Property:
+Invariant:
 - <test id or test name>
 
 Integration:
 - <test id or test name>
+
+Property-based (optional):
+- <test id or test name; only when using generative tooling such as proptest/quickcheck>
 
 **Red Phase (required before code changes)**
 
@@ -73,5 +77,5 @@ Re-run: `<exact command>`
 - Preconditions satisfied
 - Invariants preserved
 - Postconditions met
-- Unit, property, and integration tests passing
+- Unit, invariant, and integration checks passing
 - CHANGELOG.md updated

@@ -57,12 +57,16 @@ Example:
   - `plan.template.md` for new plans
   - `CHANGELOG.template.md` when initializing changelog structure
 - Create new specs/plans via `scripts/doc-new.sh` (or `scripts/doc-start.sh`).
+- For strict-profile docs, use `--strict-filled`:
+  - `scripts/doc-new.sh spec <slug> --strict-filled`
+  - `scripts/doc-new.sh plan <slug> --strict-filled`
+  - `scripts/doc-start.sh` applies strict-filled scaffolding by default.
 - Specs and plans should use `Template-Profile: tdd-strict-v1` unless explicitly waived.
 - Under the strict profile, each task should include:
   - Preconditions
   - Invariants
   - Postconditions
-  - Tests defined before implementation (`Unit`, `Property`, `Integration`)
+  - Tests/checks defined before implementation (`Unit`, `Invariant`, `Integration`; `Property-based` optional only when using generative frameworks)
   - Red/Green phases and completion evidence
 - At the start of any docs/spec/plan task, run `scripts/doc-lint.sh --changed --strict-new`.
 - Run `scripts/doc-lint.sh --changed --strict-new` before committing documentation changes.

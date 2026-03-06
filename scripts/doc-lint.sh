@@ -231,19 +231,22 @@ line_no() {
 }
 
 for sf in "${strict_files[@]}"; do
-  has_line "^\\*\\*Preconditions\\*\\*$" "$sf" || fail "$sf missing '**Preconditions**'"
-  has_line "^\\*\\*Invariants\\*\\*$" "$sf" || fail "$sf missing '**Invariants**'"
-  has_line "^\\*\\*Postconditions\\*\\*$" "$sf" || fail "$sf missing '**Postconditions**'"
-  has_line "^\\*\\*Tests \\(must exist before implementation\\)\\*\\*$" "$sf" || fail "$sf missing strict tests heading"
-  has_line "^Unit:$" "$sf" || fail "$sf missing 'Unit:' section"
-  has_line "^Property:$" "$sf" || fail "$sf missing 'Property:' section"
-  has_line "^Integration:$" "$sf" || fail "$sf missing 'Integration:' section"
+  strict_hint="hint: create with scripts/doc-new.sh <spec|plan> <slug> --strict-filled (or scripts/doc-start.sh <spec|plan> <slug>)"
+  has_line "^\\*\\*Preconditions\\*\\*$" "$sf" || fail "$sf missing '**Preconditions**' ($strict_hint)"
+  has_line "^\\*\\*Invariants\\*\\*$" "$sf" || fail "$sf missing '**Invariants**' ($strict_hint)"
+  has_line "^\\*\\*Postconditions\\*\\*$" "$sf" || fail "$sf missing '**Postconditions**' ($strict_hint)"
+  has_line "^\\*\\*Tests \\(must exist before implementation\\)\\*\\*$" "$sf" || fail "$sf missing strict tests heading ($strict_hint)"
+  has_line "^Unit:$" "$sf" || fail "$sf missing 'Unit:' section ($strict_hint)"
+  if ! has_line "^Invariant:$" "$sf" && ! has_line "^Property:$" "$sf"; then
+    fail "$sf missing 'Invariant:' section (legacy 'Property:' accepted) ($strict_hint)"
+  fi
+  has_line "^Integration:$" "$sf" || fail "$sf missing 'Integration:' section ($strict_hint)"
 
   if [[ "$sf" == docs/plans/* || "$sf" == *"/plan.template.md" ]]; then
-    has_line "^\\*\\*Red Phase \\(required before code changes\\)\\*\\*$" "$sf" || fail "$sf missing Red Phase section"
-    has_line "^\\*\\*Implementation Steps\\*\\*$" "$sf" || fail "$sf missing Implementation Steps section"
-    has_line "^\\*\\*Green Phase \\(required\\)\\*\\*$" "$sf" || fail "$sf missing Green Phase section"
-    has_line "^\\*\\*Completion Evidence\\*\\*$" "$sf" || fail "$sf missing Completion Evidence section"
+    has_line "^\\*\\*Red Phase \\(required before code changes\\)\\*\\*$" "$sf" || fail "$sf missing Red Phase section ($strict_hint)"
+    has_line "^\\*\\*Implementation Steps\\*\\*$" "$sf" || fail "$sf missing Implementation Steps section ($strict_hint)"
+    has_line "^\\*\\*Green Phase \\(required\\)\\*\\*$" "$sf" || fail "$sf missing Green Phase section ($strict_hint)"
+    has_line "^\\*\\*Completion Evidence\\*\\*$" "$sf" || fail "$sf missing Completion Evidence section ($strict_hint)"
 
     red_ln="$(line_no "^\\*\\*Red Phase \\(required before code changes\\)\\*\\*$" "$sf" || true)"
     impl_ln="$(line_no "^\\*\\*Implementation Steps\\*\\*$" "$sf" || true)"

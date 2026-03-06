@@ -28,7 +28,7 @@ case "$kind" in
     ;;
 esac
 
-created="$(scripts/doc-new.sh "$kind" "$slug")"
+created="$(scripts/doc-new.sh "$kind" "$slug" --strict-filled)"
 scripts/doc-lint.sh --path "$created" --strict-new
 
 echo "doc-start: created and linted $created"
