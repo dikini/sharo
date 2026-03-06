@@ -90,6 +90,10 @@ The format is based on Common Changelog:
   - persist store state to a temp file, sync the file, rename into place, then sync the containing directory
   - remove the redundant post-rename chmod because the temp file is already created with restricted permissions
   - add explicit unit coverage for the directory-sync helper used by the atomic save path
+- Moved daemon request execution off Tokio runtime worker threads for blocking IPC handlers:
+  - execute synchronous request handling behind `tokio::task::spawn_blocking`
+  - preserve the existing submit/store semantics while preventing slow submits from monopolizing runtime workers
+  - add daemon IPC regression coverage proving status requests stay responsive under parallel slow-submit pressure
 - Allowed the daemon to keep serving independent IPC requests while a slow submit is still running:
   - moved non-`serve_once` connections onto spawned Tokio tasks
   - stopped holding the store across provider-backed submit reasoning

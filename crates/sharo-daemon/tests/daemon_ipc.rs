@@ -71,6 +71,47 @@ fn start_delayed_response_server(delay: Duration) -> (String, thread::JoinHandle
     (address, handle)
 }
 
+fn start_multi_delayed_response_server(
+    delay: Duration,
+    expected_requests: usize,
+) -> (String, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind delayed response server");
+    let address = format!("http://{}", listener.local_addr().expect("local addr"));
+    let handle = thread::spawn(move || {
+        let mut workers = Vec::with_capacity(expected_requests);
+        for _ in 0..expected_requests {
+            let (mut stream, _) = listener.accept().expect("accept delayed response connection");
+            workers.push(thread::spawn(move || {
+                let cloned = stream.try_clone().expect("clone delayed response stream");
+                let mut reader = BufReader::new(cloned);
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    let bytes = reader.read_line(&mut line).expect("read delayed response request");
+                    if bytes == 0 || line == "\r\n" {
+                        break;
+                    }
+                }
+                thread::sleep(delay);
+                let body = "{\"id\":\"resp-1\",\"output_text\":\"slow submit complete\"}";
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+                .expect("write delayed response");
+                stream.flush().expect("flush delayed response");
+            }));
+        }
+
+        for worker in workers {
+            worker.join().expect("join delayed response worker");
+        }
+    });
+    (address, handle)
+}
+
 fn connect_with_retry(socket: &PathBuf) -> UnixStream {
     for _ in 0..80 {
         match UnixStream::connect(socket) {
@@ -337,6 +378,85 @@ fn status_request_remains_responsive_during_slow_submit() {
     match submit_thread.join().expect("submit thread join") {
         DaemonResponse::SubmitTask(response) => assert_eq!(response.task_state, "succeeded"),
         other => panic!("unexpected response: {other:?}"),
+    }
+
+    server_thread.join().expect("delayed server join");
+    child.kill().expect("kill daemon");
+    let _ = child.wait();
+    let _ = fs::remove_file(&socket);
+    let _ = fs::remove_file(&store);
+    let _ = fs::remove_file(&config);
+}
+
+#[test]
+fn status_requests_remain_responsive_under_parallel_slow_submits() {
+    let socket = socket_path();
+    let store = temp_path("sharo-daemon-runtime-pressure", ".json");
+    let runtime_pressure = std::thread::available_parallelism()
+        .map(|threads| threads.get() + 1)
+        .unwrap_or(5);
+    let (base_url, server_thread) =
+        start_multi_delayed_response_server(Duration::from_millis(600), runtime_pressure);
+    let config = write_slow_openai_config("sharo-daemon-runtime-pressure", &base_url);
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sharo-daemon"))
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+            "--config-path",
+            config.to_str().expect("config path"),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let mut submit_threads = Vec::with_capacity(runtime_pressure);
+    for request_index in 0..runtime_pressure {
+        let submit_stream = connect_with_retry(&socket);
+        submit_threads.push(thread::spawn(move || {
+            send_request_with_stream(
+                submit_stream,
+                &DaemonRequest::SubmitTask(SubmitTaskOpRequest {
+                    session_id: Some(format!("session-runtime-pressure-{request_index}")),
+                    goal: format!("slow submit {request_index}"),
+                    idempotency_key: Some(format!("idem-runtime-pressure-{request_index}")),
+                }),
+            )
+        }));
+    }
+
+    thread::sleep(Duration::from_millis(100));
+
+    let status_start = SystemTime::now();
+    let status_response = send_request_with_stream(
+        connect_with_retry(&socket),
+        &DaemonRequest::Status(TaskStatusRequest {
+            task_id: "task-pressure".to_string(),
+        }),
+    );
+    let status_elapsed = status_start.elapsed().expect("status elapsed");
+
+    match status_response {
+        DaemonResponse::Status(response) => {
+            assert_eq!(response.task_id, "task-pressure");
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+    assert!(
+        status_elapsed < Duration::from_millis(400),
+        "status request took {:?} while runtime was under parallel slow-submit pressure",
+        status_elapsed
+    );
+
+    for submit_thread in submit_threads {
+        match submit_thread.join().expect("submit thread join") {
+            DaemonResponse::SubmitTask(response) => assert_eq!(response.task_state, "succeeded"),
+            other => panic!("unexpected response: {other:?}"),
+        }
     }
 
     server_thread.join().expect("delayed server join");

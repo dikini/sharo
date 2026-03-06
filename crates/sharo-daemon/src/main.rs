@@ -221,7 +221,17 @@ async fn handle_stream(
     };
 
     let response = match serde_json::from_str::<DaemonRequest>(line.trim()) {
-        Ok(request) => handle_request(request, &state),
+        Ok(request) => match tokio::task::spawn_blocking({
+            let state = Arc::clone(&state);
+            move || handle_request(request, &state)
+        })
+        .await
+        {
+            Ok(response) => response,
+            Err(error) => DaemonResponse::Error {
+                message: format!("request_task_join_failed error={error}"),
+            },
+        },
         Err(error) => DaemonResponse::Error {
             message: format!("invalid request: {error}"),
         },
