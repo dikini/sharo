@@ -1,5 +1,5 @@
 #[cfg(test)]
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::fs;
 #[cfg(unix)]
@@ -109,7 +109,7 @@ pub enum SubmitPreparationOutcome {
 
 enum SaveStateOutcome {
     Clean,
-    DurabilityError,
+    DurabilityError(String),
 }
 
 impl Store {
@@ -238,7 +238,9 @@ impl Store {
         if recover_stale_in_flight_idempotency(&mut store.state) {
             match store.save_state(&store.state)? {
                 SaveStateOutcome::Clean => {}
-                SaveStateOutcome::DurabilityError => {}
+                SaveStateOutcome::DurabilityError(message) => {
+                    emit_store_durability_warning(&message);
+                }
             }
         }
         Ok(store)
@@ -296,7 +298,7 @@ impl Store {
             })?;
             match sync_directory(parent) {
                 Ok(()) => Ok(SaveStateOutcome::Clean),
-                Err(_) => Ok(SaveStateOutcome::DurabilityError),
+                Err(message) => Ok(SaveStateOutcome::DurabilityError(message)),
             }
         }
     }
@@ -311,7 +313,10 @@ impl Store {
         self.state = next_state;
         match save_outcome {
             SaveStateOutcome::Clean => Ok(result),
-            SaveStateOutcome::DurabilityError => Ok(result),
+            SaveStateOutcome::DurabilityError(message) => {
+                emit_store_durability_warning(&message);
+                Ok(result)
+            }
         }
     }
 
@@ -984,6 +989,7 @@ fn sync_directory(path: &Path) -> Result<(), String> {
 #[cfg(test)]
 thread_local! {
     static DIRECTORY_SYNC_FAIL_FOR_TEST: Cell<bool> = const { Cell::new(false) };
+    static DURABILITY_WARNINGS_FOR_TEST: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
 #[cfg(test)]
@@ -1006,6 +1012,25 @@ fn with_directory_sync_failure_for_test<T>(f: impl FnOnce() -> T) -> T {
         let _reset = ResetGuard(previous);
         f()
     })
+}
+
+#[cfg(test)]
+fn take_durability_warnings_for_test() -> Vec<String> {
+    DURABILITY_WARNINGS_FOR_TEST.with(|warnings| std::mem::take(&mut *warnings.borrow_mut()))
+}
+
+fn emit_store_durability_warning(message: &str) {
+    #[cfg(test)]
+    {
+        DURABILITY_WARNINGS_FOR_TEST.with(|warnings| {
+            warnings.borrow_mut().push(message.to_string());
+        });
+    }
+
+    #[cfg(not(test))]
+    {
+        eprintln!("daemon_warn=store_durability_degraded message={message}");
+    }
 }
 
 fn parse_resource_claim(goal: &str) -> Option<String> {
@@ -1095,7 +1120,7 @@ fn new_binding(
 mod tests {
     use super::{
         ApprovalRecord, PersistedState, Store, SubmitPreparation, SubmitReplay, sync_directory,
-        with_directory_sync_failure_for_test,
+        take_durability_warnings_for_test, with_directory_sync_failure_for_test,
     };
     use sharo_core::protocol::{SubmitTaskOpRequest, TaskSummary, TraceSummary};
     use std::fs;
@@ -1309,6 +1334,25 @@ mod tests {
 
         assert_eq!(store.state.next_session_id, 2);
         assert!(store.state.sessions.contains_key("session-000001"));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn post_rename_directory_sync_failure_emits_warning_signal() {
+        let path = unique_store_path("sharo-post-rename-sync-warning");
+        let mut store = Store::open(&path).expect("open store");
+
+        let warnings = with_directory_sync_failure_for_test(|| {
+            store
+                .register_session("session-label")
+                .expect("directory sync failure should still commit");
+            take_durability_warnings_for_test()
+        });
+
+        assert_eq!(warnings.len(), 1, "expected exactly one durability warning");
+        assert!(warnings[0].contains("store_directory_sync_failed"));
+        assert!(warnings[0].contains(path.parent().expect("parent").to_str().expect("utf-8 path")));
 
         let _ = fs::remove_file(path);
     }

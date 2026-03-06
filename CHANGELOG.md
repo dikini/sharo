@@ -114,6 +114,7 @@ The format is based on Common Changelog:
 - Finalized the review-remediation failure semantics:
   - treat post-rename parent-directory fsync errors as degraded durability warnings after a logically committed mutation instead of surfacing a false failed-mutation result
   - clear in-memory in-flight idempotency reservations when connector or resolver failure memoization itself cannot be persisted, so same-process retries are not stuck in `submit_in_progress`
+  - preserve the degraded-durability warning signal after committed rename so operators can still detect weakly durable store commits
 - Allowed the daemon to keep serving independent IPC requests while a slow submit is still running:
   - moved non-`serve_once` connections onto spawned Tokio tasks
   - stopped holding the store across provider-backed submit reasoning
