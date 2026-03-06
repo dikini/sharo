@@ -646,6 +646,110 @@ fn daemon_burst_submit_never_exceeds_configured_connector_workers() {
 }
 
 #[test]
+fn concurrent_slow_submits_make_parallel_upstream_progress() {
+    let socket = unique_path("sharo-scenario-submit-parallel", ".sock");
+    let store = unique_path("sharo-scenario-submit-parallel", ".json");
+    let (base_url, max_observed, server_handle) =
+        start_counting_response_server(Duration::from_millis(180), 2);
+    let config = write_bounded_openai_config(
+        "sharo-scenario-submit-parallel",
+        &base_url,
+        1,
+        2,
+    );
+
+    let mut daemon = Command::new(daemon_bin())
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+            "--config-path",
+            config.to_str().expect("config path"),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let submit_a = {
+        let socket = socket.clone();
+        thread::spawn(move || {
+            let stream = {
+                let mut connected = None;
+                for _ in 0..80 {
+                    match UnixStream::connect(&socket) {
+                        Ok(stream) => {
+                            connected = Some(stream);
+                            break;
+                        }
+                        Err(_) => thread::sleep(Duration::from_millis(15)),
+                    }
+                }
+                connected.expect("connect submit stream a")
+            };
+            send_request_on_stream(
+                stream,
+                &DaemonRequest::SubmitTask(SubmitTaskOpRequest {
+                    session_id: Some("session-submit-parallel-a".to_string()),
+                    goal: "parallel submit a".to_string(),
+                    idempotency_key: Some("idem-submit-parallel-a".to_string()),
+                }),
+            )
+        })
+    };
+    let submit_b = {
+        let socket = socket.clone();
+        thread::spawn(move || {
+            let stream = {
+                let mut connected = None;
+                for _ in 0..80 {
+                    match UnixStream::connect(&socket) {
+                        Ok(stream) => {
+                            connected = Some(stream);
+                            break;
+                        }
+                        Err(_) => thread::sleep(Duration::from_millis(15)),
+                    }
+                }
+                connected.expect("connect submit stream b")
+            };
+            send_request_on_stream(
+                stream,
+                &DaemonRequest::SubmitTask(SubmitTaskOpRequest {
+                    session_id: Some("session-submit-parallel-b".to_string()),
+                    goal: "parallel submit b".to_string(),
+                    idempotency_key: Some("idem-submit-parallel-b".to_string()),
+                }),
+            )
+        })
+    };
+
+    match submit_a.join().expect("submit a join") {
+        DaemonResponse::SubmitTask(response) => assert_eq!(response.task_state, "succeeded"),
+        other => panic!("unexpected response: {other:?}"),
+    }
+    match submit_b.join().expect("submit b join") {
+        DaemonResponse::SubmitTask(response) => assert_eq!(response.task_state, "succeeded"),
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    server_handle.join().expect("join counting server");
+    assert!(
+        max_observed.load(Ordering::SeqCst) >= 2,
+        "expected parallel upstream progress, observed max concurrency={}",
+        max_observed.load(Ordering::SeqCst)
+    );
+
+    daemon.kill().expect("kill daemon");
+    let _ = daemon.wait();
+    let _ = fs::remove_file(&socket);
+    let _ = fs::remove_file(&store);
+    let _ = fs::remove_file(&config);
+}
+
+#[test]
 fn scenario_a_success_survives_restart_with_same_trace_and_preview() {
     let socket = unique_path("sharo-scenario-a-restart", ".sock");
     let store = unique_path("sharo-scenario-a-restart", ".json");

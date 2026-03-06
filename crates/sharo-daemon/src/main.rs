@@ -29,7 +29,6 @@ const MAX_REQUEST_BYTES: usize = 1_048_576;
 struct AppState {
     client: StubClient,
     store: Mutex<Store>,
-    submit_guard: Mutex<()>,
     daemon_kernel: DaemonKernel,
 }
 
@@ -112,7 +111,6 @@ fn handle_submit_task(
     state: &AppState,
     payload: sharo_core::protocol::SubmitTaskOpRequest,
 ) -> Result<SubmitTaskOpResponse, String> {
-    let _submit_guard = lock_unpoisoned(&state.submit_guard);
     let preparation = {
         let store = lock_unpoisoned(&state.store);
         store.prepare_submit(&payload)?
@@ -303,7 +301,6 @@ async fn main() {
             let state = Arc::new(AppState {
                 client: StubClient,
                 store: Mutex::new(store),
-                submit_guard: Mutex::new(()),
                 daemon_kernel: DaemonKernel::new(&kernel_config),
             });
 

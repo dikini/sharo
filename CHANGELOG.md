@@ -64,6 +64,10 @@ The format is based on Common Changelog:
 
 ### Fixed
 
+- Removed daemon-wide submit serialization so independent provider-backed submits can make parallel progress:
+  - deleted the process-wide submit mutex from `sharo-daemon`
+  - kept submit preparation and commit phases isolated to short store lock windows
+  - added a regression scenario proving two slow submits overlap upstream instead of collapsing to single-flight execution
 - Allowed the daemon to keep serving independent IPC requests while a slow submit is still running:
   - moved non-`serve_once` connections onto spawned Tokio tasks
   - stopped holding the store across provider-backed submit reasoning
