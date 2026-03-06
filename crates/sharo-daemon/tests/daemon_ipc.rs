@@ -466,3 +466,58 @@ fn status_requests_remain_responsive_under_parallel_slow_submits() {
     let _ = fs::remove_file(&store);
     let _ = fs::remove_file(&config);
 }
+
+#[test]
+fn ctrl_c_waits_for_inflight_request_completion() {
+    let socket = socket_path();
+    let store = temp_path("sharo-daemon-shutdown-drain", ".json");
+    let (base_url, server_thread) = start_delayed_response_server(Duration::from_millis(450));
+    let config = write_slow_openai_config("sharo-daemon-shutdown-drain", &base_url);
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sharo-daemon"))
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+            "--config-path",
+            config.to_str().expect("config path"),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let submit_stream = connect_with_retry(&socket);
+    let submit_thread = thread::spawn(move || {
+        send_request_with_stream(
+            submit_stream,
+            &DaemonRequest::SubmitTask(SubmitTaskOpRequest {
+                session_id: Some("session-shutdown-drain".to_string()),
+                goal: "slow submit during ctrl-c".to_string(),
+                idempotency_key: Some("idem-shutdown-drain".to_string()),
+            }),
+        )
+    });
+
+    thread::sleep(Duration::from_millis(80));
+    let signal_status = Command::new("kill")
+        .args(["-INT", &child.id().to_string()])
+        .status()
+        .expect("send SIGINT");
+    assert!(signal_status.success(), "failed to send SIGINT");
+
+    match submit_thread.join().expect("submit thread join") {
+        DaemonResponse::SubmitTask(response) => assert_eq!(response.task_state, "succeeded"),
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    let exit_status = child.wait().expect("wait daemon exit");
+    assert!(exit_status.success(), "daemon should exit cleanly after draining handlers");
+
+    server_thread.join().expect("delayed server join");
+    let _ = fs::remove_file(&socket);
+    let _ = fs::remove_file(&store);
+    let _ = fs::remove_file(&config);
+}

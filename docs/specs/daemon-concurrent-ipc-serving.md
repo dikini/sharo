@@ -43,12 +43,14 @@ Ensure the daemon can accept and serve independent IPC requests concurrently so 
 - Listener accept loop must not await full request handling inline.
 - Exclusive store access must not be held across blocking provider work or `.await`.
 - `submit`, `get-task`, `get-trace`, `get-artifacts`, and approval endpoints must continue to honor the existing IPC schema.
+- Ctrl-C shutdown must stop new accepts while allowing already accepted request handlers to finish and send one response each.
 
 ## Invariants
 
 - One request still yields exactly one response.
 - Socket framing and error envelopes remain unchanged.
 - No mutable store guard is held across async suspension or provider execution.
+- Daemon shutdown is structured: in-flight connection handlers are awaited before process exit.
 
 ## Task Contracts
 
@@ -66,6 +68,7 @@ Ensure the daemon can accept and serve independent IPC requests concurrently so 
 **Postconditions**
 
 - The daemon accepts new connections while earlier requests are still executing.
+- Ctrl-C no longer aborts already accepted request handlers before response emission.
 
 **Tests (must exist before implementation)**
 
@@ -78,6 +81,7 @@ Property:
 Integration:
 - `status_request_remains_responsive_during_slow_submit`
 - `approval_list_remains_responsive_during_slow_submit`
+- `ctrl_c_waits_for_inflight_request_completion`
 
 ## Scenarios
 

@@ -35,6 +35,7 @@ Prevent authenticated provider configurations from sending bearer tokens to inse
 
 - Authenticated OpenAI-compatible provider configs must use HTTPS unless the endpoint is loopback.
 - Invalid authenticated base URLs fail fast during config validation or connector execution.
+- Loopback detection must accept canonical and non-canonical IPv4 loopback literals used by local harnesses (for example, `127.1`).
 
 ## Invariants
 
@@ -59,12 +60,14 @@ Prevent authenticated provider configurations from sending bearer tokens to inse
 
 - Authenticated insecure remote URLs are rejected before any request is sent.
 - Authenticated HTTP loopback URLs are accepted for the full loopback address range, not only a small hardcoded subset.
+- Non-canonical decimal loopback literals remain accepted for authenticated local HTTP test endpoints.
 
 **Tests (must exist before implementation)**
 
 Unit:
 - `authenticated_http_base_url_is_rejected`
 - `authenticated_loopback_ip_literals_remain_allowed`
+- `authenticated_noncanonical_loopback_ipv4_literals_remain_allowed`
 
 Property:
 - `authenticated_non_https_non_loopback_urls_are_never_accepted`

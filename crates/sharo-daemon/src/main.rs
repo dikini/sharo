@@ -13,6 +13,7 @@ use sharo_core::protocol::{
 use sharo_core::reasoning::ReasoningError;
 use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
+use tokio::task::JoinSet;
 
 mod store;
 mod config;
@@ -344,10 +345,15 @@ async fn main() {
                 store: Mutex::new(store),
                 daemon_kernel: DaemonKernel::new(&kernel_config),
             });
+            let mut handlers = JoinSet::new();
+            let mut shutdown_requested = false;
 
             loop {
+                if shutdown_requested && handlers.is_empty() {
+                    break;
+                }
                 tokio::select! {
-                    accept_result = listener.accept() => {
+                    accept_result = listener.accept(), if !shutdown_requested => {
                         let (stream, _) = match accept_result {
                             Ok(pair) => pair,
                             Err(error) => {
@@ -361,11 +367,15 @@ async fn main() {
                             break;
                         }
 
-                        tokio::spawn(handle_stream(stream, Arc::clone(&state)));
-
+                        handlers.spawn(handle_stream(stream, Arc::clone(&state)));
                     }
-                    _ = tokio::signal::ctrl_c() => {
-                        break;
+                    joined = handlers.join_next(), if !handlers.is_empty() => {
+                        if let Some(Err(error)) = joined {
+                            eprintln!("daemon_error=request_handler_failed message={}", error);
+                        }
+                    }
+                    _ = tokio::signal::ctrl_c(), if !shutdown_requested => {
+                        shutdown_requested = true;
                     }
                 }
             }

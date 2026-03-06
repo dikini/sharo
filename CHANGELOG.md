@@ -115,6 +115,9 @@ The format is based on Common Changelog:
   - treat post-rename parent-directory fsync errors as degraded durability warnings after a logically committed mutation instead of surfacing a false failed-mutation result
   - clear in-memory in-flight idempotency reservations when connector or resolver failure memoization itself cannot be persisted, so same-process retries are not stuck in `submit_in_progress`
   - preserve the degraded-durability warning signal after committed rename so operators can still detect weakly durable store commits
+- Closed follow-up review regressions in loopback validation and shutdown semantics:
+  - keep authenticated local HTTP base-url validation compatible with non-canonical decimal loopback literals used by local test harnesses
+  - drain already accepted IPC handlers on Ctrl-C shutdown so in-flight requests can still complete and emit exactly one response before process exit
 - Allowed the daemon to keep serving independent IPC requests while a slow submit is still running:
   - moved non-`serve_once` connections onto spawned Tokio tasks
   - stopped holding the store across provider-backed submit reasoning

@@ -90,10 +90,46 @@ fn is_loopback_host(host: Option<&str>) -> bool {
     if normalized.eq_ignore_ascii_case("localhost") {
         return true;
     }
-    normalized
+    if normalized
         .parse::<IpAddr>()
         .map(|ip| ip.is_loopback())
         .unwrap_or(false)
+    {
+        return true;
+    }
+    parse_legacy_decimal_ipv4(normalized)
+        .map(|ip| ip.is_loopback())
+        .unwrap_or(false)
+}
+
+fn parse_legacy_decimal_ipv4(host: &str) -> Option<std::net::Ipv4Addr> {
+    if host.is_empty() || !host.bytes().all(|b| b.is_ascii_digit() || b == b'.') {
+        return None;
+    }
+
+    let parts: Vec<&str> = host.split('.').collect();
+    if parts.is_empty() || parts.len() > 4 || parts.iter().any(|part| part.is_empty()) {
+        return None;
+    }
+
+    let mut values = [0u32; 4];
+    for (index, part) in parts.iter().enumerate() {
+        values[index] = part.parse::<u32>().ok()?;
+    }
+
+    let addr = match parts.len() {
+        1 => values[0],
+        2 if values[0] <= 0xff && values[1] <= 0x00ff_ffff => (values[0] << 24) | values[1],
+        3 if values[0] <= 0xff && values[1] <= 0xff && values[2] <= 0x0000_ffff => {
+            (values[0] << 24) | (values[1] << 16) | values[2]
+        }
+        4 if values.iter().all(|value| *value <= 0xff) => {
+            (values[0] << 24) | (values[1] << 16) | (values[2] << 8) | values[3]
+        }
+        _ => return None,
+    };
+
+    Some(std::net::Ipv4Addr::from(addr))
 }
 
 #[derive(Debug, Default, Clone)]

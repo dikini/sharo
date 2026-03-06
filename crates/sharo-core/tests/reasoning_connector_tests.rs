@@ -206,6 +206,21 @@ fn authenticated_loopback_ip_literals_remain_allowed() {
 }
 
 #[test]
+fn authenticated_noncanonical_loopback_ipv4_literals_remain_allowed() {
+    for loopback in ["127.1", "127.0.1", "2130706433"] {
+        let mut profile = test_profile();
+        profile.provider_id = "openai".to_string();
+        profile.model_id = "gpt-5-mini".to_string();
+        profile.base_url = Some(format!("http://{loopback}:8080"));
+        profile.auth_env_key = Some("SHARO_TEST_OPENAI_KEY".to_string());
+
+        validate_base_url_security(&profile).unwrap_or_else(|error| {
+            panic!("non-canonical IPv4 loopback literal {loopback} should remain allowed: {error:?}")
+        });
+    }
+}
+
+#[test]
 fn s2_fit_loop_converges_under_budget_pressure() {
     let resolvers = ResolverBundle {
         system: Box::new(StaticTextResolver::new("system=keep-safe", "test-system")),

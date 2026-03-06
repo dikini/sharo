@@ -10,8 +10,8 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-Goal: let the daemon continue accepting and serving independent IPC requests while slow submissions are still running.
-Architecture: move connection handling into spawned async tasks while reducing store access to explicit critical sections guarded by shared state. The design follows `rust-skills` async guidance: never hold exclusive state across `.await`, and keep blocking work off the request-serving path.
+Goal: let the daemon continue accepting and serving independent IPC requests while slow submissions are still running, without dropping already accepted requests during Ctrl-C shutdown.
+Architecture: move connection handling into spawned async tasks while reducing store access to explicit critical sections guarded by shared state. Use structured async task management (`JoinSet`) so shutdown gates new accepts and drains in-flight handlers before exit. The design follows `rust-skills` async guidance: never hold exclusive state across `.await`, and keep blocking work off the request-serving path.
 Tech Stack: Rust 2024, Tokio Unix sockets, `Arc`, synchronization primitives, existing daemon IPC tests.
 Template-Profile: tdd-strict-v1
 
@@ -38,6 +38,7 @@ Task-Registry-Refs: TASK-DAEMON-CONCURRENCY-PLAN-001, TASK-DAEMON-CONCURRENCY-SP
 **Postconditions**
 
 - There are deterministic tests proving a slow submit currently blocks unrelated requests.
+- There is deterministic shutdown coverage proving Ctrl-C waits for already accepted handlers.
 
 **Tests (must exist before implementation)**
 
@@ -50,6 +51,7 @@ Property:
 Integration:
 - `status_request_remains_responsive_during_slow_submit`
 - `approval_list_remains_responsive_during_slow_submit`
+- `ctrl_c_waits_for_inflight_request_completion`
 
 **Red Phase (required before code changes)**
 
@@ -60,7 +62,8 @@ Expected: the new responsiveness tests fail against the current sequential reque
 
 1. Add a slow-submit harness using an intentionally delayed connector path.
 2. Add a second client request that must complete before the slow submit finishes.
-3. Keep all assertions on observable daemon responses and timing bounds.
+3. Add a Ctrl-C shutdown harness that sends a signal while a handler is in-flight.
+4. Keep all assertions on observable daemon responses and timing bounds.
 
 **Green Phase (required)**
 
@@ -96,10 +99,12 @@ Re-run: `cargo test -p sharo-daemon --test daemon_ipc --test scenario_a -- --noc
 
 - No store guard is held across `.await`.
 - Blocking provider work remains off the Tokio request thread.
+- Shutdown path uses structured task waiting instead of detached abandonment.
 
 **Postconditions**
 
 - Accept loop continues while request handlers run concurrently.
+- Process exit waits for spawned connection handlers that were already accepted.
 
 **Tests (must exist before implementation)**
 
@@ -112,6 +117,7 @@ Property:
 Integration:
 - `status_request_remains_responsive_during_slow_submit`
 - `approval_list_remains_responsive_during_slow_submit`
+- `ctrl_c_waits_for_inflight_request_completion`
 
 **Red Phase (required before code changes)**
 
@@ -123,7 +129,8 @@ Expected: new concurrency tests fail until the request loop is split.
 1. Wrap store and any request-shared runtime state in explicit shared ownership.
 2. Spawn a Tokio task per accepted connection instead of awaiting `handle_stream()` inline.
 3. Narrow mutation windows so state access happens before or after async/provider boundaries, not across them.
-4. Revisit type shapes if needed to replace stringly lock choreography with narrower helper APIs.
+4. Use `JoinSet` (or equivalent structured task tracking) to drain in-flight handlers on shutdown.
+5. Revisit type shapes if needed to replace stringly lock choreography with narrower helper APIs.
 
 **Green Phase (required)**
 
@@ -162,6 +169,7 @@ Re-run: `cargo test -p sharo-daemon -- --nocapture`
 **Postconditions**
 
 - Baseline smoke coverage remains green after daemon concurrency changes.
+- Shutdown-aware concurrency behavior is covered without regressing smoke behavior.
 
 **Tests (must exist before implementation)**
 
@@ -174,6 +182,7 @@ Property:
 Integration:
 - `status_request_remains_responsive_during_slow_submit`
 - `approval_list_remains_responsive_during_slow_submit`
+- `ctrl_c_waits_for_inflight_request_completion`
 
 **Red Phase (required before code changes)**
 
