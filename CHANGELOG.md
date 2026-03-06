@@ -9,6 +9,9 @@ The format is based on Common Changelog:
 
 ### Added
 
+- Added a minimal top-level `README.md` with:
+  - high-level workspace crate overview (`sharo-core`, `sharo-cli`, `sharo-daemon`)
+  - explicit in-development status and breakage expectation notice
 - Added deterministic fresh-clone dependency bootstrap tooling:
   - `scripts/bootstrap-dev.sh` with explicit `--check` and `--apply` modes
   - `just setup` target to run bootstrap installation flow
