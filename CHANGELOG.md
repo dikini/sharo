@@ -9,6 +9,10 @@ The format is based on Common Changelog:
 
 ### Added
 
+- Added deterministic fresh-clone dependency bootstrap tooling:
+  - `scripts/bootstrap-dev.sh` with explicit `--check` and `--apply` modes
+  - `just setup` target to run bootstrap installation flow
+  - Bats coverage in `scripts/tests/test-bootstrap-dev.bats`
 - Added workflow tooling rollout phase 1 implementation:
   - `scripts/check-tests.sh` provides deterministic workspace testing with automatic `cargo nextest` preference and `cargo test` fallback
   - `scripts/check-merge-result.sh` and `.github/workflows/merge-result-gate.yml` add merge-result verification for pull requests and merge queue events
