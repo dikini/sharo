@@ -10,12 +10,12 @@ setup() {
 }
 
 teardown() {
-  ps -o pid=,command= -u "$USER" \
-    | awk '/sharo-daemon start --socket-path \/tmp\/sharo-openai-live-/ { print $1 }' \
-    | xargs -r kill -9 >/dev/null 2>&1 || true
-  ps -o pid=,command= -u "$USER" \
-    | awk '/fake-daemon.sh start --socket-path \/tmp\/sharo-openai-live-/ { print $1 }' \
-    | xargs -r kill -9 >/dev/null 2>&1 || true
+  ps -o pid=,command= -u "$USER" |
+    awk '/sharo-daemon start --socket-path \/tmp\/sharo-openai-live-/ { print $1 }' |
+    xargs -r kill -9 >/dev/null 2>&1 || true
+  ps -o pid=,command= -u "$USER" |
+    awk '/fake-daemon.sh start --socket-path \/tmp\/sharo-openai-live-/ { print $1 }' |
+    xargs -r kill -9 >/dev/null 2>&1 || true
   rm -rf "$TMP_DIR"
 }
 
@@ -27,7 +27,7 @@ teardown() {
 
 @test "openai_live_smoke_requires_auth_env_when_openai" {
   config="$TMP_DIR/daemon.toml"
-  cat > "$config" <<'CFG'
+  cat >"$config" <<'CFG'
 [model]
 provider = "openai"
 base_url = "https://api.openai.com"
@@ -41,9 +41,60 @@ CFG
   [[ "$output" == *"missing required auth env var"* ]]
 }
 
+@test "openai_live_smoke_loads_auth_env_from_daemon_env_file" {
+  fake_daemon="$TMP_DIR/fake-daemon.sh"
+  cat >"$fake_daemon" <<'FAKE'
+#!/usr/bin/env bash
+set -euo pipefail
+sleep 30
+FAKE
+  chmod +x "$fake_daemon"
+
+  config="$TMP_DIR/daemon.toml"
+  cat >"$config" <<'CFG'
+[model]
+provider = "openai"
+base_url = "https://api.openai.com"
+model_id = "gpt-4.1-mini"
+auth_env_key = "SHARO_TEST_ENV_FILE_KEY"
+timeout_ms = 1000
+CFG
+
+  daemon_env="$TMP_DIR/daemon.env"
+  cat >"$daemon_env" <<'ENVVARS'
+SHARO_TEST_ENV_FILE_KEY=test-token-from-daemon-env
+ENVVARS
+
+  SHARO_DAEMON_BIN="$fake_daemon" run scripts/openai-live-smoke.sh --config-path "$config" --daemon-env-path "$daemon_env"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"daemon did not become ready"* ]]
+  [[ "$output" != *"missing required auth env var"* ]]
+}
+
+@test "openai_live_smoke_no_daemon_env_keeps_missing_auth_failure" {
+  config="$TMP_DIR/daemon.toml"
+  cat >"$config" <<'CFG'
+[model]
+provider = "openai"
+base_url = "https://api.openai.com"
+model_id = "gpt-4.1-mini"
+auth_env_key = "SHARO_TEST_DISABLED_DAEMON_ENV_KEY"
+timeout_ms = 1000
+CFG
+
+  daemon_env="$TMP_DIR/daemon.env"
+  cat >"$daemon_env" <<'ENVVARS'
+SHARO_TEST_DISABLED_DAEMON_ENV_KEY=test-token-from-daemon-env
+ENVVARS
+
+  run scripts/openai-live-smoke.sh --config-path "$config" --daemon-env-path "$daemon_env" --no-daemon-env
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"missing required auth env var"* ]]
+}
+
 @test "openai_live_smoke_accepts_inline_comment_after_auth_env_key" {
   config="$TMP_DIR/daemon.toml"
-  cat > "$config" <<'CFG'
+  cat >"$config" <<'CFG'
 [model]
 provider = "openai"
 base_url = "https://api.openai.com"
@@ -60,7 +111,7 @@ CFG
 
 @test "openai_live_smoke_keeps_daemon_log_when_readiness_fails" {
   fake_daemon="$TMP_DIR/fake-daemon.sh"
-  cat > "$fake_daemon" <<'FAKE'
+  cat >"$fake_daemon" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
 echo "fake-daemon-start $*" >&2
@@ -69,7 +120,7 @@ FAKE
   chmod +x "$fake_daemon"
 
   config="$TMP_DIR/deterministic.toml"
-  cat > "$config" <<'CFG'
+  cat >"$config" <<'CFG'
 [model]
 provider = "deterministic"
 model_id = "mock"
@@ -89,7 +140,7 @@ CFG
 
 @test "openai_live_smoke_parses_task_id_from_submit_output" {
   config="$TMP_DIR/deterministic.toml"
-  cat > "$config" <<'CFG'
+  cat >"$config" <<'CFG'
 [model]
 provider = "deterministic"
 model_id = "mock"
@@ -103,7 +154,7 @@ CFG
 
 @test "openai_live_smoke_deterministic_mode_surfaces_model_content" {
   config="$TMP_DIR/deterministic.toml"
-  cat > "$config" <<'CFG'
+  cat >"$config" <<'CFG'
 [model]
 provider = "deterministic"
 model_id = "mock"

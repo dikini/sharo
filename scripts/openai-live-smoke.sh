@@ -14,6 +14,8 @@ Default mode enforces OpenAI-like provider config and required auth env var.
 
 Options:
   --config-path <path>       Daemon TOML config path (default: ~/.config/sharo/daemon.toml)
+  --daemon-env-path <path>   Env file to source for auth vars (default: ~/.config/sharo/daemon.env)
+  --no-daemon-env            Do not source daemon env file
   --goal <text>              Goal to submit (default: "Say hello in one sentence")
   --session-label <label>    Session label (default: openai-live-smoke)
   --socket-path <path>       Unix socket path (default: random /tmp path)
@@ -100,6 +102,8 @@ extract_field() {
 }
 
 config_path="${HOME}/.config/sharo/daemon.toml"
+daemon_env_path="${HOME}/.config/sharo/daemon.env"
+use_daemon_env=true
 goal="Say hello in one sentence"
 session_label="openai-live-smoke"
 socket_path="$(mktemp -u /tmp/sharo-openai-live-XXXXXX.sock)"
@@ -112,27 +116,53 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --config-path)
       shift
-      [[ $# -gt 0 ]] || { echo "openai-live-smoke: --config-path requires a value" >&2; exit 2; }
+      [[ $# -gt 0 ]] || {
+        echo "openai-live-smoke: --config-path requires a value" >&2
+        exit 2
+      }
       config_path="$1"
       ;;
     --goal)
       shift
-      [[ $# -gt 0 ]] || { echo "openai-live-smoke: --goal requires a value" >&2; exit 2; }
+      [[ $# -gt 0 ]] || {
+        echo "openai-live-smoke: --goal requires a value" >&2
+        exit 2
+      }
       goal="$1"
+      ;;
+    --daemon-env-path)
+      shift
+      [[ $# -gt 0 ]] || {
+        echo "openai-live-smoke: --daemon-env-path requires a value" >&2
+        exit 2
+      }
+      daemon_env_path="$1"
+      ;;
+    --no-daemon-env)
+      use_daemon_env=false
       ;;
     --session-label)
       shift
-      [[ $# -gt 0 ]] || { echo "openai-live-smoke: --session-label requires a value" >&2; exit 2; }
+      [[ $# -gt 0 ]] || {
+        echo "openai-live-smoke: --session-label requires a value" >&2
+        exit 2
+      }
       session_label="$1"
       ;;
     --socket-path)
       shift
-      [[ $# -gt 0 ]] || { echo "openai-live-smoke: --socket-path requires a value" >&2; exit 2; }
+      [[ $# -gt 0 ]] || {
+        echo "openai-live-smoke: --socket-path requires a value" >&2
+        exit 2
+      }
       socket_path="$1"
       ;;
     --store-path)
       shift
-      [[ $# -gt 0 ]] || { echo "openai-live-smoke: --store-path requires a value" >&2; exit 2; }
+      [[ $# -gt 0 ]] || {
+        echo "openai-live-smoke: --store-path requires a value" >&2
+        exit 2
+      }
       store_path="$1"
       ;;
     --allow-non-openai)
@@ -144,7 +174,7 @@ while [[ $# -gt 0 ]]; do
     --print-raw)
       print_raw=true
       ;;
-    -h|--help)
+    -h | --help)
       usage
       exit 0
       ;;
@@ -157,6 +187,12 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+if [[ "$use_daemon_env" == true ]]; then
+  # shellcheck source=/dev/null
+  source "$ROOT/scripts/load-daemon-env.sh"
+  load_daemon_env "$daemon_env_path"
+fi
+
 if [[ ! -f "$config_path" ]]; then
   echo "openai-live-smoke: config file not found: $config_path" >&2
   exit 1
@@ -167,8 +203,7 @@ auth_env_key="$(read_toml_scalar "auth_env_key" "$config_path")"
 
 if [[ "$allow_non_openai" != true ]]; then
   case "$provider" in
-    openai|openai_compatible|openrouter|kimi|glm)
-      ;;
+    openai | openai_compatible | openrouter | kimi | glm) ;;
     *)
       echo "openai-live-smoke: provider must be openai-compatible for live smoke (provider=$provider). Use --allow-non-openai to override." >&2
       exit 1

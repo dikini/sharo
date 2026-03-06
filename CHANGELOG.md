@@ -9,6 +9,8 @@ The format is based on Common Changelog:
 
 ### Added
 
+- Added daemon env loading helper:
+  - `scripts/load-daemon-env.sh` to source `~/.config/sharo/daemon.env` (or custom path) with exported variables for downstream scripts
 - Added prompt-guidance template hardening planning artifacts:
   - `docs/specs/prompt-guidance-template-hardening.md`
   - `docs/plans/2026-03-06-prompt-guidance-template-hardening-plan.md`
@@ -165,6 +167,10 @@ The format is based on Common Changelog:
 
 ### Fixed
 
+- Improved OpenAI live smoke environment behavior:
+  - `scripts/openai-live-smoke.sh` now auto-loads daemon env vars from `~/.config/sharo/daemon.env` by default
+  - added `--daemon-env-path` and `--no-daemon-env` controls for explicit env-loading behavior
+  - expanded Bats coverage for env-file loading and opt-out behavior in `scripts/tests/test-openai-live-smoke.bats`
 - Fixed no-sudo bootstrap behavior for workflow lint tooling:
   - replaced invalid Cargo-based `actionlint` installation path with deterministic local binary install into `.tools/actionlint` from pinned release `v1.7.11`
   - added actionlint archive integrity verification during bootstrap apply:
