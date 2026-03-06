@@ -94,6 +94,10 @@ The format is based on Common Changelog:
   - execute synchronous request handling behind `tokio::task::spawn_blocking`
   - preserve the existing submit/store semantics while preventing slow submits from monopolizing runtime workers
   - add daemon IPC regression coverage proving status requests stay responsive under parallel slow-submit pressure
+- Preserved store memory/disk consistency when directory fsync fails after rename:
+  - distinguish pre-rename save failures from post-rename durability failures
+  - update in-memory state once the canonical store file has been replaced, even if parent-directory fsync reports degraded durability
+  - add deterministic unit coverage for the post-rename directory-sync failure path
 - Allowed the daemon to keep serving independent IPC requests while a slow submit is still running:
   - moved non-`serve_once` connections onto spawned Tokio tasks
   - stopped holding the store across provider-backed submit reasoning

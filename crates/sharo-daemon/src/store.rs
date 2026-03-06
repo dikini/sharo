@@ -6,6 +6,8 @@ use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::cell::Cell;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(not(unix))]
@@ -93,6 +95,11 @@ pub struct SubmitPreparation {
 pub enum SubmitPreparationOutcome {
     Replay(SubmitReplay),
     Ready(SubmitPreparation),
+}
+
+enum SaveStateOutcome {
+    Clean,
+    DurabilityError(String),
 }
 
 impl Store {
@@ -192,7 +199,7 @@ impl Store {
         Ok(Self { path, state })
     }
 
-    fn save_state(&self, state: &PersistedState) -> Result<(), String> {
+    fn save_state(&self, state: &PersistedState) -> Result<SaveStateOutcome, String> {
         let data = serde_json::to_string_pretty(state)
             .map_err(|e| format!("store_serialize_failed error={}", e))?;
         let parent = self
@@ -232,7 +239,10 @@ impl Store {
                     e
                 )
             })?;
-            sync_directory(parent)
+            match sync_directory(parent) {
+                Ok(()) => Ok(SaveStateOutcome::Clean),
+                Err(message) => Ok(SaveStateOutcome::DurabilityError(message)),
+            }
         }
     }
 
@@ -242,9 +252,12 @@ impl Store {
     ) -> Result<R, String> {
         let mut next_state = self.state.clone();
         let result = mutate(&mut next_state)?;
-        self.save_state(&next_state)?;
+        let save_outcome = self.save_state(&next_state)?;
         self.state = next_state;
-        Ok(result)
+        match save_outcome {
+            SaveStateOutcome::Clean => Ok(result),
+            SaveStateOutcome::DurabilityError(message) => Err(message),
+        }
     }
 
     pub fn register_session(&mut self, session_label: &str) -> Result<String, String> {
@@ -799,6 +812,13 @@ impl Store {
 
 #[cfg(unix)]
 fn sync_directory(path: &Path) -> Result<(), String> {
+    #[cfg(test)]
+    if directory_sync_should_fail_for_test() {
+        return Err(format!(
+            "store_directory_sync_failed path={} error=simulated_failure",
+            path.display()
+        ));
+    }
     let directory = OpenOptions::new()
         .read(true)
         .open(path)
@@ -806,6 +826,33 @@ fn sync_directory(path: &Path) -> Result<(), String> {
     directory
         .sync_all()
         .map_err(|e| format!("store_directory_sync_failed path={} error={}", path.display(), e))
+}
+
+#[cfg(test)]
+thread_local! {
+    static DIRECTORY_SYNC_FAIL_FOR_TEST: Cell<bool> = const { Cell::new(false) };
+}
+
+#[cfg(test)]
+fn directory_sync_should_fail_for_test() -> bool {
+    DIRECTORY_SYNC_FAIL_FOR_TEST.with(Cell::get)
+}
+
+#[cfg(test)]
+fn with_directory_sync_failure_for_test<T>(f: impl FnOnce() -> T) -> T {
+    struct ResetGuard(bool);
+
+    impl Drop for ResetGuard {
+        fn drop(&mut self) {
+            DIRECTORY_SYNC_FAIL_FOR_TEST.with(|flag| flag.set(self.0));
+        }
+    }
+
+    DIRECTORY_SYNC_FAIL_FOR_TEST.with(|flag| {
+        let previous = flag.replace(true);
+        let _reset = ResetGuard(previous);
+        f()
+    })
 }
 
 fn parse_resource_claim(goal: &str) -> Option<String> {
@@ -890,7 +937,10 @@ fn new_binding(
 
 #[cfg(test)]
 mod tests {
-    use super::{ApprovalRecord, PersistedState, Store, SubmitReplay, sync_directory};
+    use super::{
+        ApprovalRecord, PersistedState, Store, SubmitReplay, sync_directory,
+        with_directory_sync_failure_for_test,
+    };
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1059,5 +1109,25 @@ mod tests {
         ));
         let error = sync_directory(&missing_directory).expect_err("missing directory should fail");
         assert!(error.contains("store_directory_sync_failed"));
+    }
+
+    #[test]
+    fn post_rename_directory_sync_failure_keeps_memory_and_disk_consistent() {
+        let path = unique_store_path("sharo-post-rename-sync-failure");
+        let mut store = Store::open(&path).expect("open store");
+
+        with_directory_sync_failure_for_test(|| {
+            let error = store
+                .register_session("session-label")
+                .expect_err("directory sync failure should surface");
+            assert!(error.contains("store_directory_sync_failed"));
+        });
+
+        let reopened = Store::open(&path).expect("reopen store");
+        assert_eq!(store.state, reopened.state);
+        assert_eq!(store.state.next_session_id, 2);
+        assert!(store.state.sessions.contains_key("session-000001"));
+
+        let _ = fs::remove_file(path);
     }
 }
