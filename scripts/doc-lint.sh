@@ -65,7 +65,7 @@ while [[ $# -gt 0 ]]; do
       strict_new=true
       shift
       ;;
-    -h|--help)
+    -h | --help)
       usage
       exit 0
       ;;
@@ -194,7 +194,7 @@ while IFS= read -r match; do
   path="${link%%#*}"
 
   case "$link" in
-    http://*|https://*|mailto:*|\#*)
+    http://* | https://* | mailto:* | \#*)
       continue
       ;;
   esac
@@ -232,6 +232,9 @@ line_no() {
 
 for sf in "${strict_files[@]}"; do
   strict_hint="hint: create with scripts/doc-new.sh <spec|plan> <slug> --strict-filled (or scripts/doc-start.sh <spec|plan> <slug>)"
+  has_line "^## Instruction Priority$" "$sf" || fail "$sf missing '## Instruction Priority' ($strict_hint)"
+  has_line "^## Output Contract$" "$sf" || fail "$sf missing '## Output Contract' ($strict_hint)"
+  has_line "^## Model Compatibility Notes$" "$sf" || fail "$sf missing '## Model Compatibility Notes' ($strict_hint)"
   has_line "^\\*\\*Preconditions\\*\\*$" "$sf" || fail "$sf missing '**Preconditions**' ($strict_hint)"
   has_line "^\\*\\*Invariants\\*\\*$" "$sf" || fail "$sf missing '**Invariants**' ($strict_hint)"
   has_line "^\\*\\*Postconditions\\*\\*$" "$sf" || fail "$sf missing '**Postconditions**' ($strict_hint)"
@@ -243,11 +246,13 @@ for sf in "${strict_files[@]}"; do
   has_line "^Integration:$" "$sf" || fail "$sf missing 'Integration:' section ($strict_hint)"
 
   if [[ "$sf" == docs/plans/* || "$sf" == *"/plan.template.md" ]]; then
+    has_line "^## Execution Mode$" "$sf" || fail "$sf missing '## Execution Mode' ($strict_hint)"
+    has_line "^## Task Update Contract$" "$sf" || fail "$sf missing '## Task Update Contract' ($strict_hint)"
+    has_line "^## Completion Gate$" "$sf" || fail "$sf missing '## Completion Gate' ($strict_hint)"
     has_line "^\\*\\*Red Phase \\(required before code changes\\)\\*\\*$" "$sf" || fail "$sf missing Red Phase section ($strict_hint)"
     has_line "^\\*\\*Implementation Steps\\*\\*$" "$sf" || fail "$sf missing Implementation Steps section ($strict_hint)"
     has_line "^\\*\\*Green Phase \\(required\\)\\*\\*$" "$sf" || fail "$sf missing Green Phase section ($strict_hint)"
     has_line "^\\*\\*Completion Evidence\\*\\*$" "$sf" || fail "$sf missing Completion Evidence section ($strict_hint)"
-
     red_ln="$(line_no "^\\*\\*Red Phase \\(required before code changes\\)\\*\\*$" "$sf" || true)"
     impl_ln="$(line_no "^\\*\\*Implementation Steps\\*\\*$" "$sf" || true)"
     green_ln="$(line_no "^\\*\\*Green Phase \\(required\\)\\*\\*$" "$sf" || true)"
@@ -262,6 +267,8 @@ for sf in "${strict_files[@]}"; do
     if [[ -n "$impl_ln" && -n "$green_ln" && "$impl_ln" -gt "$green_ln" ]]; then
       fail "$sf has Implementation Steps after Green Phase"
     fi
+  elif [[ "$sf" == docs/specs/* || "$sf" == *"/spec.template.md" ]]; then
+    has_line "^## Evidence / Verification Contract$" "$sf" || fail "$sf missing '## Evidence / Verification Contract' ($strict_hint)"
   fi
 done
 

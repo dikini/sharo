@@ -13,6 +13,31 @@ Status: draft | active | deprecated
 Owner: <team/person>
 Template-Profile: tdd-strict-v1
 
+## Instruction Priority
+
+1. System-level constraints and safety policies.
+2. Developer-level constraints and workflow policies.
+3. This spec's task contracts and invariants.
+4. In-task updates recorded explicitly in this document.
+
+## Output Contract
+
+- Preserve exact section headings in this template unless intentionally revised.
+- Keep claims concrete and tied to observable evidence.
+- Avoid introducing unstated requirements or hidden assumptions.
+
+## Evidence / Verification Contract
+
+- Every completion claim must cite verification commands/results in `## Verification`.
+- Conflicting evidence must be called out explicitly before task closure.
+- If verification cannot run, record why and the residual risk.
+
+## Model Compatibility Notes
+
+- XML-style delimiter blocks (e.g. `<context>`, `<constraints>`) are optional structure aids.
+- Critical constraints must also be restated in plain language.
+- This fallback is required for cross-model robustness (including GPT-5.3 behavior).
+
 ## Purpose
 
 ## Scope

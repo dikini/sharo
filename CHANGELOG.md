@@ -9,6 +9,25 @@ The format is based on Common Changelog:
 
 ### Added
 
+- Added prompt-guidance template hardening planning artifacts:
+  - `docs/specs/prompt-guidance-template-hardening.md`
+  - `docs/plans/2026-03-06-prompt-guidance-template-hardening-plan.md`
+  - task registry entries:
+    - `TASK-PROMPT-GUIDANCE-SPEC-001`
+    - `TASK-PROMPT-GUIDANCE-PLAN-001`
+- Added prompt-contract workflow hardening implementation:
+  - template updates:
+    - `docs/templates/spec.template.md`
+    - `docs/templates/plan.template.md`
+    - `docs/templates/README.md`
+    - `docs/templates/examples/prompt-contract-minimal.md`
+  - strict doc lint now requires prompt-contract sections for strict-profile specs/plans:
+    - `## Instruction Priority`
+    - `## Output Contract`
+    - `## Model Compatibility Notes`
+    - spec-only: `## Evidence / Verification Contract`
+    - plan-only: `## Execution Mode`, `## Task Update Contract`, `## Completion Gate`
+  - Bats coverage updates in `scripts/tests/test-doc-tools.bats` to enforce new template contract sections
 - Added a minimal top-level `README.md` with:
   - high-level workspace crate overview (`sharo-core`, `sharo-cli`, `sharo-daemon`)
   - explicit in-development status and breakage expectation notice

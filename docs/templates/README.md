@@ -38,3 +38,22 @@ This allows gradual adoption:
   - `doc-start` applies strict-filled scaffolding by default.
 - Run lint at task start and before commit:
   - `scripts/doc-lint.sh --changed --strict-new`
+
+## Prompt Contract Sections
+
+Strict-profile spec/plan templates now include deterministic prompt-contract sections:
+
+- `## Instruction Priority`
+- `## Output Contract`
+- `## Evidence / Verification Contract` (spec template)
+- `## Execution Mode` (plan template)
+- `## Task Update Contract` (plan template)
+- `## Completion Gate` (plan template)
+- `## Model Compatibility Notes`
+
+## Delimiter Block Guidance
+
+- XML-style blocks such as `<context>`, `<constraints>`, or `<output_contract>` may be used as readability aids in prompts and examples.
+- These tags are plain-text conventions, not parser requirements.
+- Critical constraints must always be duplicated in plain language so behavior remains stable across model variants.
+- Minimal example: `docs/templates/examples/prompt-contract-minimal.md`

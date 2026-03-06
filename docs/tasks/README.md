@@ -50,6 +50,7 @@ This keeps task state deterministic and reduces stale registry entries.
 - Bootstrap toolchain and workflow dependencies after fresh clone: `scripts/bootstrap-dev.sh --apply`
 - Validate local bootstrap dependencies without installing: `scripts/bootstrap-dev.sh --check`
 - Full fresh-clone readiness gate (run by bootstrap apply): `scripts/check-fast-feedback.sh --all`
+- Strict docs lint now enforces prompt-contract headings for strict-profile specs/plans on changed files.
 - Run protocol property tests: `cargo test -p sharo-core --test protocol_tests prop_protocol_roundtrip_preserves_task_summary_fields`
 - Run daemon loom model checks: `cargo test -p sharo-daemon --test loom_submit_shutdown -- --nocapture`
 - MVP matrix mapping file: `docs/tasks/mvp-verification-matrix-map.csv`
@@ -77,6 +78,8 @@ Current state: slices 000 through 005 are marked `done` in `docs/tasks/tasks.csv
 - `TASK-DEV-BOOTSTRAP-001`: added deterministic fresh-clone bootstrap flow for required local tools and hooks.
 - `TASK-WORKFLOW-TOOL-GUIDES-SPEC-001`: defined shell/workflow/rust-hygiene guide contracts with CI and decision-support expectations.
 - `TASK-WORKFLOW-TOOL-GUIDES-PLAN-001`: implemented shell/workflow/rust-hygiene wrappers, CI gates, and operator docs.
+- `TASK-PROMPT-GUIDANCE-SPEC-001`: defined prompt-contract hardening for spec/plan templates and cross-model (GPT-5.3/GPT-5.4) compatibility guidance.
+- `TASK-PROMPT-GUIDANCE-PLAN-001`: implemented prompt-contract sections, lint enforcement, and template usage guidance updates.
 
 ## Tool Usage Guide
 

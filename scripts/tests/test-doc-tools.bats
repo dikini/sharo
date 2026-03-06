@@ -35,6 +35,12 @@ teardown() {
   [ "$status" -eq 0 ]
   run rg '^Command: `echo "replace with red-phase command"`$' "$plan_path"
   [ "$status" -eq 0 ]
+  run rg '^## Instruction Priority$' "$plan_path"
+  [ "$status" -eq 0 ]
+  run rg '^## Execution Mode$' "$plan_path"
+  [ "$status" -eq 0 ]
+  run rg '^## Completion Gate$' "$plan_path"
+  [ "$status" -eq 0 ]
 }
 
 @test "doc-new spec --strict-filled scaffolds strict sections" {
@@ -47,12 +53,20 @@ teardown() {
   [ "$status" -eq 0 ]
   run rg '^Invariant:$' "$spec_path"
   [ "$status" -eq 0 ]
+  run rg '^## Instruction Priority$' "$spec_path"
+  [ "$status" -eq 0 ]
+  run rg '^## Output Contract$' "$spec_path"
+  [ "$status" -eq 0 ]
+  run rg '^## Evidence / Verification Contract$' "$spec_path"
+  [ "$status" -eq 0 ]
 }
 
 @test "doc-start applies strict-filled by default" {
   run scripts/doc-start.sh plan started
   [ "$status" -eq 0 ]
   run rg '^### Task 1: Define Initial Work Slice$' docs/plans/*-started-plan.md
+  [ "$status" -eq 0 ]
+  run rg '^## Task Update Contract$' docs/plans/*-started-plan.md
   [ "$status" -eq 0 ]
 }
 
@@ -66,4 +80,12 @@ EOF
   run scripts/doc-lint.sh --path "$bad"
   [ "$status" -ne 0 ]
   [[ "$output" == *"--strict-filled"* ]]
+}
+
+@test "template README documents delimiter block guidance" {
+  run rg '^## Delimiter Block Guidance$' "$ROOT/docs/templates/README.md"
+  [ "$status" -eq 0 ]
+
+  run rg 'Critical constraints must always be duplicated in plain language' "$ROOT/docs/templates/README.md"
+  [ "$status" -eq 0 ]
 }

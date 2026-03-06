@@ -16,6 +16,40 @@ Architecture: <2-3 sentences>
 Tech Stack: <tools/libraries>
 Template-Profile: tdd-strict-v1
 
+## Instruction Priority
+
+1. System-level constraints and safety policies.
+2. Developer-level constraints and workflow policies.
+3. This plan's execution and verification contracts.
+4. Explicit plan updates recorded in this file.
+
+## Execution Mode
+
+- Mode: plan-only | execute-with-checkpoints
+- Default: execute-with-checkpoints unless user explicitly requests plan-only output.
+
+## Output Contract
+
+- Keep task definitions concrete: exact files, commands, and expected outcomes.
+- Use Red/Green checkpoints as hard gates before claiming task completion.
+- Record unresolved risks instead of silently skipping checks.
+
+## Task Update Contract
+
+- New instructions must be mapped to affected tasks before continuing execution.
+- If priority conflicts exist, apply Instruction Priority and document the resolution.
+- Do not silently drop prior accepted requirements.
+
+## Completion Gate
+
+- A task is complete only when Preconditions, Invariants, Postconditions, and Tests are all satisfied.
+- Plan completion requires explicit verification evidence and changelog/task-registry alignment.
+
+## Model Compatibility Notes
+
+- XML-style delimiter blocks are optional and treated as plain-text structure.
+- Critical constraints must be restated in plain language for model-robust adherence.
+
 ---
 
 ### Task N: <Task Name>
