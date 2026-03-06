@@ -1,3 +1,7 @@
+use std::io::{BufRead, BufReader, Write};
+use std::net::TcpListener;
+use std::thread;
+
 use sharo_core::model_connector::{
     DeterministicConnector, ModelCapabilityFlags, ModelConnectorPort, ModelProfile, ModelTurnRequest,
 };
@@ -21,6 +25,44 @@ fn test_profile() -> ModelProfile {
             supports_vision: false,
         },
     }
+}
+
+fn local_openai_profile(base_url: String) -> ModelProfile {
+    let mut profile = test_profile();
+    profile.provider_id = "openai".to_string();
+    profile.model_id = "gpt-5-mini".to_string();
+    profile.base_url = Some(base_url);
+    profile
+}
+
+fn start_status_server(status_line: &str) -> (String, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local status server");
+    let address = format!("http://{}", listener.local_addr().expect("local addr"));
+    let status_line = status_line.to_string();
+    let handle = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept local status connection");
+        let cloned = stream.try_clone().expect("clone local status stream");
+        let mut reader = BufReader::new(cloned);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            let bytes = reader.read_line(&mut line).expect("read local request");
+            if bytes == 0 || line == "\r\n" {
+                break;
+            }
+        }
+
+        let body = "{\"error\":\"simulated\"}";
+        write!(
+            stream,
+            "HTTP/1.1 {status_line}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .expect("write local status response");
+        stream.flush().expect("flush local status response");
+    });
+    (address, handle)
 }
 
 #[test]
@@ -64,7 +106,7 @@ fn id_reasoning_engine_uses_connector_route_decision() {
 
 #[test]
 fn openai_compatible_connector_requires_base_url() {
-    let connector = OpenAiCompatibleConnector::default();
+    let connector = OpenAiCompatibleConnector;
     let mut profile = test_profile();
     profile.provider_id = "openai".to_string();
     profile.model_id = "gpt-5-mini".to_string();
@@ -89,7 +131,7 @@ fn openai_compatible_connector_requires_base_url() {
 
 #[test]
 fn openai_compatible_connector_rejects_zero_timeout_profile() {
-    let connector = OpenAiCompatibleConnector::default();
+    let connector = OpenAiCompatibleConnector;
     let mut profile = test_profile();
     profile.provider_id = "openai".to_string();
     profile.model_id = "gpt-5-mini".to_string();
@@ -109,6 +151,35 @@ fn openai_compatible_connector_rejects_zero_timeout_profile() {
     match error {
         sharo_core::model_connector::ConnectorError::InvalidRequest(message) => {
             assert!(message.contains("timeout_ms"));
+        }
+        other => panic!("unexpected error kind: {other:?}"),
+    }
+}
+
+#[test]
+fn openai_compatible_connector_rejects_authenticated_cleartext_remote_base_url() {
+    let connector = OpenAiCompatibleConnector;
+    let mut profile = test_profile();
+    profile.provider_id = "openai".to_string();
+    profile.model_id = "gpt-5-mini".to_string();
+    profile.base_url = Some("http://example.com".to_string());
+    profile.auth_env_key = Some("SHARO_TEST_MISSING_OPENAI_KEY".to_string());
+
+    let error = connector
+        .run_turn(
+            &profile,
+            &ModelTurnRequest {
+                trace_id: "trace-task-1".to_string(),
+                task_id: "task-1".to_string(),
+                prompt: "ping".to_string(),
+                metadata: Default::default(),
+            },
+        )
+        .expect_err("authenticated cleartext remote base_url should fail");
+
+    match error {
+        sharo_core::model_connector::ConnectorError::InvalidRequest(message) => {
+            assert!(message.contains("insecure"));
         }
         other => panic!("unexpected error kind: {other:?}"),
     }
@@ -187,7 +258,7 @@ fn s3_provider_auth_failure_is_explicit_and_non_success() {
     profile.base_url = Some("https://api.openai.com".to_string());
     profile.auth_env_key = Some("SHARO_TEST_MISSING_OPENAI_KEY".to_string());
 
-    let engine = IdReasoningEngine::new(OpenAiCompatibleConnector::default(), profile);
+    let engine = IdReasoningEngine::new(OpenAiCompatibleConnector, profile);
     let error = engine
         .plan(&ReasoningInput {
             trace_id: "trace-task-s3".to_string(),
@@ -204,4 +275,33 @@ fn s3_provider_auth_failure_is_explicit_and_non_success() {
         }
         other => panic!("unexpected error: {other:?}"),
     }
+}
+
+#[test]
+fn reasoning_engine_surfaces_retryable_provider_failure_without_task_success() {
+    let (base_url, server_thread) = start_status_server("503 Service Unavailable");
+    let engine = IdReasoningEngine::new(
+        OpenAiCompatibleConnector,
+        local_openai_profile(base_url),
+    );
+
+    let error = engine
+        .plan(&ReasoningInput {
+            trace_id: "trace-task-s5".to_string(),
+            task_id: "task-s5".to_string(),
+            session_id: "session-s5".to_string(),
+            turn_id: 1,
+            goal: "retryable provider failure".to_string(),
+            metadata: Default::default(),
+        })
+        .expect_err("503 should fail without success output");
+
+    match error {
+        ReasoningError::ConnectorFailure { message } => {
+            assert!(message.contains("provider unavailable status=503"));
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    server_thread.join().expect("join local status server");
 }
