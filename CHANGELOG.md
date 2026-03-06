@@ -153,6 +153,9 @@ The format is based on Common Changelog:
   - made SHA-256 verification portable across Linux/macOS via `sha256sum` or `shasum -a 256`
   - made workflow lint check prefer local pinned `.tools/actionlint/actionlint` over `PATH` copy
   - updated workflow-lint command discovery to use local `.tools/actionlint/actionlint` when not on `PATH`
+- Clarified bootstrap integrity verification model in docs:
+  - documented that detached archive signature verification is not currently available from upstream `actionlint` release assets
+  - documented checksum/digest verification as the enforced integrity control in fresh-clone bootstrap guidance
 - Fixed daemon invariant gate command invocation in `scripts/check-daemon-invariants.sh`:
   - run each named invariant test in a separate `cargo test` command so Cargo argument parsing is valid
   - restore executable `daemon-invariants` gate behavior for local and CI task-runner workflows

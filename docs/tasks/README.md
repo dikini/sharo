@@ -101,6 +101,7 @@ Current state: slices 000 through 005 are marked `done` in `docs/tasks/tasks.csv
     - archive SHA-256 match before extraction
     - installed binary version match against pinned release
   - bootstrap supports SHA-256 verification via `sha256sum` or `shasum -a 256`.
+  - upstream `actionlint` releases currently do not publish detached archive signatures (`.sig`/`.asc`), so bootstrap enforces checksum/digest integrity verification instead of signature verification.
   - run `scripts/bootstrap-dev.sh --apply` to install project-managed tools/hooks and execute full verification.
 
 ## Tooling Inputs
