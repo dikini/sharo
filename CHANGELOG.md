@@ -67,6 +67,10 @@ The format is based on Common Changelog:
   - mapped `408` and `504` to timeout, `429` to rate limit, `402` to quota, and `5xx` to unavailable
   - kept auth failures distinct for `401` and `403`
   - added core and daemon regression coverage for transient provider failures without persisted success records
+- Restored a clean workspace clippy baseline:
+  - removed unit-struct `::default()` construction from connector tests
+  - kept `store.rs` item ordering compatible with the lint gate after the transactional persistence refactor
+  - re-verified `cargo clippy --all-targets --all-features -- -D warnings` and `cargo test --workspace`
 - Added explicit restart recovery evidence for successful Scenario A tasks:
   - proved `task get` state and `result_preview` survive restart unchanged
   - proved recovered trace id, event payloads, and monotonic ordering remain intact after restart
