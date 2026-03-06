@@ -43,6 +43,8 @@ This keeps task state deterministic and reduces stale registry entries.
 - Run merge-result gate checks: `scripts/check-merge-result.sh`
 - Run daemon invariant checks: `scripts/check-daemon-invariants.sh`
 - Canonical task runner entrypoint: `just verify`
+- Run protocol property tests: `cargo test -p sharo-core --test protocol_tests prop_protocol_roundtrip_preserves_task_summary_fields`
+- Run daemon loom model checks: `cargo test -p sharo-daemon --test loom_submit_shutdown -- --nocapture`
 - MVP matrix mapping file: `docs/tasks/mvp-verification-matrix-map.csv`
 
 ## MVP Slice Tracking

@@ -28,6 +28,15 @@ The format is based on Common Changelog:
   - Bats coverage for the new phase 2 surfaces:
     - `scripts/tests/test-check-dependencies-security.bats`
     - `scripts/tests/test-justfile-targets.bats`
+- Added workflow tooling rollout phase 3 implementation:
+  - property-based protocol coverage in `crates/sharo-core/tests/protocol_tests.rs` via `proptest`
+  - loom model checks in `crates/sharo-daemon/tests/loom_submit_shutdown.rs` for reservation-release and shutdown-drain invariants
+  - CI policy-check updates to run:
+    - targeted property-test profile
+    - loom model-check profile
+  - Rust dependency updates:
+    - `proptest` in `crates/sharo-core` dev-dependencies
+    - `loom` in `crates/sharo-daemon` dev-dependencies
 - Added workflow tooling rollout planning artifacts for the six high-impact guardrail/tooling upgrades:
   - `docs/specs/workflow-tooling-rollout.md`
   - `docs/plans/2026-03-06-workflow-tooling-rollout-plan.md`
