@@ -15,6 +15,19 @@ The format is based on Common Changelog:
   - Bats coverage for both new scripts:
     - `scripts/tests/test-check-tests.bats`
     - `scripts/tests/test-check-merge-result.bats`
+- Added workflow tooling rollout phase 2 implementation:
+  - dependency governance and security tooling:
+    - `scripts/check-dependencies-security.sh`
+    - `deny.toml`
+    - `audit.toml`
+  - canonical task-runner entrypoint:
+    - `justfile` with `verify`, `fast-feedback`, `merge-gate`, and `daemon-invariants` targets
+  - CI policy-check integration updates:
+    - install and use `just` in `.github/workflows/policy-checks.yml`
+    - run dependency security checks in `.github/workflows/policy-checks.yml`
+  - Bats coverage for the new phase 2 surfaces:
+    - `scripts/tests/test-check-dependencies-security.bats`
+    - `scripts/tests/test-justfile-targets.bats`
 - Added workflow tooling rollout planning artifacts for the six high-impact guardrail/tooling upgrades:
   - `docs/specs/workflow-tooling-rollout.md`
   - `docs/plans/2026-03-06-workflow-tooling-rollout-plan.md`

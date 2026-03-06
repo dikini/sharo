@@ -35,11 +35,14 @@ This keeps task state deterministic and reduces stale registry entries.
 - Validate registry: `scripts/check-tasks-registry.sh`
 - Validate sync gating (changed files): `scripts/check-tasks-sync.sh --changed`
 - Run Rust workspace tests with `nextest` fallback: `scripts/check-tests.sh --workspace`
+- Run dependency governance/security checks: `scripts/check-dependencies-security.sh`
 - Run Knot diff check: `scripts/check-knot-diff.sh --mapping docs/tasks/knot-diff-mapping.csv`
 - Run research reference check: `scripts/check-research-references.sh --registry docs/tasks/research-reference-rules.csv`
 - Run shell tests (Bats): `scripts/run-shell-tests.sh --all`
 - Run MVP matrix map quality gate: `scripts/check-mvp-matrix-map.sh`
 - Run merge-result gate checks: `scripts/check-merge-result.sh`
+- Run daemon invariant checks: `scripts/check-daemon-invariants.sh`
+- Canonical task runner entrypoint: `just verify`
 - MVP matrix mapping file: `docs/tasks/mvp-verification-matrix-map.csv`
 
 ## MVP Slice Tracking

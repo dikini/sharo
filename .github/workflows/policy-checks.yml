@@ -14,8 +14,20 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install just
+        uses: taiki-e/install-action@just
+
       - name: Make scripts executable
         run: chmod +x scripts/*.sh
+
+      - name: Run canonical verification entrypoint
+        run: just verify
+
+      - name: Install dependency security tools
+        run: cargo install --locked cargo-deny cargo-audit
+
+      - name: Run dependency and security checks
+        run: scripts/check-dependencies-security.sh
 
       - name: Enforce Rust policy
         run: scripts/check-rust-policy.sh
