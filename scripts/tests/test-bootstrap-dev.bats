@@ -36,6 +36,12 @@ setup() {
   run rg 'ensure_system_tool shfmt' "$ROOT/scripts/bootstrap-dev.sh"
   [ "$status" -eq 0 ]
 
-  run rg 'ensure_system_tool actionlint' "$ROOT/scripts/bootstrap-dev.sh"
+  run rg 'ensure_actionlint' "$ROOT/scripts/bootstrap-dev.sh"
+  [ "$status" -eq 0 ]
+
+  run rg 'download-actionlint\.bash' "$ROOT/scripts/bootstrap-dev.sh"
+  [ "$status" -eq 0 ]
+
+  run rg '\.tools/actionlint' "$ROOT/scripts/bootstrap-dev.sh"
   [ "$status" -eq 0 ]
 }

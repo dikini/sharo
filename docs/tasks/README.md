@@ -93,7 +93,8 @@ Current state: slices 000 through 005 are marked `done` in `docs/tasks/tasks.csv
   - cargo: `cargo-nextest`, `cargo-deny`, `cargo-audit`, `cargo-udeps`, `cargo-msrv`, `cargo-semver-checks`
 - After clone:
   - run `scripts/bootstrap-dev.sh --check` to detect missing dependencies.
-  - install missing system tools via package manager.
+  - install missing system tools (`shellcheck`, `shfmt`) via package manager.
+  - `scripts/bootstrap-dev.sh --apply` installs `actionlint` into `.tools/actionlint` when missing.
   - run `scripts/bootstrap-dev.sh --apply` to install project-managed tools/hooks and execute full verification.
 
 ## Tooling Inputs

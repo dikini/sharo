@@ -32,15 +32,20 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if ! command -v actionlint >/dev/null 2>&1; then
+actionlint_bin="$(command -v actionlint || true)"
+if [[ -z "$actionlint_bin" && -x "$ROOT/.tools/actionlint/actionlint" ]]; then
+  actionlint_bin="$ROOT/.tools/actionlint/actionlint"
+fi
+
+if [[ -z "$actionlint_bin" ]]; then
   if [[ "$warn_missing" == true ]]; then
     echo "workflow-lint: warning: actionlint missing; skipping"
     exit 0
   fi
   echo "workflow-lint: missing required tool 'actionlint'" >&2
-  echo "workflow-lint: install hint: apt install -y actionlint (or use release binary)" >&2
+  echo "workflow-lint: install hint: scripts/bootstrap-dev.sh --apply (installs local binary in .tools/actionlint)" >&2
   exit 1
 fi
 
-actionlint
+"$actionlint_bin"
 echo "workflow-lint: OK"

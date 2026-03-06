@@ -138,6 +138,29 @@ ensure_system_tool() {
   return 1
 }
 
+ensure_actionlint() {
+  local local_actionlint="$ROOT/.tools/actionlint/actionlint"
+  if command -v actionlint >/dev/null 2>&1; then
+    echo "bootstrap-dev: actionlint present ($(command -v actionlint))"
+    return 0
+  fi
+  if [[ -x "$local_actionlint" ]]; then
+    echo "bootstrap-dev: actionlint present ($local_actionlint)"
+    return 0
+  fi
+
+  if [[ "$mode" == "apply" ]]; then
+    echo "bootstrap-dev: installing actionlint to .tools/actionlint"
+    mkdir -p "$ROOT/.tools/actionlint"
+    curl -sSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash |
+      bash -s -- latest "$ROOT/.tools/actionlint"
+    return 0
+  fi
+
+  echo "bootstrap-dev: missing command 'actionlint' (use --apply to install into .tools/actionlint)" >&2
+  return 1
+}
+
 ensure_cargo_tool() {
   local subcommand="$1"
   local package="$2"
@@ -185,7 +208,7 @@ ensure_cargo_tool msrv cargo-msrv
 ensure_cargo_tool semver-checks cargo-semver-checks
 ensure_system_tool shellcheck "apt install -y shellcheck"
 ensure_system_tool shfmt "apt install -y shfmt"
-ensure_system_tool actionlint "apt install -y actionlint"
+ensure_actionlint
 ensure_hooks
 
 if [[ "$run_verify" == true ]]; then
