@@ -109,7 +109,7 @@ pub enum SubmitPreparationOutcome {
 
 enum SaveStateOutcome {
     Clean,
-    DurabilityError(String),
+    DurabilityError,
 }
 
 impl Store {
@@ -238,7 +238,7 @@ impl Store {
         if recover_stale_in_flight_idempotency(&mut store.state) {
             match store.save_state(&store.state)? {
                 SaveStateOutcome::Clean => {}
-                SaveStateOutcome::DurabilityError(message) => return Err(message),
+                SaveStateOutcome::DurabilityError => {}
             }
         }
         Ok(store)
@@ -296,7 +296,7 @@ impl Store {
             })?;
             match sync_directory(parent) {
                 Ok(()) => Ok(SaveStateOutcome::Clean),
-                Err(message) => Ok(SaveStateOutcome::DurabilityError(message)),
+                Err(_) => Ok(SaveStateOutcome::DurabilityError),
             }
         }
     }
@@ -311,7 +311,7 @@ impl Store {
         self.state = next_state;
         match save_outcome {
             SaveStateOutcome::Clean => Ok(result),
-            SaveStateOutcome::DurabilityError(message) => Err(message),
+            SaveStateOutcome::DurabilityError => Ok(result),
         }
     }
 
@@ -1281,14 +1281,32 @@ mod tests {
         let mut store = Store::open(&path).expect("open store");
 
         with_directory_sync_failure_for_test(|| {
-            let error = store
+            let session_id = store
                 .register_session("session-label")
-                .expect_err("directory sync failure should surface");
-            assert!(error.contains("store_directory_sync_failed"));
+                .expect("directory sync failure should still commit");
+            assert_eq!(session_id, "session-000001");
         });
 
         let reopened = Store::open(&path).expect("reopen store");
         assert_eq!(store.state, reopened.state);
+        assert_eq!(store.state.next_session_id, 2);
+        assert!(store.state.sessions.contains_key("session-000001"));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn post_rename_directory_sync_failure_returns_committed_result() {
+        let path = unique_store_path("sharo-post-rename-sync-result");
+        let mut store = Store::open(&path).expect("open store");
+
+        with_directory_sync_failure_for_test(|| {
+            let session_id = store
+                .register_session("session-label")
+                .expect("directory sync failure should not report failed mutation");
+            assert_eq!(session_id, "session-000001");
+        });
+
         assert_eq!(store.state.next_session_id, 2);
         assert!(store.state.sessions.contains_key("session-000001"));
 

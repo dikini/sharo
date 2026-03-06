@@ -161,11 +161,18 @@ fn handle_submit_task(
         },
         Err(ReasoningError::ConnectorFailure { message })
         | Err(ReasoningError::ResolveFailure { message }) => {
-            store.record_submission_failure(
+            if let Err(store_error) = store.record_submission_failure(
                 &preparation.session_id_hint,
                 payload.idempotency_key.as_deref(),
                 &message,
-            )?;
+            ) {
+                store.release_inflight_idempotency_retry_lock(
+                    &preparation.session_id_hint,
+                    idempotency_key.as_deref(),
+                    &preparation.task_id_hint,
+                );
+                return Err(store_error);
+            }
             Err(message)
         }
     }
