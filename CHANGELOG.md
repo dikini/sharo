@@ -9,6 +9,12 @@ The format is based on Common Changelog:
 
 ### Added
 
+- Added workflow tooling rollout phase 1 implementation:
+  - `scripts/check-tests.sh` provides deterministic workspace testing with automatic `cargo nextest` preference and `cargo test` fallback
+  - `scripts/check-merge-result.sh` and `.github/workflows/merge-result-gate.yml` add merge-result verification for pull requests and merge queue events
+  - Bats coverage for both new scripts:
+    - `scripts/tests/test-check-tests.bats`
+    - `scripts/tests/test-check-merge-result.bats`
 - Added workflow tooling rollout planning artifacts for the six high-impact guardrail/tooling upgrades:
   - `docs/specs/workflow-tooling-rollout.md`
   - `docs/plans/2026-03-06-workflow-tooling-rollout-plan.md`

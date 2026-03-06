@@ -82,5 +82,5 @@ if [[ "$mode" != "all" ]]; then
   fi
 fi
 
-echo "rust-tests: running cargo test --workspace"
-cargo test --workspace
+echo "rust-tests: running workspace tests via scripts/check-tests.sh"
+scripts/check-tests.sh --workspace
