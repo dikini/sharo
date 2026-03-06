@@ -782,48 +782,6 @@ impl Store {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{Store, SubmitReplay};
-    use std::fs;
-    use std::path::PathBuf;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn unique_store_path(prefix: &str) -> PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time")
-            .as_nanos();
-        std::env::temp_dir().join(format!("{prefix}-{nanos}.json"))
-    }
-
-    #[test]
-    fn replay_by_idempotency_returns_persisted_submission_error() {
-        let path = unique_store_path("sharo-store-idempotency-failure");
-        let mut store = Store::open(&path).expect("open store");
-        store
-            .record_submission_failure(
-                "session-000001",
-                Some("idem-1"),
-                "missing auth env var SHARO_TEST_MISSING_OPENAI_KEY",
-            )
-            .expect("record failure");
-
-        let replay = store
-            .replay_by_idempotency("session-000001", Some("idem-1"))
-            .expect("replay")
-            .expect("replay result");
-        match replay {
-            SubmitReplay::Error(message) => {
-                assert!(message.contains("missing auth env var SHARO_TEST_MISSING_OPENAI_KEY"));
-            }
-            SubmitReplay::Task(response) => panic!("unexpected task replay: {response:?}"),
-        }
-
-        let _ = fs::remove_file(path);
-    }
-}
-
 fn parse_resource_claim(goal: &str) -> Option<String> {
     goal.split_whitespace()
         .find_map(|token| token.strip_prefix("resource:"))
@@ -903,5 +861,47 @@ impl Store {
             raw_value_model_text,
             raw_value_redacted: !exposed,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Store, SubmitReplay};
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_store_path(prefix: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        std::env::temp_dir().join(format!("{prefix}-{nanos}.json"))
+    }
+
+    #[test]
+    fn replay_by_idempotency_returns_persisted_submission_error() {
+        let path = unique_store_path("sharo-store-idempotency-failure");
+        let mut store = Store::open(&path).expect("open store");
+        store
+            .record_submission_failure(
+                "session-000001",
+                Some("idem-1"),
+                "missing auth env var SHARO_TEST_MISSING_OPENAI_KEY",
+            )
+            .expect("record failure");
+
+        let replay = store
+            .replay_by_idempotency("session-000001", Some("idem-1"))
+            .expect("replay")
+            .expect("replay result");
+        match replay {
+            SubmitReplay::Error(message) => {
+                assert!(message.contains("missing auth env var SHARO_TEST_MISSING_OPENAI_KEY"));
+            }
+            SubmitReplay::Task(response) => panic!("unexpected task replay: {response:?}"),
+        }
+
+        let _ = fs::remove_file(path);
     }
 }
