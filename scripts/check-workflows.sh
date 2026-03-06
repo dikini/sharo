@@ -32,9 +32,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-actionlint_bin="$(command -v actionlint || true)"
-if [[ -z "$actionlint_bin" && -x "$ROOT/.tools/actionlint/actionlint" ]]; then
+actionlint_bin=""
+if [[ -x "$ROOT/.tools/actionlint/actionlint" ]]; then
   actionlint_bin="$ROOT/.tools/actionlint/actionlint"
+elif command -v actionlint >/dev/null 2>&1; then
+  actionlint_bin="$(command -v actionlint)"
 fi
 
 if [[ -z "$actionlint_bin" ]]; then

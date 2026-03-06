@@ -149,6 +149,9 @@ The format is based on Common Changelog:
     - pinned checksums-file SHA-256 verification
     - release metadata digest match check for selected archive
     - archive SHA-256 verification before extraction
+  - enforced installed actionlint version match to pinned release during bootstrap
+  - made SHA-256 verification portable across Linux/macOS via `sha256sum` or `shasum -a 256`
+  - made workflow lint check prefer local pinned `.tools/actionlint/actionlint` over `PATH` copy
   - updated workflow-lint command discovery to use local `.tools/actionlint/actionlint` when not on `PATH`
 - Fixed daemon invariant gate command invocation in `scripts/check-daemon-invariants.sh`:
   - run each named invariant test in a separate `cargo test` command so Cargo argument parsing is valid

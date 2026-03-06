@@ -48,7 +48,13 @@ setup() {
   run rg 'checksums_sha256=' "$ROOT/scripts/bootstrap-dev.sh"
   [ "$status" -eq 0 ]
 
-  run rg 'sha256sum --check --status' "$ROOT/scripts/bootstrap-dev.sh"
+  run rg "missing SHA-256 tool \('sha256sum' or 'shasum'\)" "$ROOT/scripts/bootstrap-dev.sh"
+  [ "$status" -eq 0 ]
+
+  run rg 'actionlint_version=' "$ROOT/scripts/bootstrap-dev.sh"
+  [ "$status" -eq 0 ]
+
+  run rg "installed actionlint version mismatch" "$ROOT/scripts/bootstrap-dev.sh"
   [ "$status" -eq 0 ]
 
   run rg 'metadata_url=' "$ROOT/scripts/bootstrap-dev.sh"

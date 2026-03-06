@@ -151,14 +151,63 @@ ensure_actionlint() {
   local expected_archive_sha256=""
   local metadata_archive_digest=""
   local tmpdir=""
+  local local_version=""
+  local path_version=""
+
+  sha256_file() {
+    local file_path="$1"
+    if command -v sha256sum >/dev/null 2>&1; then
+      sha256sum "$file_path" | awk '{print $1}'
+      return 0
+    fi
+    if command -v shasum >/dev/null 2>&1; then
+      shasum -a 256 "$file_path" | awk '{print $1}'
+      return 0
+    fi
+    return 1
+  }
+
+  sha256_check() {
+    local expected="$1"
+    local file_path="$2"
+    local actual=""
+    actual="$(sha256_file "$file_path" || true)"
+    if [[ -z "$actual" ]]; then
+      return 1
+    fi
+    [[ "$actual" == "$expected" ]]
+  }
+
+  actionlint_version_of() {
+    local bin_path="$1"
+    "$bin_path" -version 2>/dev/null | head -n1
+  }
+
+  if [[ -x "$local_actionlint" ]]; then
+    local_version="$(actionlint_version_of "$local_actionlint" || true)"
+    if [[ "$local_version" == "$actionlint_version" ]]; then
+      echo "bootstrap-dev: actionlint present ($local_actionlint, v$local_version)"
+      return 0
+    fi
+    echo "bootstrap-dev: actionlint local version mismatch (found '${local_version:-unknown}', expected '$actionlint_version')" >&2
+    if [[ "$mode" != "apply" ]]; then
+      return 1
+    fi
+    echo "bootstrap-dev: reinstalling pinned actionlint v$actionlint_version"
+    rm -f "$local_actionlint"
+  fi
 
   if command -v actionlint >/dev/null 2>&1; then
-    echo "bootstrap-dev: actionlint present ($(command -v actionlint))"
-    return 0
-  fi
-  if [[ -x "$local_actionlint" ]]; then
-    echo "bootstrap-dev: actionlint present ($local_actionlint)"
-    return 0
+    path_version="$(actionlint_version_of "$(command -v actionlint)" || true)"
+    if [[ "$path_version" == "$actionlint_version" ]]; then
+      echo "bootstrap-dev: actionlint present on PATH ($(command -v actionlint), v$path_version)"
+      return 0
+    fi
+    echo "bootstrap-dev: actionlint on PATH has version '${path_version:-unknown}', expected '$actionlint_version'" >&2
+    if [[ "$mode" != "apply" ]]; then
+      return 1
+    fi
+    echo "bootstrap-dev: installing pinned actionlint v$actionlint_version into .tools/actionlint"
   fi
 
   if [[ "$mode" == "apply" ]]; then
@@ -166,8 +215,8 @@ ensure_actionlint() {
       echo "bootstrap-dev: missing command 'curl' (required to download actionlint release assets)" >&2
       return 1
     fi
-    if ! command -v sha256sum >/dev/null 2>&1; then
-      echo "bootstrap-dev: missing command 'sha256sum' (required for archive integrity verification)" >&2
+    if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1; then
+      echo "bootstrap-dev: missing SHA-256 tool ('sha256sum' or 'shasum') required for archive integrity verification" >&2
       return 1
     fi
     if ! command -v python3 >/dev/null 2>&1; then
@@ -219,11 +268,10 @@ ensure_actionlint() {
     mkdir -p "$ROOT/.tools/actionlint"
 
     curl -fsSL "${release_base_url}/${checksums_file}" -o "$tmpdir/$checksums_file"
-    echo "${checksums_sha256}  $tmpdir/$checksums_file" | sha256sum --check --status ||
-      {
-        echo "bootstrap-dev: actionlint checksums file verification failed" >&2
-        return 1
-      }
+    if ! sha256_check "$checksums_sha256" "$tmpdir/$checksums_file"; then
+      echo "bootstrap-dev: actionlint checksums file verification failed" >&2
+      return 1
+    fi
 
     expected_archive_sha256="$(awk -v name="$archive_name" '$2 == name {print $1}' "$tmpdir/$checksums_file")"
     if [[ -z "$expected_archive_sha256" ]]; then
@@ -261,15 +309,18 @@ PY
     fi
 
     curl -fsSL "${release_base_url}/${archive_name}" -o "$tmpdir/$archive_name"
-    echo "${expected_archive_sha256}  $tmpdir/$archive_name" | sha256sum --check --status ||
-      {
-        echo "bootstrap-dev: actionlint archive checksum verification failed for $archive_name" >&2
-        return 1
-      }
+    if ! sha256_check "$expected_archive_sha256" "$tmpdir/$archive_name"; then
+      echo "bootstrap-dev: actionlint archive checksum verification failed for $archive_name" >&2
+      return 1
+    fi
 
     tar -xzf "$tmpdir/$archive_name" -C "$ROOT/.tools/actionlint" actionlint
     chmod +x "$local_actionlint"
-    "$local_actionlint" -version >/dev/null
+    local_version="$(actionlint_version_of "$local_actionlint" || true)"
+    if [[ "$local_version" != "$actionlint_version" ]]; then
+      echo "bootstrap-dev: installed actionlint version mismatch (found '${local_version:-unknown}', expected '$actionlint_version')" >&2
+      return 1
+    fi
     return 0
   fi
 
