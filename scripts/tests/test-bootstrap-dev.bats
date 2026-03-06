@@ -28,3 +28,35 @@ setup() {
   run rg 'scripts/check-fast-feedback\.sh --all' "$ROOT/scripts/bootstrap-dev.sh"
   [ "$status" -eq 0 ]
 }
+
+@test "bootstrap checks shell and workflow lint prerequisites" {
+  run rg 'ensure_system_tool shellcheck' "$ROOT/scripts/bootstrap-dev.sh"
+  [ "$status" -eq 0 ]
+
+  run rg 'ensure_system_tool shfmt' "$ROOT/scripts/bootstrap-dev.sh"
+  [ "$status" -eq 0 ]
+
+  run rg 'ensure_actionlint' "$ROOT/scripts/bootstrap-dev.sh"
+  [ "$status" -eq 0 ]
+
+  run rg 'download-actionlint\.bash' "$ROOT/scripts/bootstrap-dev.sh"
+  [ "$status" -ne 0 ]
+
+  run rg '\.tools/actionlint' "$ROOT/scripts/bootstrap-dev.sh"
+  [ "$status" -eq 0 ]
+
+  run rg 'checksums_sha256=' "$ROOT/scripts/bootstrap-dev.sh"
+  [ "$status" -eq 0 ]
+
+  run rg "missing SHA-256 tool \('sha256sum' or 'shasum'\)" "$ROOT/scripts/bootstrap-dev.sh"
+  [ "$status" -eq 0 ]
+
+  run rg 'actionlint_version=' "$ROOT/scripts/bootstrap-dev.sh"
+  [ "$status" -eq 0 ]
+
+  run rg "installed actionlint version mismatch" "$ROOT/scripts/bootstrap-dev.sh"
+  [ "$status" -eq 0 ]
+
+  run rg 'metadata_url=' "$ROOT/scripts/bootstrap-dev.sh"
+  [ "$status" -eq 0 ]
+}

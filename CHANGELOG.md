@@ -14,6 +14,26 @@ The format is based on Common Changelog:
   - `just setup` target to run bootstrap installation flow
   - Bats coverage in `scripts/tests/test-bootstrap-dev.bats`
   - bootstrap `--apply` now runs `scripts/check-fast-feedback.sh --all` by default for full fresh-clone readiness verification
+- Added workflow tool usage and hygiene guardrails:
+  - wrapper scripts for shell/workflow/rust-hygiene checks:
+    - `scripts/check-shell-quality.sh`
+    - `scripts/check-workflows.sh`
+    - `scripts/check-rust-hygiene.sh`
+  - new deterministic `just` entry points:
+    - `just shell-quality`
+    - `just workflow-lint`
+    - `just rust-hygiene`
+  - CI integration updates:
+    - required `policy-checks` steps for workflow lint and shell quality checks
+    - scheduled/manual `.github/workflows/rust-hygiene.yml` for strict `udeps`/`msrv`/`semver` checks
+  - fresh-clone bootstrap dependency checks now include:
+    - `shellcheck`, `shfmt`, `actionlint`
+    - `cargo-udeps`, `cargo-msrv`, `cargo-semver-checks`
+  - docs and planning artifacts:
+    - `docs/specs/workflow-tool-guides.md`
+    - `docs/plans/2026-03-06-workflow-tool-guides-plan.md`
+    - updated `docs/tasks/README.md` tool usage guide and bootstrap procedure
+  - dependency policy allowlist now includes compatible LGPL variants in `deny.toml`
 - Added workflow tooling rollout phase 1 implementation:
   - `scripts/check-tests.sh` provides deterministic workspace testing with automatic `cargo nextest` preference and `cargo test` fallback
   - `scripts/check-merge-result.sh` and `.github/workflows/merge-result-gate.yml` add merge-result verification for pull requests and merge queue events
@@ -123,6 +143,19 @@ The format is based on Common Changelog:
 
 ### Fixed
 
+- Fixed no-sudo bootstrap behavior for workflow lint tooling:
+  - replaced invalid Cargo-based `actionlint` installation path with deterministic local binary install into `.tools/actionlint` from pinned release `v1.7.11`
+  - added actionlint archive integrity verification during bootstrap apply:
+    - pinned checksums-file SHA-256 verification
+    - release metadata digest match check for selected archive
+    - archive SHA-256 verification before extraction
+  - enforced installed actionlint version match to pinned release during bootstrap
+  - made SHA-256 verification portable across Linux/macOS via `sha256sum` or `shasum -a 256`
+  - made workflow lint check prefer local pinned `.tools/actionlint/actionlint` over `PATH` copy
+  - updated workflow-lint command discovery to use local `.tools/actionlint/actionlint` when not on `PATH`
+- Clarified bootstrap integrity verification model in docs:
+  - documented that detached archive signature verification is not currently available from upstream `actionlint` release assets
+  - documented checksum/digest verification as the enforced integrity control in fresh-clone bootstrap guidance
 - Fixed daemon invariant gate command invocation in `scripts/check-daemon-invariants.sh`:
   - run each named invariant test in a separate `cargo test` command so Cargo argument parsing is valid
   - restore executable `daemon-invariants` gate behavior for local and CI task-runner workflows

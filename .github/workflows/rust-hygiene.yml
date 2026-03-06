@@ -1,0 +1,25 @@
+name: rust-hygiene
+
+on:
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+jobs:
+  hygiene:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install nightly toolchain for cargo-udeps
+        run: rustup toolchain install nightly --profile minimal
+
+      - name: Install cargo hygiene tools
+        run: cargo install --locked cargo-udeps cargo-msrv cargo-semver-checks
+
+      - name: Run strict rust hygiene checks
+        run: scripts/check-rust-hygiene.sh --strict --check all --baseline-ref origin/main
