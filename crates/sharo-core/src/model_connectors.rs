@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use crate::model_connector::{
     ConnectorError, ModelConnectorPort, ModelProfile, ModelTurnRequest, ModelTurnResponse,
+    validate_base_url_security,
 };
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -29,6 +30,7 @@ impl ModelConnectorPort for OpenAiCompatibleConnector {
         let base_url = profile.base_url.as_deref().ok_or_else(|| {
             ConnectorError::InvalidRequest("model profile requires base_url".to_string())
         })?;
+        validate_base_url_security(profile)?;
 
         let url = format!("{}/v1/responses", base_url.trim_end_matches('/'));
         let mut req = shared_blocking_client()

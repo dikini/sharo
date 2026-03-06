@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use url::Url;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelCapabilityFlags {
@@ -53,6 +54,38 @@ pub trait ModelConnectorPort {
         _profile: &ModelProfile,
         request: &ModelTurnRequest,
     ) -> Result<ModelTurnResponse, ConnectorError>;
+}
+
+pub fn validate_base_url_security(profile: &ModelProfile) -> Result<(), ConnectorError> {
+    let Some(base_url) = profile.base_url.as_deref() else {
+        return Ok(());
+    };
+
+    if profile.auth_env_key.is_none() {
+        return Ok(());
+    }
+
+    let parsed = Url::parse(base_url).map_err(|error| {
+        ConnectorError::InvalidRequest(format!("provider_base_url_invalid error={error}"))
+    })?;
+    match parsed.scheme() {
+        "https" => Ok(()),
+        "http" if is_loopback_host(parsed.host_str()) => Ok(()),
+        "http" => Err(ConnectorError::InvalidRequest(
+            "provider_base_url_insecure scheme=http requires loopback host when auth_env_key is set"
+                .to_string(),
+        )),
+        scheme => Err(ConnectorError::InvalidRequest(format!(
+            "provider_base_url_unsupported scheme={scheme}"
+        ))),
+    }
+}
+
+fn is_loopback_host(host: Option<&str>) -> bool {
+    matches!(
+        host,
+        Some("localhost") | Some("127.0.0.1") | Some("::1") | Some("[::1]")
+    )
 }
 
 #[derive(Debug, Default, Clone)]

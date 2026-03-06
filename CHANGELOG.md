@@ -68,6 +68,10 @@ The format is based on Common Changelog:
   - deleted the process-wide submit mutex from `sharo-daemon`
   - kept submit preparation and commit phases isolated to short store lock windows
   - added a regression scenario proving two slow submits overlap upstream instead of collapsing to single-flight execution
+- Hardened authenticated provider base URL handling so bearer tokens are not sent to insecure remote endpoints:
+  - reject authenticated provider configs that use non-HTTPS remote base URLs
+  - allow authenticated cleartext HTTP only for explicit loopback hosts used in local and test setups
+  - enforce the same rule in the daemon config boundary and in the connector runtime as a defense-in-depth backstop
 - Allowed the daemon to keep serving independent IPC requests while a slow submit is still running:
   - moved non-`serve_once` connections onto spawned Tokio tasks
   - stopped holding the store across provider-backed submit reasoning

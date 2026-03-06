@@ -157,6 +157,35 @@ fn openai_compatible_connector_rejects_zero_timeout_profile() {
 }
 
 #[test]
+fn openai_compatible_connector_rejects_authenticated_cleartext_remote_base_url() {
+    let connector = OpenAiCompatibleConnector;
+    let mut profile = test_profile();
+    profile.provider_id = "openai".to_string();
+    profile.model_id = "gpt-5-mini".to_string();
+    profile.base_url = Some("http://example.com".to_string());
+    profile.auth_env_key = Some("SHARO_TEST_MISSING_OPENAI_KEY".to_string());
+
+    let error = connector
+        .run_turn(
+            &profile,
+            &ModelTurnRequest {
+                trace_id: "trace-task-1".to_string(),
+                task_id: "task-1".to_string(),
+                prompt: "ping".to_string(),
+                metadata: Default::default(),
+            },
+        )
+        .expect_err("authenticated cleartext remote base_url should fail");
+
+    match error {
+        sharo_core::model_connector::ConnectorError::InvalidRequest(message) => {
+            assert!(message.contains("insecure"));
+        }
+        other => panic!("unexpected error kind: {other:?}"),
+    }
+}
+
+#[test]
 fn s2_fit_loop_converges_under_budget_pressure() {
     let resolvers = ResolverBundle {
         system: Box::new(StaticTextResolver::new("system=keep-safe", "test-system")),

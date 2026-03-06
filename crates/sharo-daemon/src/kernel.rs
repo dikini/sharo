@@ -3,7 +3,10 @@ use std::collections::BTreeSet;
 
 use sharo_core::context_resolvers::{ResolverBundle, StaticTextResolver};
 use sharo_core::kernel::{KernelApprovalInput, KernelApprovalResult};
-use sharo_core::model_connector::{DeterministicConnector, ModelCapabilityFlags, ModelProfile};
+use sharo_core::model_connector::{
+    ConnectorError, DeterministicConnector, ModelCapabilityFlags, ModelProfile,
+    validate_base_url_security,
+};
 use sharo_core::model_connectors::{OllamaConnector, OpenAiCompatibleConnector};
 use sharo_core::reasoning::{IdReasoningEngine, ReasoningEnginePort, ReasoningError, ReasoningInput};
 use sharo_core::reasoning_context::PolicyConfig;
@@ -75,6 +78,10 @@ impl KernelRuntimeConfig {
         {
             return Err(format!("provider_base_url_required provider={provider}"));
         }
+        validate_base_url_security(&profile).map_err(|error| match error {
+            ConnectorError::InvalidRequest(message) => message,
+            other => format!("provider_base_url_validation_failed error={other:?}"),
+        })?;
         if profile.timeout_ms == 0 {
             return Err("provider_timeout_invalid timeout_ms=0".to_string());
         }
@@ -315,6 +322,40 @@ mod tests {
         };
         let err = KernelRuntimeConfig::from_daemon_config(&cfg).expect_err("expected base_url error");
         assert!(err.contains("provider_base_url_required"));
+    }
+
+    #[test]
+    fn authenticated_provider_rejects_cleartext_remote_base_url() {
+        let cfg = DaemonConfigFile {
+            model: ModelRuntimeConfig {
+                provider: Some("openai".to_string()),
+                base_url: Some("http://example.com".to_string()),
+                auth_env_key: Some("SHARO_TEST_OPENAI_KEY".to_string()),
+                ..ModelRuntimeConfig::default()
+            },
+            connector_pool: ConnectorPoolConfig::default(),
+            ..DaemonConfigFile::default()
+        };
+        let err = KernelRuntimeConfig::from_daemon_config(&cfg)
+            .expect_err("authenticated cleartext remote base_url should fail");
+        assert!(err.contains("provider_base_url_insecure"));
+    }
+
+    #[test]
+    fn authenticated_provider_allows_loopback_http_base_url() {
+        let cfg = DaemonConfigFile {
+            model: ModelRuntimeConfig {
+                provider: Some("openai".to_string()),
+                base_url: Some("http://127.0.0.1:8080".to_string()),
+                auth_env_key: Some("SHARO_TEST_OPENAI_KEY".to_string()),
+                ..ModelRuntimeConfig::default()
+            },
+            connector_pool: ConnectorPoolConfig::default(),
+            ..DaemonConfigFile::default()
+        };
+        let runtime = KernelRuntimeConfig::from_daemon_config(&cfg)
+            .expect("loopback http base_url should remain allowed");
+        assert_eq!(runtime.profile.base_url.as_deref(), Some("http://127.0.0.1:8080"));
     }
 
     #[test]
