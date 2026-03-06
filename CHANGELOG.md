@@ -55,6 +55,10 @@ The format is based on Common Changelog:
   - stopped holding the store across provider-backed submit reasoning
   - added regression coverage proving `status` and approval-list requests stay responsive during slow submits
   - restored `sharo-daemon` clippy cleanliness for the touched store module by moving the test module to file end
+- Made daemon store persistence transactional on save failure:
+  - staged mutating store operations on cloned state and commit only after the JSON write succeeds
+  - added rollback regression tests for session registration, task submission, approval resolution, and failure memoization
+  - added an end-to-end retry scenario proving a failed save does not poison idempotent submit replay or create ghost tasks
 - Added explicit restart recovery evidence for successful Scenario A tasks:
   - proved `task get` state and `result_preview` survive restart unchanged
   - proved recovered trace id, event payloads, and monotonic ordering remain intact after restart

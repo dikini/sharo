@@ -358,6 +358,101 @@ fn scenario_a_read_task_succeeds_with_verification_artifact() {
 }
 
 #[test]
+fn idempotent_retry_after_save_failure_creates_one_committed_task() {
+    let socket = unique_path("sharo-scenario-a-save-retry", ".sock");
+    let store_dir = unique_path("sharo-scenario-a-save-retry", ".d");
+    fs::create_dir_all(&store_dir).expect("create store dir");
+    let store = store_dir.join("daemon-store.json");
+    let config = write_deterministic_config("sharo-scenario-a-save-retry");
+
+    let mut daemon = Command::new(daemon_bin())
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+            "--config-path",
+            config.to_str().expect("config path"),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    fs::remove_dir_all(&store_dir).expect("remove store dir before first submit");
+
+    match send_request(
+        &socket,
+        &DaemonRequest::SubmitTask(SubmitTaskOpRequest {
+            session_id: Some("session-save-retry".to_string()),
+            goal: "read one context item".to_string(),
+            idempotency_key: Some("idem-save-retry".to_string()),
+        }),
+    ) {
+        DaemonResponse::Error { message } => {
+            assert!(
+                message.contains("store_parent_missing") || message.contains("store_open_failed"),
+                "unexpected save error: {message}"
+            );
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    fs::create_dir_all(&store_dir).expect("recreate store dir");
+
+    let task_id = match send_request(
+        &socket,
+        &DaemonRequest::SubmitTask(SubmitTaskOpRequest {
+            session_id: Some("session-save-retry".to_string()),
+            goal: "read one context item".to_string(),
+            idempotency_key: Some("idem-save-retry".to_string()),
+        }),
+    ) {
+        DaemonResponse::SubmitTask(response) => response.task_id,
+        other => panic!("unexpected response: {other:?}"),
+    };
+
+    match send_request(
+        &socket,
+        &DaemonRequest::SubmitTask(SubmitTaskOpRequest {
+            session_id: Some("session-save-retry".to_string()),
+            goal: "read one context item".to_string(),
+            idempotency_key: Some("idem-save-retry".to_string()),
+        }),
+    ) {
+        DaemonResponse::SubmitTask(response) => assert_eq!(response.task_id, task_id),
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    let store_json = fs::read_to_string(&store).expect("read store");
+    let persisted: serde_json::Value = serde_json::from_str(&store_json).expect("parse store");
+    let task_count = persisted["tasks"]
+        .as_object()
+        .map(|tasks| tasks.len())
+        .expect("tasks map");
+    assert_eq!(task_count, 1, "expected exactly one committed task");
+
+    match send_request(
+        &socket,
+        &DaemonRequest::GetTask(GetTaskRequest { task_id }),
+    ) {
+        DaemonResponse::GetTask(response) => {
+            assert_eq!(response.task.session_id, "session-save-retry");
+            assert_eq!(response.task.task_state, "succeeded");
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    daemon.kill().expect("kill daemon");
+    let _ = daemon.wait();
+    let _ = fs::remove_file(&socket);
+    let _ = fs::remove_file(&config);
+    let _ = fs::remove_file(&store);
+    let _ = fs::remove_dir_all(&store_dir);
+}
+
+#[test]
 fn scenario_a_success_survives_restart_with_same_trace_and_preview() {
     let socket = unique_path("sharo-scenario-a-restart", ".sock");
     let store = unique_path("sharo-scenario-a-restart", ".json");

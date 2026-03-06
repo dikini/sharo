@@ -19,13 +19,13 @@ use sharo_core::protocol::{
 use sharo_core::reasoning_context::FitLoopRecord;
 use sharo_core::runtime_types::{BindingRecord, BindingVisibility};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct SessionRecord {
     session_id: String,
     session_label: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 struct PersistedState {
     sessions: BTreeMap<String, SessionRecord>,
@@ -44,7 +44,7 @@ struct PersistedState {
     next_binding_id: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct ApprovalRecord {
     approval_id: String,
     task_id: String,
@@ -166,10 +166,12 @@ impl Store {
             return Ok(());
         };
         let namespaced = format!("{}:{}", session_id, key);
-        self.state
-            .idempotency_failures
-            .insert(namespaced, message.to_string());
-        self.save()
+        self.commit_mutation(|state| {
+            state
+                .idempotency_failures
+                .insert(namespaced, message.to_string());
+            Ok(())
+        })
     }
 
     pub fn open(path: impl AsRef<Path>) -> Result<Self, String> {
@@ -190,8 +192,8 @@ impl Store {
         Ok(Self { path, state })
     }
 
-    fn save(&self) -> Result<(), String> {
-        let data = serde_json::to_string_pretty(&self.state)
+    fn save_state(&self, state: &PersistedState) -> Result<(), String> {
+        let data = serde_json::to_string_pretty(state)
             .map_err(|e| format!("store_serialize_failed error={}", e))?;
         let parent = self
             .path
@@ -235,20 +237,32 @@ impl Store {
         }
     }
 
+    fn commit_mutation<R>(
+        &mut self,
+        mutate: impl FnOnce(&mut PersistedState) -> Result<R, String>,
+    ) -> Result<R, String> {
+        let mut next_state = self.state.clone();
+        let result = mutate(&mut next_state)?;
+        self.save_state(&next_state)?;
+        self.state = next_state;
+        Ok(result)
+    }
+
     pub fn register_session(&mut self, session_label: &str) -> Result<String, String> {
-        let session_id = format!("session-{:06}", self.state.next_session_id);
-        self.state.next_session_id += 1;
+        self.commit_mutation(|state| {
+            let session_id = format!("session-{:06}", state.next_session_id);
+            state.next_session_id += 1;
 
-        self.state.sessions.insert(
-            session_id.clone(),
-            SessionRecord {
-                session_id: session_id.clone(),
-                session_label: session_label.to_string(),
-            },
-        );
+            state.sessions.insert(
+                session_id.clone(),
+                SessionRecord {
+                    session_id: session_id.clone(),
+                    session_label: session_label.to_string(),
+                },
+            );
 
-        self.save()?;
-        Ok(session_id)
+            Ok(session_id)
+        })
     }
 
     pub fn submit_task_with_route(
@@ -275,282 +289,283 @@ impl Store {
                 )),
             };
         }
+        self.commit_mutation(|state| {
+            let task_id = format!("task-{:06}", state.next_task_id);
+            state.next_task_id += 1;
 
-        let task_id = format!("task-{:06}", self.state.next_task_id);
-        self.state.next_task_id += 1;
+            let invalid_manifest = request.goal.contains("invalid_manifest:");
+            let restricted = request.goal.contains("restricted:");
+            let resource = parse_resource_claim(&request.goal);
+            let step_id = format!("step-{}", task_id);
 
-        let invalid_manifest = request.goal.contains("invalid_manifest:");
-        let restricted = request.goal.contains("restricted:");
-        let resource = parse_resource_claim(&request.goal);
-        let step_id = format!("step-{}", task_id);
-
-        let mut task = TaskSummary {
-            task_id: task_id.clone(),
-            session_id: session_id.clone(),
-            task_state: if invalid_manifest {
-                "blocked".to_string()
-            } else if restricted {
-                "awaiting_approval".to_string()
-            } else {
-                "succeeded".to_string()
-            },
-            current_step_summary: "read one context item".to_string(),
-            blocking_reason: None,
-            coordination_summary: None,
-            result_preview: if invalid_manifest || restricted {
-                None
-            } else {
-                Some(summarize_model_output(model_output_text))
-            },
-        };
-
-        if invalid_manifest {
-            task.current_step_summary = "capability manifest validation failed".to_string();
-            task.blocking_reason = Some("manifest_invalid".to_string());
-        } else if restricted {
-            let approval_id = format!("approval-{:06}", self.state.next_approval_id);
-            self.state.next_approval_id += 1;
-            self.state.approvals.insert(
-                approval_id.clone(),
-                ApprovalRecord {
-                    approval_id: approval_id.clone(),
-                    task_id: task_id.clone(),
-                    state: "pending".to_string(),
-                    reason: "policy require_approval".to_string(),
+            let mut task = TaskSummary {
+                task_id: task_id.clone(),
+                session_id: session_id.clone(),
+                task_state: if invalid_manifest {
+                    "blocked".to_string()
+                } else if restricted {
+                    "awaiting_approval".to_string()
+                } else {
+                    "succeeded".to_string()
                 },
-            );
-            task.current_step_summary = "awaiting approval for restricted capability".to_string();
-            task.blocking_reason = Some(format!("approval_required approval_id={approval_id}"));
-        }
-
-        let mut trace = TraceSummary {
-            trace_id: format!("trace-{}", task_id),
-            task_id: task_id.clone(),
-            session_id: session_id.clone(),
-            events: vec![
-                TraceEventSummary {
-                    event_sequence: 1,
-                    event_kind: "task_submitted".to_string(),
-                    details: request.goal.clone(),
+                current_step_summary: "read one context item".to_string(),
+                blocking_reason: None,
+                coordination_summary: None,
+                result_preview: if invalid_manifest || restricted {
+                    None
+                } else {
+                    Some(summarize_model_output(model_output_text))
                 },
-                TraceEventSummary {
-                    event_sequence: 2,
-                    event_kind: "route_decision".to_string(),
-                    details: route_decision_details.to_string(),
-                },
-            ],
-        };
-        for record in fit_loop_records {
-            let event_kind = if record.decision == "fitted" {
-                "fit_loop_fitted"
-            } else {
-                "fit_loop_adjusted"
             };
-            let details = format!(
-                "iteration={} plan_id={} before_hash={} after_hash={}",
-                record.iteration,
-                record.plan_id.as_deref().unwrap_or("none"),
-                record.before_state_hash.as_deref().unwrap_or("none"),
-                record.after_state_hash.as_deref().unwrap_or("none"),
-            );
-            push_trace_event(&mut trace, event_kind, &details);
-        }
-        push_trace_event(
-            &mut trace,
-            "model_output_received",
-            &summarize_model_output(model_output_text),
-        );
-        push_trace_event(
-            &mut trace,
-            "verification_completed",
-            "postconditions_satisfied",
-        );
 
-        let mut task_bindings: Vec<BindingRecord> = Vec::new();
-        if !invalid_manifest {
-            if restricted {
-                let binding = self.new_binding(
-                    &task_id,
-                    &step_id,
-                    BindingVisibility::ApprovalGated,
-                    "approval-handle",
-                    None,
+            if invalid_manifest {
+                task.current_step_summary = "capability manifest validation failed".to_string();
+                task.blocking_reason = Some("manifest_invalid".to_string());
+            } else if restricted {
+                let approval_id = format!("approval-{:06}", state.next_approval_id);
+                state.next_approval_id += 1;
+                state.approvals.insert(
+                    approval_id.clone(),
+                    ApprovalRecord {
+                        approval_id: approval_id.clone(),
+                        task_id: task_id.clone(),
+                        state: "pending".to_string(),
+                        reason: "policy require_approval".to_string(),
+                    },
                 );
-                push_trace_event(
-                    &mut trace,
-                    "binding_created",
-                    &format!("binding_id={} visibility=approval_gated", binding.binding_id),
-                );
-                push_trace_event(
-                    &mut trace,
-                    "binding_redacted_for_model",
-                    &format!("binding_id={}", binding.binding_id),
-                );
-                task_bindings.push(binding);
-            } else {
-                let binding = self.new_binding(
-                    &task_id,
-                    &step_id,
-                    BindingVisibility::EngineOnly,
-                    "engine-handle",
-                    None,
-                );
-                push_trace_event(
-                    &mut trace,
-                    "binding_created",
-                    &format!("binding_id={} visibility=engine_only", binding.binding_id),
-                );
-                push_trace_event(
-                    &mut trace,
-                    "binding_redacted_for_model",
-                    &format!("binding_id={}", binding.binding_id),
-                );
-                task_bindings.push(binding);
+                task.current_step_summary = "awaiting approval for restricted capability".to_string();
+                task.blocking_reason = Some(format!("approval_required approval_id={approval_id}"));
             }
-        }
 
-        if invalid_manifest {
+            let mut trace = TraceSummary {
+                trace_id: format!("trace-{}", task_id),
+                task_id: task_id.clone(),
+                session_id: session_id.clone(),
+                events: vec![
+                    TraceEventSummary {
+                        event_sequence: 1,
+                        event_kind: "task_submitted".to_string(),
+                        details: request.goal.clone(),
+                    },
+                    TraceEventSummary {
+                        event_sequence: 2,
+                        event_kind: "route_decision".to_string(),
+                        details: route_decision_details.to_string(),
+                    },
+                ],
+            };
+            for record in fit_loop_records {
+                let event_kind = if record.decision == "fitted" {
+                    "fit_loop_fitted"
+                } else {
+                    "fit_loop_adjusted"
+                };
+                let details = format!(
+                    "iteration={} plan_id={} before_hash={} after_hash={}",
+                    record.iteration,
+                    record.plan_id.as_deref().unwrap_or("none"),
+                    record.before_state_hash.as_deref().unwrap_or("none"),
+                    record.after_state_hash.as_deref().unwrap_or("none"),
+                );
+                push_trace_event(&mut trace, event_kind, &details);
+            }
             push_trace_event(
                 &mut trace,
-                "manifest_validation_failed",
-                "missing or invalid capability manifest",
+                "model_output_received",
+                &summarize_model_output(model_output_text),
             );
-        } else if restricted {
-            push_trace_event(&mut trace, "policy_decision", "require_approval");
-            push_trace_event(&mut trace, "approval_requested", "pending");
-        }
+            push_trace_event(
+                &mut trace,
+                "verification_completed",
+                "postconditions_satisfied",
+            );
 
-        if let Some(resource_key) = resource {
-            let claim_entry = self.state.resource_claims.entry(resource_key.clone()).or_default();
-            if !claim_entry.is_empty() {
-                let conflict_id = format!("conflict-{:06}", self.state.next_conflict_id);
-                self.state.next_conflict_id += 1;
-                task.coordination_summary = Some(format!(
-                    "conflict_detected conflict_id={} resource={}",
-                    conflict_id, resource_key
-                ));
+            let mut task_bindings: Vec<BindingRecord> = Vec::new();
+            if !invalid_manifest {
+                if restricted {
+                    let binding = new_binding(
+                        state,
+                        &task_id,
+                        &step_id,
+                        BindingVisibility::ApprovalGated,
+                        "approval-handle",
+                        None,
+                    );
+                    push_trace_event(
+                        &mut trace,
+                        "binding_created",
+                        &format!("binding_id={} visibility=approval_gated", binding.binding_id),
+                    );
+                    push_trace_event(
+                        &mut trace,
+                        "binding_redacted_for_model",
+                        &format!("binding_id={}", binding.binding_id),
+                    );
+                    task_bindings.push(binding);
+                } else {
+                    let binding = new_binding(
+                        state,
+                        &task_id,
+                        &step_id,
+                        BindingVisibility::EngineOnly,
+                        "engine-handle",
+                        None,
+                    );
+                    push_trace_event(
+                        &mut trace,
+                        "binding_created",
+                        &format!("binding_id={} visibility=engine_only", binding.binding_id),
+                    );
+                    push_trace_event(
+                        &mut trace,
+                        "binding_redacted_for_model",
+                        &format!("binding_id={}", binding.binding_id),
+                    );
+                    task_bindings.push(binding);
+                }
+            }
+
+            if invalid_manifest {
                 push_trace_event(
                     &mut trace,
-                    "conflict_detected",
-                    &format!("resource={} related_tasks={}", resource_key, claim_entry.join(",")),
-                );
-            }
-            claim_entry.push(task_id.clone());
-        }
-
-        let mut artifacts = vec![
-            ArtifactSummary {
-                artifact_id: format!("artifact-{}-route", task_id),
-                artifact_kind: "route_decision".to_string(),
-                summary: if route_decision_details == "local_mock" {
-                    "selected local mock route".to_string()
-                } else {
-                    format!("selected {} route", route_decision_details)
-                },
-                produced_by_step_id: step_id.clone(),
-                produced_by_trace_event_sequence: event_sequence_by_kind(&trace, "route_decision"),
-            },
-            ArtifactSummary {
-                artifact_id: format!("artifact-{}-fit-loop", task_id),
-                artifact_kind: "fit_loop_decision".to_string(),
-                summary: summarize_fit_loop(fit_loop_records),
-                produced_by_step_id: step_id.clone(),
-                produced_by_trace_event_sequence: event_sequence_by_kind(
-                    &trace,
-                    if fit_loop_records
-                        .last()
-                        .map(|r| r.decision.as_str())
-                        == Some("adjusted")
-                    {
-                        "fit_loop_adjusted"
-                    } else {
-                        "fit_loop_fitted"
-                    },
-                ),
-            },
-            ArtifactSummary {
-                artifact_id: format!("artifact-{}-model-output", task_id),
-                artifact_kind: "model_output".to_string(),
-                summary: summarize_model_output(model_output_text),
-                produced_by_step_id: step_id.clone(),
-                produced_by_trace_event_sequence: event_sequence_by_kind(
-                    &trace,
-                    "model_output_received",
-                ),
-            },
-            ArtifactSummary {
-                artifact_id: format!("artifact-{}-verification", task_id),
-                artifact_kind: "verification_result".to_string(),
-                summary: "postconditions satisfied".to_string(),
-                produced_by_step_id: step_id.clone(),
-                produced_by_trace_event_sequence: event_sequence_by_kind(
-                    &trace,
-                    "verification_completed",
-                ),
-            },
-        ];
-        if task.task_state == "succeeded" {
-            artifacts.push(ArtifactSummary {
-                artifact_id: format!("artifact-{}-final", task_id),
-                artifact_kind: "final_result".to_string(),
-                summary: "task succeeded".to_string(),
-                produced_by_step_id: step_id.clone(),
-                produced_by_trace_event_sequence: event_sequence_by_kind(
-                    &trace,
-                    "verification_completed",
-                ),
-            });
-        }
-        if invalid_manifest {
-            artifacts.push(ArtifactSummary {
-                artifact_id: format!("artifact-{}-manifest", task_id),
-                artifact_kind: "failure_record".to_string(),
-                summary: "capability manifest invalid".to_string(),
-                produced_by_step_id: step_id.clone(),
-                produced_by_trace_event_sequence: event_sequence_by_kind(
-                    &trace,
                     "manifest_validation_failed",
-                ),
-            });
-        } else if restricted {
-            artifacts.push(ArtifactSummary {
-                artifact_id: format!("artifact-{}-approval", task_id),
-                artifact_kind: "verification_result".to_string(),
-                summary: "restricted step is approval gated".to_string(),
-                produced_by_step_id: step_id.clone(),
-                produced_by_trace_event_sequence: event_sequence_by_kind(&trace, "approval_requested"),
-            });
-        }
-        if task.coordination_summary.is_some() {
-            artifacts.push(ArtifactSummary {
-                artifact_id: format!("artifact-{}-coordination", task_id),
-                artifact_kind: "verification_result".to_string(),
-                summary: "coordination summary recorded".to_string(),
-                produced_by_step_id: step_id.clone(),
-                produced_by_trace_event_sequence: event_sequence_by_kind(&trace, "conflict_detected"),
-            });
-        }
+                    "missing or invalid capability manifest",
+                );
+            } else if restricted {
+                push_trace_event(&mut trace, "policy_decision", "require_approval");
+                push_trace_event(&mut trace, "approval_requested", "pending");
+            }
 
-        self.state.tasks.insert(task_id.clone(), task);
-        self.state.traces.insert(task_id.clone(), trace);
-        self.state.artifacts.insert(task_id.clone(), artifacts);
-        self.state.bindings.insert(task_id.clone(), task_bindings);
-        if let Some(idempotency_key) = namespaced_idempotency_key {
-            self.state.idempotency_keys.insert(idempotency_key, task_id.clone());
-        }
+            if let Some(resource_key) = resource {
+                let claim_entry = state.resource_claims.entry(resource_key.clone()).or_default();
+                if !claim_entry.is_empty() {
+                    let conflict_id = format!("conflict-{:06}", state.next_conflict_id);
+                    state.next_conflict_id += 1;
+                    task.coordination_summary = Some(format!(
+                        "conflict_detected conflict_id={} resource={}",
+                        conflict_id, resource_key
+                    ));
+                    push_trace_event(
+                        &mut trace,
+                        "conflict_detected",
+                        &format!("resource={} related_tasks={}", resource_key, claim_entry.join(",")),
+                    );
+                }
+                claim_entry.push(task_id.clone());
+            }
 
-        let response_state = self
-            .state
-            .tasks
-            .get(&task_id)
-            .map(|t| t.task_state.clone())
-            .unwrap_or_else(|| "succeeded".to_string());
-        self.save()?;
+            let mut artifacts = vec![
+                ArtifactSummary {
+                    artifact_id: format!("artifact-{}-route", task_id),
+                    artifact_kind: "route_decision".to_string(),
+                    summary: if route_decision_details == "local_mock" {
+                        "selected local mock route".to_string()
+                    } else {
+                        format!("selected {} route", route_decision_details)
+                    },
+                    produced_by_step_id: step_id.clone(),
+                    produced_by_trace_event_sequence: event_sequence_by_kind(&trace, "route_decision"),
+                },
+                ArtifactSummary {
+                    artifact_id: format!("artifact-{}-fit-loop", task_id),
+                    artifact_kind: "fit_loop_decision".to_string(),
+                    summary: summarize_fit_loop(fit_loop_records),
+                    produced_by_step_id: step_id.clone(),
+                    produced_by_trace_event_sequence: event_sequence_by_kind(
+                        &trace,
+                        if fit_loop_records
+                            .last()
+                            .map(|r| r.decision.as_str())
+                            == Some("adjusted")
+                        {
+                            "fit_loop_adjusted"
+                        } else {
+                            "fit_loop_fitted"
+                        },
+                    ),
+                },
+                ArtifactSummary {
+                    artifact_id: format!("artifact-{}-model-output", task_id),
+                    artifact_kind: "model_output".to_string(),
+                    summary: summarize_model_output(model_output_text),
+                    produced_by_step_id: step_id.clone(),
+                    produced_by_trace_event_sequence: event_sequence_by_kind(
+                        &trace,
+                        "model_output_received",
+                    ),
+                },
+                ArtifactSummary {
+                    artifact_id: format!("artifact-{}-verification", task_id),
+                    artifact_kind: "verification_result".to_string(),
+                    summary: "postconditions satisfied".to_string(),
+                    produced_by_step_id: step_id.clone(),
+                    produced_by_trace_event_sequence: event_sequence_by_kind(
+                        &trace,
+                        "verification_completed",
+                    ),
+                },
+            ];
+            if task.task_state == "succeeded" {
+                artifacts.push(ArtifactSummary {
+                    artifact_id: format!("artifact-{}-final", task_id),
+                    artifact_kind: "final_result".to_string(),
+                    summary: "task succeeded".to_string(),
+                    produced_by_step_id: step_id.clone(),
+                    produced_by_trace_event_sequence: event_sequence_by_kind(
+                        &trace,
+                        "verification_completed",
+                    ),
+                });
+            }
+            if invalid_manifest {
+                artifacts.push(ArtifactSummary {
+                    artifact_id: format!("artifact-{}-manifest", task_id),
+                    artifact_kind: "failure_record".to_string(),
+                    summary: "capability manifest invalid".to_string(),
+                    produced_by_step_id: step_id.clone(),
+                    produced_by_trace_event_sequence: event_sequence_by_kind(
+                        &trace,
+                        "manifest_validation_failed",
+                    ),
+                });
+            } else if restricted {
+                artifacts.push(ArtifactSummary {
+                    artifact_id: format!("artifact-{}-approval", task_id),
+                    artifact_kind: "verification_result".to_string(),
+                    summary: "restricted step is approval gated".to_string(),
+                    produced_by_step_id: step_id.clone(),
+                    produced_by_trace_event_sequence: event_sequence_by_kind(&trace, "approval_requested"),
+                });
+            }
+            if task.coordination_summary.is_some() {
+                artifacts.push(ArtifactSummary {
+                    artifact_id: format!("artifact-{}-coordination", task_id),
+                    artifact_kind: "verification_result".to_string(),
+                    summary: "coordination summary recorded".to_string(),
+                    produced_by_step_id: step_id.clone(),
+                    produced_by_trace_event_sequence: event_sequence_by_kind(&trace, "conflict_detected"),
+                });
+            }
 
-        Ok(SubmitTaskOpResponse {
-            task_id,
-            task_state: response_state,
-            summary: "task accepted".to_string(),
+            state.tasks.insert(task_id.clone(), task);
+            state.traces.insert(task_id.clone(), trace);
+            state.artifacts.insert(task_id.clone(), artifacts);
+            state.bindings.insert(task_id.clone(), task_bindings);
+            if let Some(idempotency_key) = namespaced_idempotency_key.clone() {
+                state.idempotency_keys.insert(idempotency_key, task_id.clone());
+            }
+
+            let response_state = state
+                .tasks
+                .get(&task_id)
+                .map(|t| t.task_state.clone())
+                .unwrap_or_else(|| "succeeded".to_string());
+
+            Ok(SubmitTaskOpResponse {
+                task_id,
+                task_state: response_state,
+                summary: "task accepted".to_string(),
+            })
         })
     }
 
@@ -577,78 +592,84 @@ impl Store {
                 )),
             };
         }
+        self.commit_mutation(|state| {
+            let task_id = format!("task-{:06}", state.next_task_id);
+            state.next_task_id += 1;
+            let step_id = format!("step-{}", task_id);
 
-        let task_id = format!("task-{:06}", self.state.next_task_id);
-        self.state.next_task_id += 1;
-        let step_id = format!("step-{}", task_id);
-
-        let task = TaskSummary {
-            task_id: task_id.clone(),
-            session_id: session_id.clone(),
-            task_state: "failed".to_string(),
-            current_step_summary: "reasoning policy fit failed".to_string(),
-            blocking_reason: Some(failure_message.to_string()),
-            coordination_summary: None,
-            result_preview: None,
-        };
-
-        let mut trace = TraceSummary {
-            trace_id: format!("trace-{}", task_id),
-            task_id: task_id.clone(),
-            session_id: session_id.clone(),
-            events: vec![TraceEventSummary {
-                event_sequence: 1,
-                event_kind: "task_submitted".to_string(),
-                details: request.goal.clone(),
-            }],
-        };
-        for record in fit_loop_records {
-            let event_kind = if record.decision == "fitted" {
-                "fit_loop_fitted"
-            } else {
-                "fit_loop_adjusted"
+            let task = TaskSummary {
+                task_id: task_id.clone(),
+                session_id: session_id.clone(),
+                task_state: "failed".to_string(),
+                current_step_summary: "reasoning policy fit failed".to_string(),
+                blocking_reason: Some(failure_message.to_string()),
+                coordination_summary: None,
+                result_preview: None,
             };
-            let details = format!(
-                "iteration={} plan_id={} before_hash={} after_hash={}",
-                record.iteration,
-                record.plan_id.as_deref().unwrap_or("none"),
-                record.before_state_hash.as_deref().unwrap_or("none"),
-                record.after_state_hash.as_deref().unwrap_or("none"),
-            );
-            push_trace_event(&mut trace, event_kind, &details);
-        }
-        push_trace_event(&mut trace, "fit_loop_failed", failure_message);
 
-        let artifacts = vec![
-            ArtifactSummary {
-                artifact_id: format!("artifact-{}-fit-loop", task_id),
-                artifact_kind: "fit_loop_decision".to_string(),
-                summary: summarize_fit_loop_failure(fit_loop_records),
-                produced_by_step_id: step_id.clone(),
-                produced_by_trace_event_sequence: event_sequence_by_kind(&trace, "fit_loop_failed"),
-            },
-            ArtifactSummary {
-                artifact_id: format!("artifact-{}-failure", task_id),
-                artifact_kind: "failure_record".to_string(),
+            let mut trace = TraceSummary {
+                trace_id: format!("trace-{}", task_id),
+                task_id: task_id.clone(),
+                session_id: session_id.clone(),
+                events: vec![TraceEventSummary {
+                    event_sequence: 1,
+                    event_kind: "task_submitted".to_string(),
+                    details: request.goal.clone(),
+                }],
+            };
+            for record in fit_loop_records {
+                let event_kind = if record.decision == "fitted" {
+                    "fit_loop_fitted"
+                } else {
+                    "fit_loop_adjusted"
+                };
+                let details = format!(
+                    "iteration={} plan_id={} before_hash={} after_hash={}",
+                    record.iteration,
+                    record.plan_id.as_deref().unwrap_or("none"),
+                    record.before_state_hash.as_deref().unwrap_or("none"),
+                    record.after_state_hash.as_deref().unwrap_or("none"),
+                );
+                push_trace_event(&mut trace, event_kind, &details);
+            }
+            push_trace_event(&mut trace, "fit_loop_failed", failure_message);
+
+            let artifacts = vec![
+                ArtifactSummary {
+                    artifact_id: format!("artifact-{}-fit-loop", task_id),
+                    artifact_kind: "fit_loop_decision".to_string(),
+                    summary: summarize_fit_loop_failure(fit_loop_records),
+                    produced_by_step_id: step_id.clone(),
+                    produced_by_trace_event_sequence: event_sequence_by_kind(
+                        &trace,
+                        "fit_loop_failed",
+                    ),
+                },
+                ArtifactSummary {
+                    artifact_id: format!("artifact-{}-failure", task_id),
+                    artifact_kind: "failure_record".to_string(),
+                    summary: failure_message.to_string(),
+                    produced_by_step_id: step_id,
+                    produced_by_trace_event_sequence: event_sequence_by_kind(
+                        &trace,
+                        "fit_loop_failed",
+                    ),
+                },
+            ];
+
+            state.tasks.insert(task_id.clone(), task);
+            state.traces.insert(task_id.clone(), trace);
+            state.artifacts.insert(task_id.clone(), artifacts);
+            state.bindings.insert(task_id.clone(), Vec::new());
+            if let Some(idempotency_key) = namespaced_idempotency_key.clone() {
+                state.idempotency_keys.insert(idempotency_key, task_id.clone());
+            }
+
+            Ok(SubmitTaskOpResponse {
+                task_id,
+                task_state: "failed".to_string(),
                 summary: failure_message.to_string(),
-                produced_by_step_id: step_id,
-                produced_by_trace_event_sequence: event_sequence_by_kind(&trace, "fit_loop_failed"),
-            },
-        ];
-
-        self.state.tasks.insert(task_id.clone(), task);
-        self.state.traces.insert(task_id.clone(), trace);
-        self.state.artifacts.insert(task_id.clone(), artifacts);
-        self.state.bindings.insert(task_id.clone(), Vec::new());
-        if let Some(idempotency_key) = namespaced_idempotency_key {
-            self.state.idempotency_keys.insert(idempotency_key, task_id.clone());
-        }
-        self.save()?;
-
-        Ok(SubmitTaskOpResponse {
-            task_id,
-            task_state: "failed".to_string(),
-            summary: failure_message.to_string(),
+            })
         })
     }
 
@@ -692,92 +713,87 @@ impl Store {
                 decision
             ));
         }
+        self.commit_mutation(|state| {
+            let (task_id, final_state, response_approval_id) = {
+                let approval = state
+                    .approvals
+                    .get_mut(approval_id)
+                    .ok_or_else(|| format!("approval_not_found approval_id={approval_id}"))?;
 
-        let (task_id, final_state, response_approval_id) = {
-            let approval = self
-                .state
-                .approvals
-                .get_mut(approval_id)
-                .ok_or_else(|| format!("approval_not_found approval_id={approval_id}"))?;
-
-            if approval.state != "pending" {
-                return Ok(ResolveApprovalResponse {
-                    approval_id: approval.approval_id.clone(),
-                    task_id: approval.task_id.clone(),
-                    state: approval.state.clone(),
-                });
-            }
-
-            approval.state = if decision == "approve" {
-                "approved".to_string()
-            } else {
-                "denied".to_string()
-            };
-            (
-                approval.task_id.clone(),
-                approval.state.clone(),
-                approval.approval_id.clone(),
-            )
-        };
-
-        if let Some(task) = self.state.tasks.get_mut(&task_id) {
-            if final_state == "approved" {
-                task.task_state = "succeeded".to_string();
-                task.current_step_summary = "restricted step approved and completed".to_string();
-                task.blocking_reason = None;
-                if task.result_preview.is_none() {
-                    task.result_preview = self
-                        .state
-                        .artifacts
-                        .get(&task_id)
-                        .and_then(|artifacts| {
-                            artifacts
-                                .iter()
-                                .find(|artifact| artifact.artifact_kind == "model_output")
-                                .map(|artifact| artifact.summary.clone())
-                        });
+                if approval.state != "pending" {
+                    return Ok(ResolveApprovalResponse {
+                        approval_id: approval.approval_id.clone(),
+                        task_id: approval.task_id.clone(),
+                        state: approval.state.clone(),
+                    });
                 }
-            } else {
+
+                approval.state = if decision == "approve" {
+                    "approved".to_string()
+                } else {
+                    "denied".to_string()
+                };
+                (
+                    approval.task_id.clone(),
+                    approval.state.clone(),
+                    approval.approval_id.clone(),
+                )
+            };
+
+            if final_state == "approved" {
+                let result_preview = state.artifacts.get(&task_id).and_then(|artifacts| {
+                    artifacts
+                        .iter()
+                        .find(|artifact| artifact.artifact_kind == "model_output")
+                        .map(|artifact| artifact.summary.clone())
+                });
+                if let Some(task) = state.tasks.get_mut(&task_id) {
+                    task.task_state = "succeeded".to_string();
+                    task.current_step_summary =
+                        "restricted step approved and completed".to_string();
+                    task.blocking_reason = None;
+                    if task.result_preview.is_none() {
+                        task.result_preview = result_preview;
+                    }
+                }
+            } else if let Some(task) = state.tasks.get_mut(&task_id) {
                 task.task_state = "blocked".to_string();
                 task.current_step_summary = "restricted step denied".to_string();
                 task.blocking_reason = Some("approval_denied".to_string());
             }
-        }
 
-        if final_state == "approved" {
-            let artifacts = self.state.artifacts.entry(task_id.clone()).or_default();
-            let has_final = artifacts.iter().any(|a| a.artifact_kind == "final_result");
-            if !has_final {
-                let final_sequence = self
-                    .state
+            if final_state == "approved" {
+                let final_sequence = state
                     .traces
                     .get(&task_id)
                     .map(|trace| trace.events.len() as u64 + 1)
                     .unwrap_or(1);
-                artifacts.push(ArtifactSummary {
-                    artifact_id: format!("artifact-{}-final", task_id),
-                    artifact_kind: "final_result".to_string(),
-                    summary: "task succeeded".to_string(),
-                    produced_by_step_id: format!("step-{}", task_id),
-                    produced_by_trace_event_sequence: final_sequence,
+                let artifacts = state.artifacts.entry(task_id.clone()).or_default();
+                let has_final = artifacts.iter().any(|a| a.artifact_kind == "final_result");
+                if !has_final {
+                    artifacts.push(ArtifactSummary {
+                        artifact_id: format!("artifact-{}-final", task_id),
+                        artifact_kind: "final_result".to_string(),
+                        summary: "task succeeded".to_string(),
+                        produced_by_step_id: format!("step-{}", task_id),
+                        produced_by_trace_event_sequence: final_sequence,
+                    });
+                }
+            }
+
+            if let Some(trace) = state.traces.get_mut(&task_id) {
+                trace.events.push(TraceEventSummary {
+                    event_sequence: (trace.events.len() as u64) + 1,
+                    event_kind: "approval_resolved".to_string(),
+                    details: final_state.clone(),
                 });
             }
-        }
 
-        if let Some(trace) = self.state.traces.get_mut(&task_id) {
-            trace.events.push(TraceEventSummary {
-                event_sequence: (trace.events.len() as u64) + 1,
-                event_kind: "approval_resolved".to_string(),
-                details: final_state.clone(),
-            });
-        }
-
-        self.save()?;
-
-        Ok(ResolveApprovalResponse {
-            approval_id: response_approval_id,
-            task_id,
-            state: final_state,
+            Ok(ResolveApprovalResponse {
+                approval_id: response_approval_id,
+                task_id,
+                state: final_state,
+            })
         })
     }
 }
@@ -840,36 +856,35 @@ fn summarize_fit_loop_failure(records: &[FitLoopRecord]) -> String {
     )
 }
 
-impl Store {
-    fn new_binding(
-        &mut self,
-        task_id: &str,
-        step_id: &str,
-        visibility: BindingVisibility,
-        handle: &str,
-        raw_value_model_text: Option<String>,
-    ) -> BindingRecord {
-        let binding_id = format!("binding-{:06}", self.state.next_binding_id);
-        self.state.next_binding_id += 1;
-        let exposed = raw_value_model_text.is_some();
-        BindingRecord {
-            binding_id,
-            task_id: task_id.to_string(),
-            step_id: step_id.to_string(),
-            visibility,
-            handle: handle.to_string(),
-            raw_value_model_text,
-            raw_value_redacted: !exposed,
-        }
+fn new_binding(
+    state: &mut PersistedState,
+    task_id: &str,
+    step_id: &str,
+    visibility: BindingVisibility,
+    handle: &str,
+    raw_value_model_text: Option<String>,
+) -> BindingRecord {
+    let binding_id = format!("binding-{:06}", state.next_binding_id);
+    state.next_binding_id += 1;
+    let exposed = raw_value_model_text.is_some();
+    BindingRecord {
+        binding_id,
+        task_id: task_id.to_string(),
+        step_id: step_id.to_string(),
+        visibility,
+        handle: handle.to_string(),
+        raw_value_model_text,
+        raw_value_redacted: !exposed,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Store, SubmitReplay};
+    use super::{ApprovalRecord, PersistedState, Store, SubmitReplay};
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
+    use sharo_core::protocol::{SubmitTaskOpRequest, TaskSummary, TraceSummary};
 
     fn unique_store_path(prefix: &str) -> PathBuf {
         let nanos = SystemTime::now()
@@ -877,6 +892,27 @@ mod tests {
             .expect("system time")
             .as_nanos();
         std::env::temp_dir().join(format!("{prefix}-{nanos}.json"))
+    }
+
+    fn store_with_failing_save() -> Store {
+        let missing_parent = std::env::temp_dir().join(format!(
+            "sharo-missing-parent-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        Store {
+            path: missing_parent.join("store.json"),
+            state: PersistedState::default(),
+        }
+    }
+
+    fn assert_save_failed(error: &str) {
+        assert!(
+            error.contains("store_parent_missing") || error.contains("store_open_failed"),
+            "unexpected save error: {error}"
+        );
     }
 
     #[test]
@@ -903,5 +939,96 @@ mod tests {
         }
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn register_session_rolls_back_when_save_fails() {
+        let mut store = store_with_failing_save();
+        let before = store.state.clone();
+
+        let error = store.register_session("session-label").expect_err("save failure");
+
+        assert_save_failed(&error);
+        assert_eq!(store.state, before);
+    }
+
+    #[test]
+    fn submit_task_rolls_back_when_save_fails() {
+        let mut store = store_with_failing_save();
+        let before = store.state.clone();
+
+        let error = store
+            .submit_task_with_route(
+                SubmitTaskOpRequest {
+                    session_id: Some("session-000001".to_string()),
+                    goal: "read one context item".to_string(),
+                    idempotency_key: Some("idem-rollback".to_string()),
+                },
+                "session-000001",
+                "local_mock",
+                "deterministic-response",
+                &[],
+            )
+            .expect_err("save failure");
+
+        assert_save_failed(&error);
+        assert_eq!(store.state, before);
+    }
+
+    #[test]
+    fn resolve_approval_rolls_back_when_save_fails() {
+        let mut store = store_with_failing_save();
+        store.state.tasks.insert(
+            "task-000001".to_string(),
+            TaskSummary {
+                task_id: "task-000001".to_string(),
+                session_id: "session-000001".to_string(),
+                task_state: "awaiting_approval".to_string(),
+                current_step_summary: "awaiting approval".to_string(),
+                blocking_reason: Some("approval_required approval_id=approval-000001".to_string()),
+                coordination_summary: None,
+                result_preview: None,
+            },
+        );
+        store.state.traces.insert(
+            "task-000001".to_string(),
+            TraceSummary {
+                trace_id: "trace-task-000001".to_string(),
+                task_id: "task-000001".to_string(),
+                session_id: "session-000001".to_string(),
+                events: Vec::new(),
+            },
+        );
+        store.state.approvals.insert(
+            "approval-000001".to_string(),
+            ApprovalRecord {
+                approval_id: "approval-000001".to_string(),
+                task_id: "task-000001".to_string(),
+                state: "pending".to_string(),
+                reason: "policy require_approval".to_string(),
+            },
+        );
+        let before = store.state.clone();
+
+        let error = store
+            .resolve_approval("approval-000001", "approve")
+            .expect_err("save failure");
+
+        assert_save_failed(&error);
+        assert_eq!(store.state, before);
+    }
+
+    #[test]
+    fn failed_store_mutation_preserves_pre_call_state() {
+        let mut store = store_with_failing_save();
+        let before = store.state.clone();
+
+        let _ = store.record_submission_failure(
+            "session-000001",
+            Some("idem-rollback"),
+            "connector failed",
+        );
+
+        assert_eq!(store.state, before);
     }
 }
