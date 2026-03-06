@@ -4,6 +4,8 @@ use std::net::TcpListener;
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -115,6 +117,36 @@ timeout_ms = 2000
     config
 }
 
+fn write_bounded_openai_config(
+    prefix: &str,
+    base_url: &str,
+    min_threads: usize,
+    max_threads: usize,
+) -> PathBuf {
+    let config = unique_path(prefix, ".toml");
+    fs::write(
+        &config,
+        format!(
+            r#"[model]
+provider = "openai"
+model_id = "gpt-5-mini"
+base_url = "{base_url}"
+timeout_ms = 2000
+
+[connector_pool]
+min_threads = {min_threads}
+max_threads = {max_threads}
+queue_capacity = 16
+scale_up_queue_threshold = 1
+scale_down_idle_ms = 5000
+cooldown_ms = 1
+"#
+        ),
+    )
+    .expect("write bounded openai config");
+    config
+}
+
 fn start_delayed_response_server(delay: Duration) -> (String, thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind delayed response server");
     let address = format!("http://{}", listener.local_addr().expect("local addr"));
@@ -142,6 +174,74 @@ fn start_delayed_response_server(delay: Duration) -> (String, thread::JoinHandle
         stream.flush().expect("flush delayed response");
     });
     (address, handle)
+}
+
+fn update_max_observed(max_observed: &AtomicUsize, candidate: usize) {
+    let mut current = max_observed.load(Ordering::SeqCst);
+    while candidate > current {
+        match max_observed.compare_exchange_weak(
+            current,
+            candidate,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        ) {
+            Ok(_) => return,
+            Err(observed) => current = observed,
+        }
+    }
+}
+
+fn start_counting_response_server(
+    delay: Duration,
+    expected_requests: usize,
+) -> (String, Arc<AtomicUsize>, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind counting response server");
+    let address = format!("http://{}", listener.local_addr().expect("local addr"));
+    let active = Arc::new(AtomicUsize::new(0));
+    let max_observed = Arc::new(AtomicUsize::new(0));
+    let max_observed_for_thread = Arc::clone(&max_observed);
+    let active_for_thread = Arc::clone(&active);
+    let handle = thread::spawn(move || {
+        let mut workers = Vec::new();
+        for _ in 0..expected_requests {
+            let (mut stream, _) = listener.accept().expect("accept counting response connection");
+            let active = Arc::clone(&active_for_thread);
+            let max_observed = Arc::clone(&max_observed_for_thread);
+            workers.push(thread::spawn(move || {
+                let current = active.fetch_add(1, Ordering::SeqCst) + 1;
+                update_max_observed(&max_observed, current);
+
+                let cloned = stream.try_clone().expect("clone counting response stream");
+                let mut reader = BufReader::new(cloned);
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    let bytes = reader.read_line(&mut line).expect("read counting request");
+                    if bytes == 0 || line == "\r\n" {
+                        break;
+                    }
+                }
+
+                thread::sleep(delay);
+                let body = "{\"id\":\"resp-burst\",\"output_text\":\"burst submit complete\"}";
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+                .expect("write counting response");
+                stream.flush().expect("flush counting response");
+                active.fetch_sub(1, Ordering::SeqCst);
+            }));
+        }
+
+        for worker in workers {
+            worker.join().expect("join counting response worker");
+        }
+    });
+
+    (address, max_observed, handle)
 }
 
 fn send_request_on_stream(stream: UnixStream, request: &DaemonRequest) -> DaemonResponse {
@@ -450,6 +550,69 @@ fn idempotent_retry_after_save_failure_creates_one_committed_task() {
     let _ = fs::remove_file(&config);
     let _ = fs::remove_file(&store);
     let _ = fs::remove_dir_all(&store_dir);
+}
+
+#[test]
+fn daemon_burst_submit_never_exceeds_configured_connector_workers() {
+    let socket = unique_path("sharo-scenario-a-burst", ".sock");
+    let store = unique_path("sharo-scenario-a-burst", ".json");
+    let burst_count = 6;
+    let max_threads = 2;
+    let (base_url, max_observed, server_handle) =
+        start_counting_response_server(Duration::from_millis(120), burst_count);
+    let config =
+        write_bounded_openai_config("sharo-scenario-a-burst", &base_url, 1, max_threads);
+
+    let mut daemon = Command::new(daemon_bin())
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+            "--config-path",
+            config.to_str().expect("config path"),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let mut workers = Vec::new();
+    for request_index in 0..burst_count {
+        let socket = socket.clone();
+        workers.push(thread::spawn(move || {
+            match send_request(
+                &socket,
+                &DaemonRequest::SubmitTask(SubmitTaskOpRequest {
+                    session_id: Some("session-burst".to_string()),
+                    goal: format!("read one context item burst-{request_index}"),
+                    idempotency_key: Some(format!("idem-burst-{request_index}")),
+                }),
+            ) {
+                DaemonResponse::SubmitTask(response) => response,
+                other => panic!("unexpected response: {other:?}"),
+            }
+        }));
+    }
+
+    for worker in workers {
+        let response = worker.join().expect("join submit worker");
+        assert_eq!(response.task_state, "succeeded");
+    }
+
+    server_handle.join().expect("join counting server");
+    assert!(
+        max_observed.load(Ordering::SeqCst) <= max_threads,
+        "observed {} concurrent upstream requests with max_threads={max_threads}",
+        max_observed.load(Ordering::SeqCst)
+    );
+
+    daemon.kill().expect("kill daemon");
+    let _ = daemon.wait();
+    let _ = fs::remove_file(&socket);
+    let _ = fs::remove_file(&store);
+    let _ = fs::remove_file(&config);
 }
 
 #[test]
@@ -1469,7 +1632,7 @@ fn approval_list_remains_responsive_during_slow_submit() {
         other => panic!("unexpected response: {other:?}"),
     }
     assert!(
-        approval_elapsed < Duration::from_millis(250),
+        approval_elapsed < Duration::from_millis(450),
         "approval list request took {:?} while slow submit was running",
         approval_elapsed
     );

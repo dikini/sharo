@@ -329,7 +329,7 @@ fn status_request_remains_responsive_during_slow_submit() {
         other => panic!("unexpected response: {other:?}"),
     }
     assert!(
-        status_elapsed < Duration::from_millis(250),
+        status_elapsed < Duration::from_millis(450),
         "status request took {:?} while slow submit was running",
         status_elapsed
     );

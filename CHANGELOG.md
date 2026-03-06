@@ -59,6 +59,10 @@ The format is based on Common Changelog:
   - staged mutating store operations on cloned state and commit only after the JSON write succeeds
   - added rollback regression tests for session registration, task submission, approval resolution, and failure memoization
   - added an end-to-end retry scenario proving a failed save does not poison idempotent submit replay or create ghost tasks
+- Hardened connector-pool worker scaling to keep the configured upper bound stable:
+  - reserved worker slots atomically before spawning threads instead of incrementing after spawn
+  - released reserved worker count if thread creation fails
+  - added race-focused unit coverage and a daemon burst test that bounds concurrent upstream provider requests by `connector_pool.max_threads`
 - Added explicit restart recovery evidence for successful Scenario A tasks:
   - proved `task get` state and `result_preview` survive restart unchanged
   - proved recovered trace id, event payloads, and monotonic ordering remain intact after restart
