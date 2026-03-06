@@ -25,6 +25,28 @@ The format is based on Common Changelog:
 - Added restart trace continuity hardening artifacts:
   - `docs/plans/2026-03-05-restart-trace-continuity-hardening-plan.md`
   - `TASK-RECOVERY-HARDENING-001` in `docs/tasks/tasks.csv`
+- Added review-driven fix planning artifacts for the reported Rust/runtime issues:
+  - `docs/specs/connector-pool-thread-bound-hardening.md`
+  - `docs/plans/2026-03-06-connector-pool-thread-bound-hardening-plan.md`
+  - `docs/specs/daemon-concurrent-ipc-serving.md`
+  - `docs/plans/2026-03-06-daemon-concurrent-ipc-serving-plan.md`
+  - `docs/specs/store-transactional-persistence.md`
+  - `docs/plans/2026-03-06-store-transactional-persistence-plan.md`
+  - `docs/specs/provider-error-classification.md`
+  - `docs/plans/2026-03-06-provider-error-classification-plan.md`
+  - `docs/specs/rust-lint-hygiene.md`
+  - `docs/plans/2026-03-06-rust-lint-hygiene-plan.md`
+  - task registry entries:
+    - `TASK-CONNECTOR-POOL-HARDENING-SPEC-001`
+    - `TASK-CONNECTOR-POOL-HARDENING-PLAN-001`
+    - `TASK-DAEMON-CONCURRENCY-SPEC-001`
+    - `TASK-DAEMON-CONCURRENCY-PLAN-001`
+    - `TASK-STORE-TRANSACTIONAL-SPEC-001`
+    - `TASK-STORE-TRANSACTIONAL-PLAN-001`
+    - `TASK-PROVIDER-ERROR-SPEC-001`
+    - `TASK-PROVIDER-ERROR-PLAN-001`
+    - `TASK-RUST-LINT-HYGIENE-SPEC-001`
+    - `TASK-RUST-LINT-HYGIENE-PLAN-001`
 
 ### Fixed
 
