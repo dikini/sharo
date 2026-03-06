@@ -9,6 +9,12 @@ The format is based on Common Changelog:
 
 ### Added
 
+- Added deterministic workflow hardening planning artifacts:
+  - `docs/specs/deterministic-workflow-hardening.md`
+  - `docs/plans/2026-03-06-deterministic-workflow-hardening-plan.md`
+  - task registry entries:
+    - `TASK-DETERMINISTIC-WORKFLOW-SPEC-001`
+    - `TASK-DETERMINISTIC-WORKFLOW-PLAN-001`
 - Initialized Git repository.
 - Added project governance in `AGENTS.md`:
   - Rust language, edition 2024, and minimum Rust version 1.93.
