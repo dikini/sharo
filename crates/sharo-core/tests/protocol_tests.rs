@@ -1,5 +1,7 @@
+use proptest::prelude::*;
 use sharo_core::protocol::{
-    SubmitTaskRequest, SubmitTaskResponse, TaskState, TaskStatusRequest, TaskStatusResponse, TaskSummary,
+    SubmitTaskRequest, SubmitTaskResponse, TaskState, TaskStatusRequest, TaskStatusResponse,
+    TaskSummary,
 };
 
 #[test]
@@ -45,11 +47,42 @@ fn protocol_includes_optional_coordination_summary() {
         task_state: "awaiting_approval".to_string(),
         current_step_summary: "restricted write pending approval".to_string(),
         blocking_reason: Some("approval_required approval_id=approval-000001".to_string()),
-        coordination_summary: Some("conflict_id=conflict-000001 scope=notes related_task_id=task-41".to_string()),
+        coordination_summary: Some(
+            "conflict_id=conflict-000001 scope=notes related_task_id=task-41".to_string(),
+        ),
         result_preview: None,
     };
 
     let payload = serde_json::to_string(&task).expect("serialize task summary");
     let roundtrip: TaskSummary = serde_json::from_str(&payload).expect("parse task summary");
     assert_eq!(roundtrip.coordination_summary, task.coordination_summary);
+}
+
+proptest! {
+    #[test]
+    fn prop_protocol_roundtrip_preserves_task_summary_fields(
+        task_id in "[a-z0-9\\-]{1,24}",
+        session_id in "[a-z0-9\\-]{1,24}",
+        task_state in "[a-z_]{1,24}",
+        summary in ".{0,64}",
+    ) {
+        let task = TaskSummary {
+            task_id: task_id.clone(),
+            session_id: session_id.clone(),
+            task_state: task_state.clone(),
+            current_step_summary: summary.clone(),
+            blocking_reason: Some("reason".to_string()),
+            coordination_summary: Some("coord".to_string()),
+            result_preview: Some("preview".to_string()),
+        };
+
+        let payload = serde_json::to_string(&task).expect("serialize task summary");
+        let roundtrip: TaskSummary = serde_json::from_str(&payload).expect("parse task summary");
+
+        prop_assert_eq!(roundtrip.task_id, task_id);
+        prop_assert_eq!(roundtrip.session_id, session_id);
+        prop_assert_eq!(roundtrip.task_state, task_state);
+        prop_assert_eq!(roundtrip.current_step_summary, summary);
+        prop_assert_eq!(roundtrip.result_preview, Some("preview".to_string()));
+    }
 }

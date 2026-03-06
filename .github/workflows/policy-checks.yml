@@ -14,14 +14,32 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install just
+        uses: taiki-e/install-action@just
+
       - name: Make scripts executable
         run: chmod +x scripts/*.sh
+
+      - name: Run canonical verification entrypoint
+        run: just verify
+
+      - name: Install dependency security tools
+        run: cargo install --locked cargo-deny cargo-audit
+
+      - name: Run dependency and security checks
+        run: scripts/check-dependencies-security.sh
 
       - name: Enforce Rust policy
         run: scripts/check-rust-policy.sh
 
       - name: Run Rust workspace tests
         run: scripts/check-rust-tests.sh --all
+
+      - name: Run property test profile
+        run: cargo test -p sharo-core --test protocol_tests prop_protocol_roundtrip_preserves_task_summary_fields
+
+      - name: Run loom model checks
+        run: cargo test -p sharo-daemon --test loom_submit_shutdown -- --nocapture
 
       - name: Install bats-core
         run: scripts/install-bats.sh >/dev/null

@@ -9,6 +9,40 @@ The format is based on Common Changelog:
 
 ### Added
 
+- Added workflow tooling rollout phase 1 implementation:
+  - `scripts/check-tests.sh` provides deterministic workspace testing with automatic `cargo nextest` preference and `cargo test` fallback
+  - `scripts/check-merge-result.sh` and `.github/workflows/merge-result-gate.yml` add merge-result verification for pull requests and merge queue events
+  - Bats coverage for both new scripts:
+    - `scripts/tests/test-check-tests.bats`
+    - `scripts/tests/test-check-merge-result.bats`
+- Added workflow tooling rollout phase 2 implementation:
+  - dependency governance and security tooling:
+    - `scripts/check-dependencies-security.sh`
+    - `deny.toml`
+    - `audit.toml`
+  - canonical task-runner entrypoint:
+    - `justfile` with `verify`, `fast-feedback`, `merge-gate`, and `daemon-invariants` targets
+  - CI policy-check integration updates:
+    - install and use `just` in `.github/workflows/policy-checks.yml`
+    - run dependency security checks in `.github/workflows/policy-checks.yml`
+  - Bats coverage for the new phase 2 surfaces:
+    - `scripts/tests/test-check-dependencies-security.bats`
+    - `scripts/tests/test-justfile-targets.bats`
+- Added workflow tooling rollout phase 3 implementation:
+  - property-based protocol coverage in `crates/sharo-core/tests/protocol_tests.rs` via `proptest`
+  - loom model checks in `crates/sharo-daemon/tests/loom_submit_shutdown.rs` for reservation-release and shutdown-drain invariants
+  - CI policy-check updates to run:
+    - targeted property-test profile
+    - loom model-check profile
+  - Rust dependency updates:
+    - `proptest` in `crates/sharo-core` dev-dependencies
+    - `loom` in `crates/sharo-daemon` dev-dependencies
+- Added workflow tooling rollout planning artifacts for the six high-impact guardrail/tooling upgrades:
+  - `docs/specs/workflow-tooling-rollout.md`
+  - `docs/plans/2026-03-06-workflow-tooling-rollout-plan.md`
+  - task registry entries:
+    - `TASK-WORKFLOW-TOOLING-SPEC-001`
+    - `TASK-WORKFLOW-TOOLING-PLAN-001`
 - Added deterministic workflow hardening planning artifacts:
   - `docs/specs/deterministic-workflow-hardening.md`
   - `docs/plans/2026-03-06-deterministic-workflow-hardening-plan.md`
@@ -84,6 +118,13 @@ The format is based on Common Changelog:
 
 ### Fixed
 
+- Fixed daemon invariant gate command invocation in `scripts/check-daemon-invariants.sh`:
+  - run each named invariant test in a separate `cargo test` command so Cargo argument parsing is valid
+  - restore executable `daemon-invariants` gate behavior for local and CI task-runner workflows
+- Fixed worktree compatibility in `scripts/tests/test-fast-feedback-marker.bats`:
+  - write marker files using `git rev-parse --git-dir` instead of assuming `.git/` directory layout
+  - restore original working directory during teardown to avoid cross-test repository-state leakage
+  - unset hook-injected `GIT_DIR` and `GIT_WORK_TREE` in test setup so temp-repo commits do not target the parent repository
 - Restored post-merge test compatibility with the current protocol shape:
   - added `result_preview` to `TaskSummary` initialization in `crates/sharo-core/tests/protocol_tests.rs`
 - Removed daemon-wide submit serialization so independent provider-backed submits can make parallel progress:

@@ -1,8 +1,11 @@
 #!/usr/bin/env bats
 
 setup() {
+  unset GIT_DIR
+  unset GIT_WORK_TREE
   ROOT="$(git rev-parse --show-toplevel)"
   TMP_REPO="$(mktemp -d)"
+  ORIGINAL_PWD="$PWD"
   cd "$TMP_REPO"
   git init -q
   git config user.name "Test User"
@@ -13,6 +16,7 @@ setup() {
 }
 
 teardown() {
+  cd "$ORIGINAL_PWD"
   rm -rf "$TMP_REPO"
 }
 
@@ -33,11 +37,13 @@ content_sha() {
 }
 
 write_marker() {
+  local git_dir
+  git_dir="$(git rev-parse --git-dir)"
   {
     echo "timestamp_utc=2026-03-05T00:00:00Z"
     echo "head=$(git rev-parse HEAD)"
     echo "content_sha=$(content_sha)"
-  } > .git/.fast-feedback.ok
+  } > "$git_dir/.fast-feedback.ok"
 }
 
 @test "content fingerprint ignores stage-only state changes" {
