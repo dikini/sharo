@@ -47,6 +47,20 @@ The format is based on Common Changelog:
     - `TASK-PROVIDER-ERROR-PLAN-001`
     - `TASK-RUST-LINT-HYGIENE-SPEC-001`
     - `TASK-RUST-LINT-HYGIENE-PLAN-001`
+- Added follow-up review remediation planning artifacts for remaining concurrency, security, and durability fixes:
+  - `docs/specs/daemon-submit-parallelism.md`
+  - `docs/plans/2026-03-06-daemon-submit-parallelism-plan.md`
+  - `docs/specs/authenticated-provider-base-url-hardening.md`
+  - `docs/plans/2026-03-06-authenticated-provider-base-url-hardening-plan.md`
+  - `docs/specs/store-directory-fsync-durability.md`
+  - `docs/plans/2026-03-06-store-directory-fsync-durability-plan.md`
+  - task registry entries:
+    - `TASK-DAEMON-SUBMIT-PARALLELISM-SPEC-001`
+    - `TASK-DAEMON-SUBMIT-PARALLELISM-PLAN-001`
+    - `TASK-AUTH-BASE-URL-HARDENING-SPEC-001`
+    - `TASK-AUTH-BASE-URL-HARDENING-PLAN-001`
+    - `TASK-STORE-DIR-FSYNC-SPEC-001`
+    - `TASK-STORE-DIR-FSYNC-PLAN-001`
 
 ### Fixed
 
