@@ -232,8 +232,7 @@ impl Store {
                     e
                 )
             })?;
-            fs::set_permissions(&self.path, fs::Permissions::from_mode(0o600))
-                .map_err(|e| format!("store_chmod_failed path={} error={}", self.path.display(), e))
+            sync_directory(parent)
         }
     }
 
@@ -798,6 +797,17 @@ impl Store {
     }
 }
 
+#[cfg(unix)]
+fn sync_directory(path: &Path) -> Result<(), String> {
+    let directory = OpenOptions::new()
+        .read(true)
+        .open(path)
+        .map_err(|e| format!("store_directory_sync_failed path={} error={}", path.display(), e))?;
+    directory
+        .sync_all()
+        .map_err(|e| format!("store_directory_sync_failed path={} error={}", path.display(), e))
+}
+
 fn parse_resource_claim(goal: &str) -> Option<String> {
     goal.split_whitespace()
         .find_map(|token| token.strip_prefix("resource:"))
@@ -880,7 +890,7 @@ fn new_binding(
 
 #[cfg(test)]
 mod tests {
-    use super::{ApprovalRecord, PersistedState, Store, SubmitReplay};
+    use super::{ApprovalRecord, PersistedState, Store, SubmitReplay, sync_directory};
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1030,5 +1040,24 @@ mod tests {
         );
 
         assert_eq!(store.state, before);
+    }
+
+    #[test]
+    fn sync_directory_accepts_existing_directory() {
+        let directory = std::env::temp_dir();
+        sync_directory(&directory).expect("sync existing directory");
+    }
+
+    #[test]
+    fn sync_directory_rejects_missing_directory() {
+        let missing_directory = std::env::temp_dir().join(format!(
+            "sharo-missing-dir-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        let error = sync_directory(&missing_directory).expect_err("missing directory should fail");
+        assert!(error.contains("store_directory_sync_failed"));
     }
 }

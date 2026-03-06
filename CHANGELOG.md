@@ -72,6 +72,10 @@ The format is based on Common Changelog:
   - reject authenticated provider configs that use non-HTTPS remote base URLs
   - allow authenticated cleartext HTTP only for explicit loopback hosts used in local and test setups
   - enforce the same rule in the daemon config boundary and in the connector runtime as a defense-in-depth backstop
+- Made daemon store writes crash-durable across atomic rename by syncing the parent directory:
+  - persist store state to a temp file, sync the file, rename into place, then sync the containing directory
+  - remove the redundant post-rename chmod because the temp file is already created with restricted permissions
+  - add explicit unit coverage for the directory-sync helper used by the atomic save path
 - Allowed the daemon to keep serving independent IPC requests while a slow submit is still running:
   - moved non-`serve_once` connections onto spawned Tokio tasks
   - stopped holding the store across provider-backed submit reasoning
