@@ -660,6 +660,97 @@ fn idempotent_retry_after_save_failure_creates_one_committed_task() {
 }
 
 #[test]
+fn same_process_retry_after_terminal_save_failure_is_not_stuck_in_progress() {
+    let socket = unique_path("sharo-scenario-submit-retry-unlocked", ".sock");
+    let store_dir = unique_path("sharo-scenario-submit-retry-unlocked", ".d");
+    fs::create_dir_all(&store_dir).expect("create store dir");
+    let store = store_dir.join("daemon-store.json");
+    let (base_url, observed_requests, server_thread) = start_observed_request_server(
+        Duration::from_millis(180),
+        Duration::from_millis(900),
+    );
+    let config = write_slow_openai_config("sharo-scenario-submit-retry-unlocked", &base_url);
+
+    let mut daemon = Command::new(daemon_bin())
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+            "--config-path",
+            config.to_str().expect("config path"),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let session_id = match send_request(
+        &socket,
+        &DaemonRequest::RegisterSession(RegisterSessionRequest {
+            session_label: "scenario-submit-retry-unlocked".to_string(),
+        }),
+    ) {
+        DaemonResponse::RegisterSession(r) => r.session_id,
+        other => panic!("unexpected response: {other:?}"),
+    };
+
+    let request = SubmitTaskOpRequest {
+        session_id: Some(session_id),
+        goal: "retry after terminal save failure".to_string(),
+        idempotency_key: Some("idem-submit-retry-unlocked".to_string()),
+    };
+
+    let socket_for_submit = socket.clone();
+    let request_for_submit = request.clone();
+    let submit_thread = thread::spawn(move || {
+        send_request(
+            &socket_for_submit,
+            &DaemonRequest::SubmitTask(request_for_submit),
+        )
+    });
+
+    thread::sleep(Duration::from_millis(40));
+    fs::remove_dir_all(&store_dir).expect("remove store dir during reasoning");
+
+    match submit_thread.join().expect("submit thread join") {
+        DaemonResponse::Error { message } => {
+            assert!(
+                message.contains("store_parent_missing") || message.contains("store_open_failed"),
+                "unexpected terminal save failure: {message}",
+            );
+        }
+        other => panic!("unexpected first submit response: {other:?}"),
+    }
+
+    fs::create_dir_all(&store_dir).expect("recreate store dir");
+
+    match send_request(&socket, &DaemonRequest::SubmitTask(request)) {
+        DaemonResponse::SubmitTask(r) => {
+            assert_eq!(r.task_state, "succeeded");
+        }
+        DaemonResponse::Error { message } => {
+            panic!("retry should not remain submit_in_progress: {message}");
+        }
+        other => panic!("unexpected retry response: {other:?}"),
+    }
+
+    assert_eq!(
+        observed_requests.load(Ordering::SeqCst),
+        2,
+        "retry after terminal save failure should be able to reach the provider again",
+    );
+
+    daemon.kill().expect("kill daemon");
+    let _ = daemon.wait();
+    server_thread.join().expect("join observed server");
+    let _ = fs::remove_file(&socket);
+    let _ = fs::remove_dir_all(&store_dir);
+    let _ = fs::remove_file(&config);
+}
+
+#[test]
 fn daemon_burst_submit_never_exceeds_configured_connector_workers() {
     let socket = unique_path("sharo-scenario-a-burst", ".sock");
     let store = unique_path("sharo-scenario-a-burst", ".json");

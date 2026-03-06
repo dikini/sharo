@@ -10,8 +10,8 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-Goal: reject authenticated provider configurations that would send bearer tokens to insecure remote endpoints.
-Architecture: validate authenticated `base_url` values explicitly and allow only HTTPS or loopback HTTP for local test harnesses. Keep the change narrow so provider error classification and existing local smoke scenarios remain intact.
+Goal: reject authenticated provider configurations that would send bearer tokens to insecure remote endpoints while keeping all loopback HTTP test endpoints valid.
+Architecture: validate authenticated `base_url` values explicitly and allow HTTPS or any loopback HTTP host literal for local test harnesses. Keep the change narrow so provider error classification and existing local smoke scenarios remain intact.
 Tech Stack: Rust 2024, reqwest/url parsing, core connector tests, daemon scenario tests.
 Template-Profile: tdd-strict-v1
 
@@ -33,16 +33,19 @@ Task-Registry-Refs: TASK-AUTH-BASE-URL-HARDENING-SPEC-001, TASK-AUTH-BASE-URL-HA
 **Invariants**
 
 - Test cases distinguish secure remote URLs from local loopback fixtures.
+- Test cases cover loopback hostnames and loopback IP literals.
 - Existing auth-failure semantics remain intact.
 
 **Postconditions**
 
 - There is explicit failing coverage for authenticated insecure remote URLs.
+- There is explicit coverage proving non-canonical loopback IP literals remain accepted.
 
 **Tests (must exist before implementation)**
 
 Unit:
 - `authenticated_http_base_url_is_rejected`
+- `authenticated_loopback_ip_literals_remain_allowed`
 
 Property:
 - `authenticated_non_https_non_loopback_urls_are_never_accepted`
@@ -59,7 +62,7 @@ Expected: new security coverage fails before validation is added.
 
 1. Add config or connector validation for authenticated URLs.
 2. Reject non-HTTPS authenticated remote endpoints with an explicit invalid-config error.
-3. Keep loopback HTTP accepted for deterministic local test servers.
+3. Keep loopback HTTP accepted for deterministic local test servers across the full loopback IP range.
 
 **Green Phase (required)**
 

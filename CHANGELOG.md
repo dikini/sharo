@@ -108,6 +108,9 @@ The format is based on Common Changelog:
   - persist task and per-session turn high-water marks during `prepare_submit` so crash/restart cannot recycle already exposed identities
   - persist in-flight idempotency ownership before provider execution and reject duplicate in-flight submits without a second provider call
   - recover stale in-flight idempotency reservations on daemon restart as replayable failures so abandoned submits do not remain unresolved
+- Hardened retry and local-loopback behavior for the review remediation branch:
+  - clear failed submit reservations from in-memory idempotency replay state so same-process retries are not stuck in `submit_in_progress` after a terminal store save failure
+  - accept the full loopback IP range, including non-canonical IPv4 and IPv6 loopback literals, for authenticated local HTTP provider endpoints
 - Allowed the daemon to keep serving independent IPC requests while a slow submit is still running:
   - moved non-`serve_once` connections onto spawned Tokio tasks
   - stopped holding the store across provider-backed submit reasoning

@@ -359,6 +359,23 @@ mod tests {
     }
 
     #[test]
+    fn authenticated_provider_allows_loopback_ip_literal_http_base_url() {
+        let cfg = DaemonConfigFile {
+            model: ModelRuntimeConfig {
+                provider: Some("openai".to_string()),
+                base_url: Some("http://127.0.0.2:8080".to_string()),
+                auth_env_key: Some("SHARO_TEST_OPENAI_KEY".to_string()),
+                ..ModelRuntimeConfig::default()
+            },
+            connector_pool: ConnectorPoolConfig::default(),
+            ..DaemonConfigFile::default()
+        };
+        let runtime = KernelRuntimeConfig::from_daemon_config(&cfg)
+            .expect("loopback IP literal http base_url should remain allowed");
+        assert_eq!(runtime.profile.base_url.as_deref(), Some("http://127.0.0.2:8080"));
+    }
+
+    #[test]
     fn deterministic_provider_uses_defaults() {
         let cfg = DaemonConfigFile::default();
         let runtime = KernelRuntimeConfig::from_daemon_config(&cfg).expect("runtime config");

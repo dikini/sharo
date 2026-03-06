@@ -4,6 +4,7 @@ use std::thread;
 
 use sharo_core::model_connector::{
     DeterministicConnector, ModelCapabilityFlags, ModelConnectorPort, ModelProfile, ModelTurnRequest,
+    validate_base_url_security,
 };
 use sharo_core::model_connectors::OpenAiCompatibleConnector;
 use sharo_core::context_resolvers::{ResolverBundle, StaticTextResolver};
@@ -183,6 +184,25 @@ fn openai_compatible_connector_rejects_authenticated_cleartext_remote_base_url()
         }
         other => panic!("unexpected error kind: {other:?}"),
     }
+}
+
+#[test]
+fn authenticated_loopback_ip_literals_remain_allowed() {
+    let mut ipv4_profile = test_profile();
+    ipv4_profile.provider_id = "openai".to_string();
+    ipv4_profile.model_id = "gpt-5-mini".to_string();
+    ipv4_profile.base_url = Some("http://127.0.0.2:8080".to_string());
+    ipv4_profile.auth_env_key = Some("SHARO_TEST_OPENAI_KEY".to_string());
+    validate_base_url_security(&ipv4_profile)
+        .expect("loopback IPv4 literal should remain allowed");
+
+    let mut ipv6_profile = test_profile();
+    ipv6_profile.provider_id = "openai".to_string();
+    ipv6_profile.model_id = "gpt-5-mini".to_string();
+    ipv6_profile.base_url = Some("http://[0:0:0:0:0:0:0:1]:8080".to_string());
+    ipv6_profile.auth_env_key = Some("SHARO_TEST_OPENAI_KEY".to_string());
+    validate_base_url_security(&ipv6_profile)
+        .expect("expanded loopback IPv6 literal should remain allowed");
 }
 
 #[test]

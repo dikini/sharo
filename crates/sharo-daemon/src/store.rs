@@ -205,6 +205,21 @@ impl Store {
         })
     }
 
+    pub fn release_inflight_idempotency_retry_lock(
+        &mut self,
+        session_id: &str,
+        idempotency_key: Option<&str>,
+        task_id: &str,
+    ) {
+        let Some(key) = idempotency_key else {
+            return;
+        };
+        let namespaced = namespaced_idempotency_key(session_id, key);
+        if self.owns_in_flight_idempotency(Some(&namespaced), task_id) {
+            self.state.in_flight_idempotency_keys.remove(&namespaced);
+        }
+    }
+
     pub fn open(path: impl AsRef<Path>) -> Result<Self, String> {
         let path = path.as_ref().to_path_buf();
         if !path.exists() {
@@ -1342,6 +1357,56 @@ mod tests {
             super::SubmitPreparationOutcome::Replay(super::SubmitReplay::Task(_))
             | super::SubmitPreparationOutcome::Ready(_) => {
                 panic!("unexpected duplicate prepare outcome")
+            }
+        }
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn release_submit_reservation_clears_inflight_retry_after_commit_failure() {
+        let path = unique_store_path("sharo-release-submit-reservation");
+        let mut store = Store::open(&path).expect("open store");
+        let request = SubmitTaskOpRequest {
+            session_id: Some("session-000001".to_string()),
+            goal: "read one context item".to_string(),
+            idempotency_key: Some("idem-retry".to_string()),
+        };
+        let preparation = match store.prepare_submit(&request).expect("prepare submit") {
+            super::SubmitPreparationOutcome::Ready(preparation) => preparation,
+            super::SubmitPreparationOutcome::Replay(_) => panic!("unexpected replay"),
+        };
+        let original_path = store.path.clone();
+        let missing_parent = std::env::temp_dir().join(format!(
+            "sharo-submit-final-save-failure-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        store.path = missing_parent.join("store.json");
+
+        let error = store
+            .submit_task_with_route(
+                &preparation,
+                request.clone(),
+                "local_mock",
+                "deterministic-response",
+                &[],
+            )
+            .expect_err("terminal save failure");
+        assert_save_failed(&error);
+        store.release_inflight_idempotency_retry_lock(
+            &preparation.session_id_hint,
+            request.idempotency_key.as_deref(),
+            &preparation.task_id_hint,
+        );
+
+        store.path = original_path;
+        match store.prepare_submit(&request).expect("retry prepare") {
+            super::SubmitPreparationOutcome::Ready(_) => {}
+            super::SubmitPreparationOutcome::Replay(_) => {
+                panic!("retry should not stay stuck in submit_in_progress")
             }
         }
 

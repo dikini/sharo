@@ -124,22 +124,41 @@ fn handle_submit_task(
 
     let reasoning = state.daemon_kernel.reason_submit(&preparation, &payload);
     let mut store = lock_unpoisoned(&state.store);
+    let idempotency_key = payload.idempotency_key.clone();
     match reasoning {
-        Ok(reasoning) => store.submit_task_with_route(
+        Ok(reasoning) => match store.submit_task_with_route(
             &preparation,
             payload,
             &reasoning.route_decision_details,
             &reasoning.model_output_text,
             &reasoning.fit_loop_records,
-        ),
-        Err(ReasoningError::FitLoopFailure { message, records }) => {
-            store.submit_failed_task(
-                &preparation,
-                payload,
-                &message,
-                &records,
-            )
-        }
+        ) {
+            Ok(response) => Ok(response),
+            Err(message) => {
+                store.release_inflight_idempotency_retry_lock(
+                    &preparation.session_id_hint,
+                    idempotency_key.as_deref(),
+                    &preparation.task_id_hint,
+                );
+                Err(message)
+            }
+        },
+        Err(ReasoningError::FitLoopFailure { message, records }) => match store.submit_failed_task(
+            &preparation,
+            payload,
+            &message,
+            &records,
+        ) {
+            Ok(response) => Ok(response),
+            Err(store_error) => {
+                store.release_inflight_idempotency_retry_lock(
+                    &preparation.session_id_hint,
+                    idempotency_key.as_deref(),
+                    &preparation.task_id_hint,
+                );
+                Err(store_error)
+            }
+        },
         Err(ReasoningError::ConnectorFailure { message })
         | Err(ReasoningError::ResolveFailure { message }) => {
             store.record_submission_failure(

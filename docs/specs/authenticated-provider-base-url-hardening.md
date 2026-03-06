@@ -23,7 +23,7 @@ Prevent authenticated provider configurations from sending bearer tokens to inse
 
 - validation of authenticated provider `base_url`
 - explicit rejection of non-HTTPS remote authenticated endpoints
-- local test exceptions only when clearly loopback
+- local test exceptions only when clearly loopback, including any loopback IP literal
 
 ### Out of Scope
 
@@ -40,6 +40,7 @@ Prevent authenticated provider configurations from sending bearer tokens to inse
 
 - Tokens are never attached to insecure non-loopback HTTP endpoints.
 - Existing unauthenticated local-test scenarios remain possible.
+- Any valid loopback IP literal remains allowed for authenticated local HTTP test endpoints.
 
 ## Task Contracts
 
@@ -57,11 +58,13 @@ Prevent authenticated provider configurations from sending bearer tokens to inse
 **Postconditions**
 
 - Authenticated insecure remote URLs are rejected before any request is sent.
+- Authenticated HTTP loopback URLs are accepted for the full loopback address range, not only a small hardcoded subset.
 
 **Tests (must exist before implementation)**
 
 Unit:
 - `authenticated_http_base_url_is_rejected`
+- `authenticated_loopback_ip_literals_remain_allowed`
 
 Property:
 - `authenticated_non_https_non_loopback_urls_are_never_accepted`

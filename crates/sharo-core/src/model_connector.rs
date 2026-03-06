@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::net::IpAddr;
 use url::Url;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,10 +83,17 @@ pub fn validate_base_url_security(profile: &ModelProfile) -> Result<(), Connecto
 }
 
 fn is_loopback_host(host: Option<&str>) -> bool {
-    matches!(
-        host,
-        Some("localhost") | Some("127.0.0.1") | Some("::1") | Some("[::1]")
-    )
+    let Some(host) = host else {
+        return false;
+    };
+    let normalized = host.trim_start_matches('[').trim_end_matches(']');
+    if normalized.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    normalized
+        .parse::<IpAddr>()
+        .map(|ip| ip.is_loopback())
+        .unwrap_or(false)
 }
 
 #[derive(Debug, Default, Clone)]

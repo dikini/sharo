@@ -37,6 +37,7 @@ Task-Registry-Refs: TASK-SUBMIT-IDENTITY-SPEC-001, TASK-SUBMIT-IDENTITY-PLAN-001
 - Duplicate in-flight idempotent submits get a deterministic non-executing replay outcome.
 - Reopened stores allocate subsequent reservations from the persisted high-water marks.
 - Reasoning input uses the durably reserved identities rather than derived read-time hints.
+- Same-process retries after a terminal submit save failure can prepare the same idempotency key again.
 
 **Tests (must exist before implementation)**
 
@@ -44,6 +45,7 @@ Unit:
 - `prepare_submit_reserves_unique_hints_under_concurrency`
 - `prepare_submit_blocks_duplicate_inflight_idempotency_keys`
 - `reopened_store_keeps_reserved_identity_high_water_marks`
+- `release_submit_reservation_clears_inflight_retry_after_commit_failure`
 
 Property:
 - `concurrent_same_session_submits_never_share_turn_or_task_hints`
@@ -63,7 +65,7 @@ Expected: FAIL because the current preparation does not durably reserve in-fligh
 2. Add scenario coverage that proves a duplicate in-flight submit does not execute provider work twice.
 3. Extend persisted store state with durable reservation metadata for task IDs, turn IDs, and in-flight idempotency ownership.
 4. Refactor `prepare_submit` to commit reservations before returning `Ready`, and return a non-executing replay outcome for duplicate in-flight idempotency keys.
-5. Update terminal submit paths to finalize or release reservations consistently on success, fit-loop failure, and connector/resolver failure.
+5. Update terminal submit paths to finalize or release reservations consistently on success, fit-loop failure, connector/resolver failure, and final persist failure.
 6. Recover stale in-flight idempotency reservations during `Store::open()` before serving new submits.
 7. Re-run focused tests and the daemon crate suite.
 

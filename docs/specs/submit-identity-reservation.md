@@ -77,6 +77,7 @@ Reserve submit identities and idempotency ownership durably before reasoning sta
 - Regression coverage proves same-session concurrent preparations diverge in both task and turn hints.
 - Regression coverage proves a restart after reservation cannot reuse the previously exposed task or turn identity.
 - Regression coverage proves reopening the store converts stale in-flight idempotency ownership into a replayable failure outcome.
+- Regression coverage proves a terminal submit persist failure does not leave the idempotency key stuck in `submit_in_progress` for same-process retries.
 
 **Tests (must exist before implementation)**
 
@@ -84,6 +85,7 @@ Unit:
 - `prepare_submit_reserves_unique_hints_under_concurrency`
 - `prepare_submit_blocks_duplicate_inflight_idempotency_keys`
 - `reopened_store_keeps_reserved_identity_high_water_marks`
+- `release_submit_reservation_clears_inflight_retry_after_commit_failure`
 
 Property:
 - `concurrent_same_session_submits_never_share_turn_or_task_hints`
@@ -102,6 +104,7 @@ Integration:
 ## Risks and Failure Modes
 
 - Leaking durable reservations so duplicates remain blocked forever after terminal commit
+- Leaking in-memory reservations after a terminal submit save failure
 - Reusing preallocated turn IDs under contention or after restart
 - Returning an in-flight replay signal that callers mis-handle as a terminal failure
 - Diverging high-water marks between committed tasks and reservation ledger
