@@ -83,7 +83,39 @@ pub enum SubmitReplay {
     Error(String),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubmitPreparation {
+    pub task_id_hint: String,
+    pub session_id_hint: String,
+    pub turn_id_hint: u64,
+}
+
+pub enum SubmitPreparationOutcome {
+    Replay(SubmitReplay),
+    Ready(SubmitPreparation),
+}
+
 impl Store {
+    pub fn prepare_submit(
+        &self,
+        request: &SubmitTaskOpRequest,
+    ) -> Result<SubmitPreparationOutcome, String> {
+        let session_id_hint = request
+            .session_id
+            .clone()
+            .unwrap_or_else(|| "session-implicit".to_string());
+        if let Some(replay) =
+            self.replay_by_idempotency(&session_id_hint, request.idempotency_key.as_deref())?
+        {
+            return Ok(SubmitPreparationOutcome::Replay(replay));
+        }
+        Ok(SubmitPreparationOutcome::Ready(SubmitPreparation {
+            task_id_hint: self.peek_next_task_id(),
+            session_id_hint: session_id_hint.clone(),
+            turn_id_hint: self.next_turn_id_for_session(&session_id_hint),
+        }))
+    }
+
     pub fn peek_next_task_id(&self) -> String {
         format!("task-{:06}", self.state.next_task_id)
     }

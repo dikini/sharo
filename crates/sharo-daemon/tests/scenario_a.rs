@@ -1,5 +1,6 @@
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
+use std::net::TcpListener;
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -95,6 +96,63 @@ timeout_ms = 1000
     )
     .expect("write openai auth config");
     config
+}
+
+fn write_slow_openai_config(prefix: &str, base_url: &str) -> PathBuf {
+    let config = unique_path(prefix, ".toml");
+    fs::write(
+        &config,
+        format!(
+            r#"[model]
+provider = "openai"
+model_id = "gpt-5-mini"
+base_url = "{base_url}"
+timeout_ms = 2000
+"#
+        ),
+    )
+    .expect("write slow openai config");
+    config
+}
+
+fn start_delayed_response_server(delay: Duration) -> (String, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind delayed response server");
+    let address = format!("http://{}", listener.local_addr().expect("local addr"));
+    let handle = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept delayed response connection");
+        let cloned = stream.try_clone().expect("clone delayed response stream");
+        let mut reader = BufReader::new(cloned);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            let bytes = reader.read_line(&mut line).expect("read delayed request");
+            if bytes == 0 || line == "\r\n" {
+                break;
+            }
+        }
+        thread::sleep(delay);
+        let body = "{\"id\":\"resp-1\",\"output_text\":\"slow submit complete\"}";
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .expect("write delayed response");
+        stream.flush().expect("flush delayed response");
+    });
+    (address, handle)
+}
+
+fn send_request_on_stream(stream: UnixStream, request: &DaemonRequest) -> DaemonResponse {
+    let payload = serde_json::to_string(request).expect("serialize request");
+    let mut writer = stream.try_clone().expect("clone stream for writing");
+    writeln!(writer, "{}", payload).expect("write request");
+
+    let mut line = String::new();
+    let mut reader = BufReader::new(stream);
+    reader.read_line(&mut line).expect("read response");
+    serde_json::from_str(line.trim()).expect("parse response")
 }
 
 fn send_request(socket: &PathBuf, request: &DaemonRequest) -> DaemonResponse {
@@ -1252,6 +1310,81 @@ fn invalid_manifest_is_blocked_with_explicit_reason() {
         other => panic!("unexpected response: {other:?}"),
     }
 
+    daemon.kill().expect("kill daemon");
+    let _ = daemon.wait();
+    let _ = fs::remove_file(&socket);
+    let _ = fs::remove_file(&store);
+    let _ = fs::remove_file(&config);
+}
+
+#[test]
+fn approval_list_remains_responsive_during_slow_submit() {
+    let socket = unique_path("sharo-scenario-concurrency", ".sock");
+    let store = unique_path("sharo-scenario-concurrency", ".json");
+    let (base_url, server_thread) = start_delayed_response_server(Duration::from_millis(500));
+    let config = write_slow_openai_config("sharo-scenario-concurrency", &base_url);
+
+    let mut daemon = Command::new(daemon_bin())
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+            "--config-path",
+            config.to_str().expect("config path"),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let submit_stream = {
+        let mut connected = None;
+        for _ in 0..80 {
+            match UnixStream::connect(&socket) {
+                Ok(stream) => {
+                    connected = Some(stream);
+                    break;
+                }
+                Err(_) => thread::sleep(Duration::from_millis(15)),
+            }
+        }
+        connected.expect("connect slow submit stream")
+    };
+    let submit_thread = thread::spawn(move || {
+        send_request_on_stream(
+            submit_stream,
+            &DaemonRequest::SubmitTask(SubmitTaskOpRequest {
+                session_id: Some("session-concurrency".to_string()),
+                goal: "slow approval-list submit".to_string(),
+                idempotency_key: None,
+            }),
+        )
+    });
+
+    thread::sleep(Duration::from_millis(75));
+
+    let approval_start = SystemTime::now();
+    let approvals_response = send_request(&socket, &DaemonRequest::ListPendingApprovals);
+    let approval_elapsed = approval_start.elapsed().expect("approval elapsed");
+
+    match approvals_response {
+        DaemonResponse::ListPendingApprovals(r) => assert!(r.approvals.is_empty()),
+        other => panic!("unexpected response: {other:?}"),
+    }
+    assert!(
+        approval_elapsed < Duration::from_millis(250),
+        "approval list request took {:?} while slow submit was running",
+        approval_elapsed
+    );
+
+    match submit_thread.join().expect("submit thread join") {
+        DaemonResponse::SubmitTask(r) => assert_eq!(r.task_state, "succeeded"),
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    server_thread.join().expect("delayed server join");
     daemon.kill().expect("kill daemon");
     let _ = daemon.wait();
     let _ = fs::remove_file(&socket);

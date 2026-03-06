@@ -2,9 +2,7 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
 use sharo_core::context_resolvers::{ResolverBundle, StaticTextResolver};
-use sharo_core::kernel::{
-    KernelApprovalInput, KernelApprovalResult, KernelPort, KernelSubmitInput, KernelSubmitResult,
-};
+use sharo_core::kernel::{KernelApprovalInput, KernelApprovalResult};
 use sharo_core::model_connector::{DeterministicConnector, ModelCapabilityFlags, ModelProfile};
 use sharo_core::model_connectors::{OllamaConnector, OpenAiCompatibleConnector};
 use sharo_core::reasoning::{IdReasoningEngine, ReasoningEnginePort, ReasoningError, ReasoningInput};
@@ -14,7 +12,7 @@ use crate::config::{
     ConnectorPoolConfig, DaemonConfigFile, ReasoningContextConfig, ReasoningPolicyConfig,
 };
 use crate::connector_pool::{BlockingPool, PoolError, PoolPolicy};
-use crate::store::{Store, SubmitReplay};
+use crate::store::{Store, SubmitPreparation};
 
 #[derive(Debug, Clone)]
 pub enum ConnectorKind {
@@ -223,87 +221,19 @@ impl DaemonKernel {
 
 pub struct DaemonKernelRuntime<'a> {
     store: &'a mut Store,
-    kernel: &'a DaemonKernel,
 }
 
 impl<'a> DaemonKernelRuntime<'a> {
-    pub fn new(store: &'a mut Store, kernel: &'a DaemonKernel) -> Self {
-        Self {
-            store,
-            kernel,
-        }
+    pub fn new(store: &'a mut Store) -> Self {
+        Self { store }
     }
 }
 
-impl KernelPort for DaemonKernelRuntime<'_> {
-    fn submit_task(&mut self, input: KernelSubmitInput) -> Result<KernelSubmitResult, String> {
-        let task_id_hint = self.store.peek_next_task_id();
-        let session_id_hint = input
-            .request
-            .session_id
-            .clone()
-            .unwrap_or_else(|| "session-implicit".to_string());
-        if let Some(replay) = self
-            .store
-            .replay_by_idempotency(&session_id_hint, input.request.idempotency_key.as_deref())?
-        {
-            return match replay {
-                SubmitReplay::Task(response) => Ok(KernelSubmitResult { response }),
-                SubmitReplay::Error(message) => Err(message),
-            };
-        }
-        let turn_id_hint = self.store.next_turn_id_for_session(&session_id_hint);
-        let mut metadata = BTreeMap::new();
-        if let Some(value) = self.kernel.reasoning_policy_max_prompt_chars() {
-            metadata.insert("policy.max_prompt_chars".to_string(), value.to_string());
-        }
-        if let Some(value) = self.kernel.reasoning_policy_max_memory_lines() {
-            metadata.insert("policy.max_memory_lines".to_string(), value.to_string());
-        }
-        if let Some(value) = self.kernel.reasoning_policy_forbidden_runtime_fields() {
-            metadata.insert("policy.forbidden_runtime_fields".to_string(), value);
-        }
-        let reasoning_input = ReasoningInput {
-            trace_id: format!("trace-{}", task_id_hint),
-            task_id: task_id_hint,
-            session_id: session_id_hint.clone(),
-            turn_id: turn_id_hint,
-            goal: input.request.goal.clone(),
-            metadata,
-        };
-        let reasoning = match self.kernel.reasoning.plan(&reasoning_input) {
-            Ok(reasoning) => reasoning,
-            Err(ReasoningError::FitLoopFailure { message, records }) => {
-                let response = self.store.submit_failed_task(
-                    input.request,
-                    &session_id_hint,
-                    &message,
-                    &records,
-                )?;
-                return Ok(KernelSubmitResult { response });
-            }
-            Err(ReasoningError::ConnectorFailure { message })
-            | Err(ReasoningError::ResolveFailure { message }) => {
-                self.store.record_submission_failure(
-                    &session_id_hint,
-                    input.request.idempotency_key.as_deref(),
-                    &message,
-                )?;
-                return Err(message);
-            }
-        };
-
-        let response = self.store.submit_task_with_route(
-            input.request,
-            &session_id_hint,
-            &reasoning.route_decision_details,
-            &reasoning.model_output_text,
-            &reasoning.fit_loop_records,
-        )?;
-        Ok(KernelSubmitResult { response })
-    }
-
-    fn resolve_approval(&mut self, input: KernelApprovalInput) -> Result<KernelApprovalResult, String> {
+impl DaemonKernelRuntime<'_> {
+    pub fn resolve_approval(
+        &mut self,
+        input: KernelApprovalInput,
+    ) -> Result<KernelApprovalResult, String> {
         let response = self
             .store
             .resolve_approval(&input.approval_id, &input.decision)?;
@@ -312,6 +242,36 @@ impl KernelPort for DaemonKernelRuntime<'_> {
 }
 
 impl DaemonKernel {
+    pub fn reason_submit(
+        &self,
+        preparation: &SubmitPreparation,
+        request: &sharo_core::protocol::SubmitTaskOpRequest,
+    ) -> Result<sharo_core::reasoning::ReasoningOutcome, ReasoningError> {
+        let reasoning_input = ReasoningInput {
+            trace_id: format!("trace-{}", preparation.task_id_hint),
+            task_id: preparation.task_id_hint.clone(),
+            session_id: preparation.session_id_hint.clone(),
+            turn_id: preparation.turn_id_hint,
+            goal: request.goal.clone(),
+            metadata: self.reasoning_metadata(),
+        };
+        self.reasoning.plan(&reasoning_input)
+    }
+
+    pub fn reasoning_metadata(&self) -> BTreeMap<String, String> {
+        let mut metadata = BTreeMap::new();
+        if let Some(value) = self.reasoning_policy_max_prompt_chars() {
+            metadata.insert("policy.max_prompt_chars".to_string(), value.to_string());
+        }
+        if let Some(value) = self.reasoning_policy_max_memory_lines() {
+            metadata.insert("policy.max_memory_lines".to_string(), value.to_string());
+        }
+        if let Some(value) = self.reasoning_policy_forbidden_runtime_fields() {
+            metadata.insert("policy.forbidden_runtime_fields".to_string(), value);
+        }
+        metadata
+    }
+
     fn reasoning_policy_max_prompt_chars(&self) -> Option<usize> {
         self.reasoning_policy.max_prompt_chars
     }

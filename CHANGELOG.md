@@ -50,6 +50,10 @@ The format is based on Common Changelog:
 
 ### Fixed
 
+- Allowed the daemon to keep serving independent IPC requests while a slow submit is still running:
+  - moved non-`serve_once` connections onto spawned Tokio tasks
+  - stopped holding the store across provider-backed submit reasoning
+  - added regression coverage proving `status` and approval-list requests stay responsive during slow submits
 - Added explicit restart recovery evidence for successful Scenario A tasks:
   - proved `task get` state and `result_preview` survive restart unchanged
   - proved recovered trace id, event payloads, and monotonic ordering remain intact after restart
