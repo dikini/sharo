@@ -3,21 +3,52 @@
 setup() {
   ROOT="$(git rev-parse --show-toplevel)"
   cd "$ROOT"
-  MAP="docs/plans/2026-03-05-mvp-verification-matrix-map.md"
+  MATRIX_MAP="docs/tasks/mvp-verification-matrix-map.csv"
+}
+
+@test "mvp matrix section exists" {
+  run rg -n '^## 21\. Verification Matrix$' docs/specs/mvp.md
+  [ "$status" -eq 0 ]
+}
+
+@test "mvp matrix includes expected columns" {
+  run rg -n '^\| Invariant / Requirement \| Subsystem \| Scenario \| Verification Type \| Expected Evidence \|$' docs/specs/mvp.md
+  [ "$status" -eq 0 ]
+}
+
+@test "mvp matrix has minimum required rows" {
+  matrix_rows="$(awk '
+    /^## 21\. Verification Matrix$/ { in_matrix=1; next }
+    /^## / && in_matrix { in_matrix=0 }
+    in_matrix && /^\|/ { print }
+  ' docs/specs/mvp.md | tail -n +3 | wc -l | tr -d ' ')"
+
+  [ "$matrix_rows" -ge 10 ]
 }
 
 @test "matrix_map_has_unique_row_keys" {
-  run bash -lc "rg '^\| [a-z0-9-]+ \|' \"$MAP\" | sed -E 's/^\| ([a-z0-9-]+) \| (.+) \| (.+) \|$/\\1|\\2|\\3/' | cut -d'|' -f1 | sort | uniq -d"
+  run bash -lc "awk -F, 'NR>1 { print \$1 }' \"$MATRIX_MAP\" | sort | uniq -d"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
 
 @test "matrix_rows_have_test_binding" {
-  run bash -lc 'rg "^\| [a-z0-9-]+ \|" "'"$MAP"'" | sed -E "s/^\| ([a-z0-9-]+) \| (.+) \| (.+) \|$/\1|\2|\3/" | while IFS="|" read -r key binding _; do if [[ -z "$binding" ]]; then echo "missing binding for $key"; exit 1; fi; done'
+  run bash -lc "awk -F, 'NR>1 && (\$2==\"\" || \$3==\"\" || \$4==\"\") { print NR }' \"$MATRIX_MAP\""
   [ "$status" -eq 0 ]
+  [ -z "$output" ]
 }
 
 @test "matrix_map_references_existing_tests" {
-  run bash -lc 'rg "^\| [a-z0-9-]+ \|" "'"$MAP"'" | sed -E "s/^\| ([a-z0-9-]+) \| (.+) \| (.+) \|$/\1|\2|\3/" | while IFS="|" read -r _ binding _; do if [[ "$binding" == not-implemented:* ]]; then continue; fi; IFS=";" read -ra refs <<<"$binding"; for ref in "${refs[@]}"; do path="${ref%%#*}"; if [[ ! -f "$path" ]]; then echo "missing test file: $path"; exit 1; fi; done; done'
-  [ "$status" -eq 0 ]
+  while IFS=, read -r row_key test_id test_path binding_status notes; do
+    [[ "$row_key" == "row_key" ]] && continue
+    [[ -f "$test_path" ]]
+    if [[ "$binding_status" == "implemented" || "$binding_status" == "partial" ]]; then
+      if [[ "$test_path" == *.bats ]]; then
+        run bash -lc "rg -n \"@test \\\".*$test_id.*\\\"\" \"$test_path\""
+      else
+        run bash -lc "rg -n \"fn $test_id\\b|$test_id\" \"$test_path\""
+      fi
+      [ "$status" -eq 0 ]
+    fi
+  done < "$MATRIX_MAP"
 }

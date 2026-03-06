@@ -56,6 +56,30 @@ pub enum ArtifactKind {
     FinalResult,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BindingVisibility {
+    ModelVisible,
+    EngineOnly,
+    ApprovalGated,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BindingRecord {
+    pub binding_id: String,
+    pub task_id: String,
+    pub step_id: String,
+    pub visibility: BindingVisibility,
+    pub handle: String,
+    pub raw_value_model_text: Option<String>,
+    pub raw_value_redacted: bool,
+}
+
+impl BindingRecord {
+    pub fn is_model_text_exposed(&self) -> bool {
+        self.raw_value_model_text.is_some()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskRecord {
     pub task_id: String,

@@ -3,7 +3,7 @@ use sharo_core::protocol::{SubmitTaskRequest, TaskStatusRequest};
 
 #[test]
 fn stub_submit_is_deterministic_for_goal_and_session() {
-    let client = StubClient::default();
+    let client = StubClient;
 
     let request = SubmitTaskRequest {
         session_id: Some("session-a".to_string()),
@@ -19,7 +19,7 @@ fn stub_submit_is_deterministic_for_goal_and_session() {
 
 #[test]
 fn stub_status_is_deterministic_for_task_id() {
-    let client = StubClient::default();
+    let client = StubClient;
     let request = TaskStatusRequest {
         task_id: "task-0001".to_string(),
     };

@@ -751,6 +751,7 @@ The daemon control plane owns process lifetime, session and task admission, task
 - Restart restores task state, session state, approvals, and trace position from durable store.
 - Lost worker does not imply completed task.
 - In-flight step after restart must re-enter a recoverable explicit state, never implicit success.
+- Pre-1.0 persisted store schema compatibility is not guaranteed; schema changes may require resetting local daemon state.
 
 ### Conflict / Coordination Posture
 
@@ -1094,25 +1095,8 @@ Three scenarios are mandatory.
 | Binding can remain opaque | Reasoning / memory | A | unit + integration | binding handle present without raw value leakage |
 | Verification and observability artifacts are first-class | Harness / memory | A | integration | verification or health artifacts retrievable with provenance |
 
-## 21.1 MVP Readiness Gate (2026-03-05)
-
-Verification evidence map:
-- `docs/plans/2026-03-05-mvp-verification-matrix-map.md`
-
-Required gate checklist:
-- [x] `TASK-MVP-SLICE-000` done.
-- [x] `TASK-MVP-SLICE-001` done.
-- [x] `TASK-MVP-SLICE-002` done.
-- [x] `TASK-MVP-SLICE-003` done.
-- [x] `TASK-MVP-SLICE-004` done.
-- [x] `TASK-MVP-SLICE-005` done.
-- [x] Recovery and restart invariants have executable tests.
-- [x] Protocol and CLI required MVP operations are test-backed.
-- [x] No open required checklist items for MVP gate.
-
-Deferred (non-blocking for current MVP runtime boundary):
-- `capability-manifest-required`
-- `binding-remains-opaque`
+Verification evidence map: `docs/tasks/mvp-verification-matrix-map.csv`.
+Quality gate command: `scripts/check-mvp-matrix-map.sh`.
 
 ## 22. Enrichment Roadmap
 

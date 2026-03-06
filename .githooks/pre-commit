@@ -13,6 +13,7 @@ scripts/check-changelog-staged.sh
 scripts/check-rust-policy.sh
 scripts/check-rust-tests.sh --changed
 scripts/check-sync-manifest.sh --changed
+scripts/check-mvp-matrix-map.sh
 scripts/doc-lint.sh --changed --strict-new
 scripts/check-doc-terms.sh --changed
 scripts/check-tasks-registry.sh

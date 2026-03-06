@@ -37,6 +37,8 @@ This keeps task state deterministic and reduces stale registry entries.
 - Run Knot diff check: `scripts/check-knot-diff.sh --mapping docs/tasks/knot-diff-mapping.csv`
 - Run research reference check: `scripts/check-research-references.sh --registry docs/tasks/research-reference-rules.csv`
 - Run shell tests (Bats): `scripts/run-shell-tests.sh --all`
+- Run MVP matrix map quality gate: `scripts/check-mvp-matrix-map.sh`
+- MVP matrix mapping file: `docs/tasks/mvp-verification-matrix-map.csv`
 
 ## MVP Slice Tracking
 
@@ -50,6 +52,8 @@ This keeps task state deterministic and reduces stale registry entries.
 - `TASK-FAST-FEEDBACK-ERGONOMICS-001`: content-based marker validity and pre-commit auto-refresh for stale markers.
 - `TASK-DOC-STRICT-FILLED-001`: strict-filled scaffolding for spec/plan docs and lint guidance hints.
 - `TASK-TASKS-UPSERT-001`: task-registry upsert helper for ergonomic create/update operations.
+
+Current state: slices 000 through 005 are marked `done` in `docs/tasks/tasks.csv`.
 
 ## Completed Tooling Items
 

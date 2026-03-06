@@ -14,7 +14,163 @@ The format is based on Common Changelog:
   - Rust language, edition 2024, and minimum Rust version 1.93.
   - Common Changelog and Conventional Commits requirements.
   - Documentation workflow for `docs/specs` and `docs/plans`.
+- Added live OpenAI smoke verification artifacts:
+  - `docs/plans/2026-03-05-openai-live-smoke-plan.md`
+  - `scripts/openai-live-smoke.sh`
+  - `scripts/tests/test-openai-live-smoke.bats`
 - Added MVP specification at `docs/specs/mvp.md`.
+- Added task result preview planning artifacts:
+  - `docs/plans/2026-03-05-task-result-preview-plan.md`
+  - `TASK-RUNTIME-CONTENT-PREVIEW-001` in `docs/tasks/tasks.csv`
+- Added restart trace continuity hardening artifacts:
+  - `docs/plans/2026-03-05-restart-trace-continuity-hardening-plan.md`
+  - `TASK-RECOVERY-HARDENING-001` in `docs/tasks/tasks.csv`
+- Added review-driven fix planning artifacts for the reported Rust/runtime issues:
+  - `docs/specs/connector-pool-thread-bound-hardening.md`
+  - `docs/plans/2026-03-06-connector-pool-thread-bound-hardening-plan.md`
+  - `docs/specs/daemon-concurrent-ipc-serving.md`
+  - `docs/plans/2026-03-06-daemon-concurrent-ipc-serving-plan.md`
+  - `docs/specs/store-transactional-persistence.md`
+  - `docs/plans/2026-03-06-store-transactional-persistence-plan.md`
+  - `docs/specs/provider-error-classification.md`
+  - `docs/plans/2026-03-06-provider-error-classification-plan.md`
+  - `docs/specs/rust-lint-hygiene.md`
+  - `docs/plans/2026-03-06-rust-lint-hygiene-plan.md`
+  - task registry entries:
+    - `TASK-CONNECTOR-POOL-HARDENING-SPEC-001`
+    - `TASK-CONNECTOR-POOL-HARDENING-PLAN-001`
+    - `TASK-DAEMON-CONCURRENCY-SPEC-001`
+    - `TASK-DAEMON-CONCURRENCY-PLAN-001`
+    - `TASK-STORE-TRANSACTIONAL-SPEC-001`
+    - `TASK-STORE-TRANSACTIONAL-PLAN-001`
+    - `TASK-PROVIDER-ERROR-SPEC-001`
+    - `TASK-PROVIDER-ERROR-PLAN-001`
+    - `TASK-RUST-LINT-HYGIENE-SPEC-001`
+    - `TASK-RUST-LINT-HYGIENE-PLAN-001`
+- Added follow-up review remediation planning artifacts for remaining concurrency, security, and durability fixes:
+  - `docs/specs/daemon-submit-parallelism.md`
+  - `docs/plans/2026-03-06-daemon-submit-parallelism-plan.md`
+  - `docs/specs/authenticated-provider-base-url-hardening.md`
+  - `docs/plans/2026-03-06-authenticated-provider-base-url-hardening-plan.md`
+  - `docs/specs/store-directory-fsync-durability.md`
+  - `docs/plans/2026-03-06-store-directory-fsync-durability-plan.md`
+  - task registry entries:
+    - `TASK-DAEMON-SUBMIT-PARALLELISM-SPEC-001`
+    - `TASK-DAEMON-SUBMIT-PARALLELISM-PLAN-001`
+    - `TASK-AUTH-BASE-URL-HARDENING-SPEC-001`
+    - `TASK-AUTH-BASE-URL-HARDENING-PLAN-001`
+    - `TASK-STORE-DIR-FSYNC-SPEC-001`
+    - `TASK-STORE-DIR-FSYNC-PLAN-001`
+- Added second-pass review remediation planning artifacts for remaining Tokio, persistence-consistency, and submit-identity fixes:
+  - `docs/specs/daemon-blocking-submit-offload.md`
+  - `docs/plans/2026-03-06-daemon-blocking-submit-offload-plan.md`
+  - `docs/specs/store-directory-fsync-commit-consistency.md`
+  - `docs/plans/2026-03-06-store-directory-fsync-commit-consistency-plan.md`
+  - `docs/specs/submit-identity-reservation.md`
+  - `docs/plans/2026-03-06-submit-identity-reservation-plan.md`
+  - task registry entries:
+    - `TASK-DAEMON-BLOCKING-OFFLOAD-SPEC-001`
+    - `TASK-DAEMON-BLOCKING-OFFLOAD-PLAN-001`
+    - `TASK-STORE-FSYNC-CONSISTENCY-SPEC-001`
+    - `TASK-STORE-FSYNC-CONSISTENCY-PLAN-001`
+    - `TASK-SUBMIT-IDENTITY-SPEC-001`
+    - `TASK-SUBMIT-IDENTITY-PLAN-001`
+
+### Fixed
+
+- Removed daemon-wide submit serialization so independent provider-backed submits can make parallel progress:
+  - deleted the process-wide submit mutex from `sharo-daemon`
+  - kept submit preparation and commit phases isolated to short store lock windows
+  - added a regression scenario proving two slow submits overlap upstream instead of collapsing to single-flight execution
+- Hardened authenticated provider base URL handling so bearer tokens are not sent to insecure remote endpoints:
+  - reject authenticated provider configs that use non-HTTPS remote base URLs
+  - allow authenticated cleartext HTTP only for explicit loopback hosts used in local and test setups
+  - enforce the same rule in the daemon config boundary and in the connector runtime as a defense-in-depth backstop
+- Made daemon store writes crash-durable across atomic rename by syncing the parent directory:
+  - persist store state to a temp file, sync the file, rename into place, then sync the containing directory
+  - remove the redundant post-rename chmod because the temp file is already created with restricted permissions
+  - add explicit unit coverage for the directory-sync helper used by the atomic save path
+- Moved daemon request execution off Tokio runtime worker threads for blocking IPC handlers:
+  - execute synchronous request handling behind `tokio::task::spawn_blocking`
+  - preserve the existing submit/store semantics while preventing slow submits from monopolizing runtime workers
+  - add daemon IPC regression coverage proving status requests stay responsive under parallel slow-submit pressure
+- Preserved store memory/disk consistency when directory fsync fails after rename:
+  - distinguish pre-rename save failures from post-rename durability failures
+  - update in-memory state once the canonical store file has been replaced, even if parent-directory fsync reports degraded durability
+  - add deterministic unit coverage for the post-rename directory-sync failure path
+- Reserved submit task and turn identities before reasoning starts:
+  - durably advance task and per-session turn high-water marks during submit preparation instead of deriving them from committed state only
+  - reserve in-flight idempotency ownership before provider execution so concurrent duplicate submits do not double-execute reasoning
+  - recover interrupted in-flight reservations after restart as deterministic idempotent failures without reusing exposed logical IDs
+  - thread the reserved task identity through successful and failed submit commit paths
+  - add regression coverage for duplicate in-flight submits and restart-after-reservation identity reuse
+- Hardened submit reservation durability and duplicate idempotency suppression:
+  - persist task and per-session turn high-water marks during `prepare_submit` so crash/restart cannot recycle already exposed identities
+  - persist in-flight idempotency ownership before provider execution and reject duplicate in-flight submits without a second provider call
+  - recover stale in-flight idempotency reservations on daemon restart as replayable failures so abandoned submits do not remain unresolved
+- Hardened retry and local-loopback behavior for the review remediation branch:
+  - clear failed submit reservations from in-memory idempotency replay state so same-process retries are not stuck in `submit_in_progress` after a terminal store save failure
+  - accept the full loopback IP range, including non-canonical IPv4 and IPv6 loopback literals, for authenticated local HTTP provider endpoints
+- Finalized the review-remediation failure semantics:
+  - treat post-rename parent-directory fsync errors as degraded durability warnings after a logically committed mutation instead of surfacing a false failed-mutation result
+  - clear in-memory in-flight idempotency reservations when connector or resolver failure memoization itself cannot be persisted, so same-process retries are not stuck in `submit_in_progress`
+  - preserve the degraded-durability warning signal after committed rename so operators can still detect weakly durable store commits
+- Closed follow-up review regressions in loopback validation and shutdown semantics:
+  - keep authenticated local HTTP base-url validation compatible with non-canonical decimal loopback literals used by local test harnesses
+  - drain already accepted IPC handlers on Ctrl-C shutdown so in-flight requests can still complete and emit exactly one response before process exit
+- Allowed the daemon to keep serving independent IPC requests while a slow submit is still running:
+  - moved non-`serve_once` connections onto spawned Tokio tasks
+  - stopped holding the store across provider-backed submit reasoning
+  - added regression coverage proving `status` and approval-list requests stay responsive during slow submits
+  - restored `sharo-daemon` clippy cleanliness for the touched store module by moving the test module to file end
+- Made daemon store persistence transactional on save failure:
+  - staged mutating store operations on cloned state and commit only after the JSON write succeeds
+  - added rollback regression tests for session registration, task submission, approval resolution, and failure memoization
+  - added an end-to-end retry scenario proving a failed save does not poison idempotent submit replay or create ghost tasks
+- Hardened connector-pool worker scaling to keep the configured upper bound stable:
+  - reserved worker slots atomically before spawning threads instead of incrementing after spawn
+  - released reserved worker count if thread creation fails
+  - added race-focused unit coverage and a daemon burst test that bounds concurrent upstream provider requests by `connector_pool.max_threads`
+- Corrected provider failure classification so retryable upstream errors no longer collapse into invalid requests:
+  - mapped `408` and `504` to timeout, `429` to rate limit, `402` to quota, and `5xx` to unavailable
+  - kept auth failures distinct for `401` and `403`
+  - added core and daemon regression coverage for transient provider failures without persisted success records
+- Restored a clean workspace clippy baseline:
+  - removed unit-struct `::default()` construction from connector tests
+  - kept `store.rs` item ordering compatible with the lint gate after the transactional persistence refactor
+  - re-verified `cargo clippy --all-targets --all-features -- -D warnings` and `cargo test --workspace`
+- Added explicit restart recovery evidence for successful Scenario A tasks:
+  - proved `task get` state and `result_preview` survive restart unchanged
+  - proved recovered trace id, event payloads, and monotonic ordering remain intact after restart
+- Added explicit denied-approval safety coverage:
+  - proved denied restricted tasks remain `blocked` with `approval_denied`
+  - proved denied path emits no success preview or `final_result` artifact
+  - proved CLI surfaces denied state and denial trace details directly
+- Persisted a succeeded-task `result_preview` derived from canonical model output:
+  - successful `task get` protocol records now carry answer preview content
+  - approval-gated tasks keep preview empty until approval transitions them to `succeeded`
+- Surfaced task result previews in CLI output:
+  - `sharo task get` now prints `result_preview=<content|none>`
+  - protocol round-trip and CLI scenario coverage pin the preview field behavior
+  - preview content is percent-encoded so whitespace and newlines cannot break the single-line `key=value` CLI format
+- Hardened `scripts/openai-live-smoke.sh` failure and parsing behavior:
+  - preserves `daemon_log` on readiness failure so diagnostics remain available
+  - safely strips inline TOML comments before reading `model.auth_env_key`
+  - validates `model.auth_env_key` format before indirect environment lookup
+- Wired daemon reasoning policy/context into runtime fit-loop execution:
+  - added `[reasoning_policy]` and `[reasoning_context]` config parsing in `sharo-daemon`
+  - passed policy metadata and static resolver context through kernel reasoning
+  - added daemon and CLI acceptance coverage for fit-loop adjusted success and explicit non-convergent failure
+- Hardened runtime fit-loop failure handling and redaction policy merging:
+  - persisted non-convergent reasoning failures as inspectable failed tasks with trace/artifact records
+  - kept idempotent replay working for persisted failed submit outcomes
+  - merged configured forbidden runtime fields with the built-in default redaction set
+- Refined reasoning failure classification and persisted fit-loop history:
+  - only fit-loop failures are persisted as failed tasks; connector/provider failures still return direct errors
+  - preserved actual fit-loop adjustment history in failed-task trace/artifact records instead of collapsing to zero-iteration failure
+- Restored idempotent replay for submit-time connector and resolver failures:
+  - persisted request-scoped submission errors separately from task records
+  - replayed the original error for duplicate `session_id` + `idempotency_key` submissions without re-running reasoning
 - Added planning docs:
   - `docs/plans/2026-03-04-design-note-alignment-plan.md`
   - `docs/plans/2026-03-04-research-note-alignment-plan.md`
@@ -122,26 +278,26 @@ The format is based on Common Changelog:
   - `crates/sharo-core/tests/runtime_types_tests.rs`
   - `crates/sharo-daemon/tests/scenario_a.rs`
   - `crates/sharo-cli/tests/scenario_a_cli.rs`
-- Added Scenario B policy and approval artifacts for MVP slice 002:
-  - `crates/sharo-core/src/policy.rs`
-  - `crates/sharo-core/tests/policy_tests.rs`
-  - `crates/sharo-daemon/tests/approval_flow.rs`
-  - `crates/sharo-cli/tests/approval_cli.rs`
-- Added Scenario C coordination overlap artifacts for MVP slice 003:
-  - `crates/sharo-core/src/coordination.rs`
-  - `crates/sharo-core/tests/coordination_tests.rs`
-  - `crates/sharo-daemon/tests/coordination_store.rs`
-  - `crates/sharo-daemon/tests/scenario_c_overlap.rs`
-  - `crates/sharo-cli/tests/coordination_cli.rs`
-- Added Scenario D protocol/CLI completion artifacts for MVP slice 004:
-  - `crates/sharo-core/tests/protocol_surface_tests.rs`
-  - `crates/sharo-cli/tests/cli_surface_tests.rs`
-  - `crates/sharo-daemon/tests/idempotency_and_control.rs`
-- Added verification/hardening artifacts for MVP slice 005:
-  - `docs/plans/2026-03-05-mvp-verification-matrix-map.md`
-  - `scripts/tests/test-mvp-matrix-map.bats`
-  - `scripts/tests/test-mvp-gate.bats`
-  - `crates/sharo-daemon/tests/recovery_invariants.rs`
+- Added dedicated MVP matrix mapping quality-gate wrapper:
+  - `scripts/check-mvp-matrix-map.sh`
+- Added MVP verification matrix mapping artifact:
+  - `docs/tasks/mvp-verification-matrix-map.csv`
+- Added explicit binding opacity runtime model:
+  - `BindingVisibility` and `BindingRecord` in `crates/sharo-core/src/runtime_types.rs`
+- Added approval and overlap scenario coverage tests:
+  - `crates/sharo-daemon/tests/scenario_a.rs`
+  - `crates/sharo-cli/tests/scenario_a_cli.rs`
+  - `crates/sharo-core/tests/runtime_types_tests.rs`
+  - `crates/sharo-core/tests/ipc_protocol_tests.rs`
+- Added initial kernel/reasoning/model connector contracts:
+  - `crates/sharo-core/src/kernel.rs`
+  - `crates/sharo-core/src/reasoning.rs`
+  - `crates/sharo-core/src/model_connector.rs`
+  - `crates/sharo-core/src/model_connectors.rs`
+  - `crates/sharo-core/tests/reasoning_connector_tests.rs`
+- Added persisted technical design and implementation planning artifacts for kernel/reasoning rollout:
+  - `docs/plans/2026-03-05-agent-kernel-reasoning-design-plan.md`
+  - `docs/plans/2026-03-05-agent-kernel-reasoning-implementation-plan.md`
 
 ### Changed
 
@@ -185,42 +341,151 @@ The format is based on Common Changelog:
   - `get-trace`
   - `get-artifacts`
 - Marked `TASK-MVP-SLICE-001` as done in task registry.
-- Updated daemon, store, and CLI protocol handling with Scenario B approval operations:
-  - `list-pending-approvals`
-  - `resolve-approval`
-- Marked `TASK-MVP-SLICE-002` as done in task registry.
-- Updated task/read surfaces to include optional coordination summary when overlap conflicts exist.
-- Marked `TASK-MVP-SLICE-003` as done in task registry.
-- Extended protocol with daemon info and task control operations plus explicit mutation acceptance/reason fields.
-- Added CLI `daemon ping`, `task submit --idempotency-key`, and `task cancel` command surface.
-- Added daemon/store semantics for submit idempotency replay and durable task cancellation control.
-- Marked `TASK-MVP-SLICE-004` as done in task registry.
-- Added protocol/daemon/CLI `list-tasks` operation coverage for MVP control surface completeness.
-- Updated `docs/specs/mvp.md` with explicit MVP readiness gate checklist and verification evidence link.
-- Marked `TASK-MVP-SLICE-005` as done in task registry.
 - Updated `Cargo.lock` to include the `serde` dependency used by `sharo-daemon` runtime store serialization.
-- Updated strict docs guidance terminology:
-  - `docs/templates/plan.template.md` and `docs/templates/spec.template.md` now prefer `Unit`/`Invariant`/`Integration`
-  - `Property-based` is explicitly optional and only for generative frameworks
-  - `scripts/doc-lint.sh` now accepts either `Invariant:` (preferred) or legacy `Property:`
-  - `AGENTS.md` strict-profile guidance aligned with the same terminology
-- Improved fast-feedback commit ergonomics without relaxing guardrails:
-  - `scripts/check-fast-feedback.sh` now records content-based marker hashes for changed+untracked paths
-  - `scripts/check-fast-feedback-marker.sh` validates content hash instead of status/index shape
-  - `.githooks/pre-commit` auto-runs `scripts/check-fast-feedback.sh` once when marker is stale/missing, then re-validates marker
-  - added shell tests:
-    - `scripts/tests/test-fast-feedback-marker.bats`
-    - `scripts/tests/test-precommit-fast-feedback.bats`
-- Improved strict docs creation ergonomics:
-  - `scripts/doc-new.sh` supports `--strict-filled` for both `spec` and `plan`
-  - `scripts/doc-start.sh` now uses strict-filled scaffolding by default
-  - `scripts/doc-lint.sh` strict-section failures include guidance to use strict-filled creation commands
-  - updated guidance in `AGENTS.md` and `docs/templates/README.md`
-  - added shell test coverage:
-    - `scripts/tests/test-doc-tools.bats`
-- Improved task-sync ergonomics with deterministic helper tooling:
-  - `scripts/tasks.sh` now supports `--upsert <id>` with field updates/insert (`--type`, `--title`, `--source`, `--status`, `--blocked-by`, `--notes`)
-  - validates status enum and required fields for new task rows
-  - updated `docs/tasks/README.md` usage guidance
-  - added shell test coverage:
-    - `scripts/tests/test-tasks-tooling.bats`
+- Updated policy execution surfaces to expose MVP matrix map gate explicitly:
+  - `.githooks/pre-commit`
+  - `scripts/check-fast-feedback.sh`
+  - `.github/workflows/policy-checks.yml`
+- Extended daemon runtime and protocol for MVP scenario closure:
+  - restricted tasks now become durable `awaiting_approval` with list/resolve APIs
+  - approval resolution is idempotent and updates durable task and trace state
+  - overlap detection records durable conflict/coordination visibility
+  - invalid manifest requests are explicitly blocked with durable reason/evidence
+- Extended CLI surface with approval commands and richer task output:
+  - `sharo approval list`
+  - `sharo approval resolve --approval-id <id> --decision <approve|deny>`
+  - `task get` now reports blocking and coordination summaries
+- Upgraded MVP matrix map Bats gate to enforce:
+  - unique matrix row keys
+  - required row-to-test bindings
+  - referenced test IDs exist in mapped files
+- Updated MVP and task docs for evidence-backed matrix closure:
+  - `docs/specs/mvp.md`
+  - `docs/tasks/README.md`
+  - `docs/tasks/tasks.csv`
+- Updated daemon traces to emit binding opacity evidence:
+  - `binding_created`
+  - `binding_redacted_for_model`
+- Updated matrix evidence mapping for `binding_can_remain_opaque` to `implemented`.
+- Refined protocol/CLI contract split for approvals and coordination visibility to support topical commit history.
+- Finalized dedicated MVP matrix-map quality gate wiring across local hooks, fast-feedback, and CI.
+- Fixed approval-completion artifact lifecycle and trace sequencing consistency in daemon store:
+  - add `final_result` artifact when approval resolution transitions task to `succeeded`
+  - ensure appended trace events use monotonic sequence allocation
+- Hardened daemon idempotency and store safety:
+  - scope idempotency-key replay by session namespace to prevent cross-session task leakage
+  - validate approval decisions strictly (`approve|deny`) and reject malformed values
+  - enforce store file permissions to `0600` even for pre-existing store files
+- Hardened daemon IPC and persistence reliability:
+  - serialize daemon error envelopes through `DaemonResponse` instead of manual JSON interpolation
+  - reject oversized IPC request frames with explicit `request_too_large` error
+  - persist store state atomically via temp-file write and rename to reduce crash-corruption risk
+- Clarified platform support for daemon persistence:
+  - `sharo-daemon` store implementation now explicitly requires Unix targets
+  - non-Unix builds fail fast at compile time instead of providing unmaintained fallback behavior
+- Improved MVP security and conformance for daemon runtime inspection:
+  - enforce Unix socket permissions to `0600` after daemon bind
+  - include `session_id` in trace summaries returned by IPC (`get-trace`)
+  - expose artifact provenance in IPC summaries (`produced_by_step_id`, `produced_by_trace_event_sequence`)
+  - extend daemon/core scenario coverage to assert socket permissions and trace/artifact conformance fields
+- Documented pre-1.0 persisted-state posture:
+  - persisted daemon store schema is intentionally not backward-compatible between unreleased MVP revisions
+- Extracted daemon task execution behind a kernel runtime while preserving current MVP behavior:
+  - daemon now routes `submit-task` and `resolve-approval` through `DaemonKernelRuntime`
+  - store supports route-decision injection via `submit_task_with_route` for behavior-preserving reasoning-engine integration
+- Added first connector implementations behind the unified connector interface:
+  - OpenAI-compatible connector for `/v1/responses` style providers (OpenAI/OpenRouter/Kimi/GLM-compatible endpoints)
+  - local Ollama connector adapter using the same normalized connector contract
+- Added `reqwest` and `serde_json` runtime dependencies to `sharo-core` for provider connector HTTP/JSON support.
+- Hardened OpenAI-compatible connector contract behavior:
+  - enforce `ModelProfile.timeout_ms` for outbound HTTP requests
+  - treat missing/empty provider output text as `ProtocolMismatch` instead of successful empty response
+- Updated task registry with kernel design and implementation tracking rows:
+  - `TASK-KERNEL-DESIGN-001`
+  - `TASK-KERNEL-DESIGN-002`
+  - `TASK-KERNEL-IMPL-001`
+  - `TASK-KERNEL-IMPL-002`
+  - `TASK-KERNEL-IMPL-003`
+- Added daemon TOML runtime configuration support for model connector selection:
+  - `sharo-daemon start --config-path <path>` now loads `[model]` options from TOML
+  - default config lookup path is `~/.config/sharo/daemon.toml` when `--config-path` is omitted
+  - supports provider selection for `deterministic`, `openai`/OpenAI-compatible providers, and `ollama`
+  - validates connector-critical fields (for example non-zero timeout and required base URL for non-deterministic providers)
+- Exposed model-generated content in runtime inspection surfaces:
+  - reasoning now persists model output as `model_output_received` trace events and `model_output` artifacts
+  - `sharo trace get` now prints trace events (sequence, kind, details)
+  - `sharo artifacts list` now prints each artifact record (id, kind, summary, provenance)
+- Added fixed-point reasoning context design and implementation planning artifact:
+  - `docs/plans/2026-03-05-reasoning-context-fixed-point-loop-plan.md`
+  - defines resolve/compose split, policy-fit fixed-point loop, outward subsystem interfaces, and inward filtering/composition interfaces
+  - clarified adjustment execution as an ordered declarative `AdjustmentPlan` collection with explicit apply semantics and iteration traceability
+  - includes a future-integration note that tool call results are treated as runtime context and must pass the same fit/filter policy pipeline
+  - adds near-term concurrency/persistence design for per-key ordering plus single-writer actor sequencing without global hot locks
+- Added Task 1 reasoning-context core interfaces and loop skeleton in `sharo-core`:
+  - new `reasoning_context` module with `TurnScope`, `ContextState`, `AdjustmentPlan`, fit decisions, and bounded fit-loop runner
+  - default no-op composer/fitter/applier implementations for behavior-preserving integration
+  - `IdReasoningEngine` now composes prompt text through default context interfaces while preserving goal-only behavior
+  - added `reasoning_context_tests` covering scope shape, loop termination, non-progress detection, and default compatibility
+- Added Task 2 resolver ports and resolved-context wiring:
+  - new `context_resolvers` module with uniform resolver contract, component provenance, resolver bundle, and local filtering hooks
+  - `ReasoningInput` now carries `session_id`, `turn_id`, and `metadata` for resolver scope and connector pass-through
+  - `IdReasoningEngine` now resolves system/persona/memory/runtime context before model call and returns `resolved_context` in outcome
+  - added `context_resolver_tests` for uniform resolver behavior, deterministic ordering, pre-compose filtering, and resolved-context integration
+- Added Task 3 fit-loop decision persistence and inspection wiring:
+  - `ReasoningOutcome` now carries fit-loop records from the fixed-point loop runner
+  - daemon store persists fit-loop decision trace events (`fit_loop_fitted`/`fit_loop_adjusted`)
+  - daemon store emits `fit_loop_decision` artifacts with provenance links to trace events
+  - daemon and CLI scenario coverage now asserts fit-loop decision visibility in trace and artifacts
+- Fixed post-review compatibility and turn-scoping regressions:
+  - default empty resolved context now preserves goal-only prompt text (no `GOAL:` prefix)
+  - kernel now derives `turn_id` from per-session persisted task history instead of hardcoding `1`
+- Fixed follow-up review findings for replay correctness and fit-loop progress detection:
+  - kernel now checks idempotency replay before invoking reasoning, preventing duplicate model/context execution on replay requests
+  - fit-loop state fingerprinting now uses collision-safe JSON encoding instead of delimiter-based concatenation
+- Hardened fit-loop fingerprint privacy and storage behavior:
+  - `ContextState::state_hash` now returns SHA-256 digests instead of raw serialized context content
+  - prevents sensitive context text from leaking into persisted fit-loop trace fields
+- Added concrete heuristic policy fitting rules for the fixed-point loop:
+  - policy fitter now emits deterministic adjustment plans for runtime redaction, memory-line bounds, and prompt-budget pressure
+  - policy settings can be overridden via reasoning metadata (`policy.max_prompt_chars`, `policy.max_memory_lines`, `policy.forbidden_runtime_fields`)
+- Resolved post-task lint regressions in `sharo-core`:
+  - derive `Default` for `HeuristicPolicyFitter` to satisfy clippy strictness
+  - update `StubClient` tests to instantiate the unit struct directly
+- Added explicit acceptance coverage for fixed-point failure and provider auth failure in connector-backed reasoning tests:
+  - `s2_fit_loop_converges_under_budget_pressure`
+  - `s3_provider_auth_failure_is_explicit_and_non_success`
+  - `s4_non_convergent_fit_loop_fails_with_terminal_reason`
+- Refined reasoning fit failure semantics:
+  - over-budget prompts with no available adjustments now fail via `context_policy_fit_failed` instead of incorrectly reporting `fitted`
+- Added connector execution design and rollout artifacts for bounded worker pools and future adaptive scaling:
+  - `docs/specs/connector-blocking-execution.md`
+  - `docs/plans/2026-03-05-connector-blocking-pool-scaling-plan.md`
+- Updated task registry with connector pool design/plan and staged implementation entries:
+  - `TASK-CONNECTOR-POOL-SPEC-001`
+  - `TASK-CONNECTOR-POOL-PLAN-001`
+  - `TASK-CONNECTOR-POOL-IMPL-001`
+  - `TASK-CONNECTOR-POOL-IMPL-002`
+  - `TASK-CONNECTOR-POOL-IMPL-003`
+- Fixed OpenAI-compatible runtime stability in daemon execution:
+  - connector calls no longer rely on per-request inline blocking-drop behavior in async context
+  - daemon connector path now runs blocking model turns off the async request thread boundary
+- Hardened daemon and CLI scenario tests against user-level default config leakage:
+  - scenario tests now pass explicit deterministic `--config-path` fixtures
+  - prevents local `~/.config/sharo/daemon.toml` from changing test behavior
+- Replaced per-request connector thread spawning with bounded worker-pool execution:
+  - daemon blocking connectors now submit to shared bounded pool (`worker_count=4`, `queue_capacity=64`)
+  - overload/disconnect/worker-failure states are surfaced as explicit connector errors
+- Added configurable connector pool policy surface in daemon config:
+  - new TOML section `[connector_pool]` with `min_threads`, `max_threads`, `queue_capacity`
+  - kernel runtime config now validates pool bounds and queue capacity
+  - pool construction now uses configured policy values
+- Fixed connector pool lifecycle for request handling:
+  - daemon kernel is now constructed once at startup and reused across requests
+  - connector pool is process-shared instead of being recreated per submit/approval request
+- Added adaptive connector pool scaling controls and behavior:
+  - pool policy now includes `scale_up_queue_threshold`, `scale_down_idle_ms`, and `cooldown_ms`
+  - pool scales up under queue pressure and scales down on idle while respecting min/max worker bounds
+  - added daemon unit tests for scale-up, scale-down, and bounds invariants
+- Fixed adaptive pool scaling edge cases:
+  - removed startup `Instant` subtraction path that could panic on extremely large cooldown values
+  - made pending-job accounting race-safe by incrementing before enqueue with rollback on enqueue failure

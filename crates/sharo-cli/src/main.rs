@@ -3,14 +3,30 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand, ValueEnum};
 use sharo_core::client::{RuntimeClient, StubClient};
 use sharo_core::protocol::{
-    ControlTaskRequest, DaemonInfoRequest, DaemonRequest, DaemonResponse, GetArtifactsRequest, GetTaskRequest,
-    GetTraceRequest, ListPendingApprovalsRequest, ListTasksRequest, RegisterSessionRequest,
-    ResolveApprovalRequest, SubmitTaskOpRequest, SubmitTaskRequest, TaskStatusRequest,
+    DaemonRequest, DaemonResponse, GetArtifactsRequest, GetTaskRequest, GetTraceRequest,
+    RegisterSessionRequest, ResolveApprovalRequest, SubmitTaskOpRequest, SubmitTaskRequest,
+    TaskStatusRequest,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 
 const DEFAULT_SOCKET_PATH: &str = "/tmp/sharo-daemon.sock";
+
+fn encode_field_value(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(byte as char);
+            }
+            _ => {
+                encoded.push('%');
+                encoded.push_str(&format!("{byte:02X}"));
+            }
+        }
+    }
+    encoded
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum Transport {
@@ -62,10 +78,6 @@ enum Command {
         #[command(subcommand)]
         command: ApprovalCommand,
     },
-    Daemon {
-        #[command(subcommand)]
-        command: DaemonCliCommand,
-    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -83,15 +95,8 @@ enum TaskCommand {
         goal: String,
         #[arg(long)]
         session_id: Option<String>,
-        #[arg(long)]
-        idempotency_key: Option<String>,
     },
     Get {
-        #[arg(long)]
-        task_id: String,
-    },
-    List,
-    Cancel {
         #[arg(long)]
         task_id: String,
     },
@@ -122,11 +127,6 @@ enum ApprovalCommand {
         #[arg(long)]
         decision: String,
     },
-}
-
-#[derive(Debug, Subcommand)]
-enum DaemonCliCommand {
-    Ping,
 }
 
 fn run_stub(client: &impl RuntimeClient, cli: &Cli) {
@@ -234,69 +234,18 @@ async fn run_ipc(cli: &Cli) -> Result<(), String> {
             }
         }
         Command::Task {
-            command:
-                TaskCommand::Submit {
-                    goal,
-                    session_id,
-                    idempotency_key,
-                },
+            command: TaskCommand::Submit { goal, session_id },
         } => {
             let request = DaemonRequest::SubmitTask(SubmitTaskOpRequest {
                 session_id: session_id.clone(),
                 goal: goal.clone(),
-                idempotency_key: idempotency_key.clone(),
+                idempotency_key: None,
             });
             match send_ipc(&cli.socket_path, &request).await? {
                 DaemonResponse::SubmitTask(response) => {
                     println!(
-                        "task_id={} task_state={} accepted={} reason={} summary={}",
-                        response.task_id,
-                        response.task_state,
-                        response.accepted,
-                        response.reason.as_deref().unwrap_or("-"),
-                        response.summary
-                    );
-                    Ok(())
-                }
-                DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
-                other => Err(format!("unexpected_response={:?}", other)),
-            }
-        }
-        Command::Task {
-            command: TaskCommand::List,
-        } => {
-            let request = DaemonRequest::ListTasks(ListTasksRequest {});
-            match send_ipc(&cli.socket_path, &request).await? {
-                DaemonResponse::ListTasks(response) => {
-                    println!("tasks={}", response.tasks.len());
-                    for task in response.tasks {
-                        println!(
-                            "task_id={} task_state={} current_step_summary={}",
-                            task.task_id, task.task_state, task.current_step_summary
-                        );
-                    }
-                    Ok(())
-                }
-                DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
-                other => Err(format!("unexpected_response={:?}", other)),
-            }
-        }
-        Command::Task {
-            command: TaskCommand::Cancel { task_id },
-        } => {
-            let request = DaemonRequest::ControlTask(ControlTaskRequest {
-                task_id: task_id.clone(),
-                action: "cancel".to_string(),
-            });
-            match send_ipc(&cli.socket_path, &request).await? {
-                DaemonResponse::ControlTask(response) => {
-                    println!(
-                        "task_id={} task_state={} accepted={} reason={} summary={}",
-                        response.task_id,
-                        response.task_state,
-                        response.accepted,
-                        response.reason,
-                        response.summary
+                        "task_id={} task_state={} summary={}",
+                        response.task_id, response.task_state, response.summary
                     );
                     Ok(())
                 }
@@ -313,20 +262,23 @@ async fn run_ipc(cli: &Cli) -> Result<(), String> {
             match send_ipc(&cli.socket_path, &request).await? {
                 DaemonResponse::GetTask(response) => {
                     println!(
-                        "task_id={} task_state={} current_step_summary={} blocking_reason={} coordination_summary={}",
+                        "task_id={} task_state={} current_step_summary={} blocking_reason={} coordination_summary={} result_preview={}",
                         response.task.task_id,
                         response.task.task_state,
                         response.task.current_step_summary,
                         response
                             .task
                             .blocking_reason
-                            .as_deref()
-                            .unwrap_or("-"),
+                            .unwrap_or_else(|| "none".to_string()),
                         response
                             .task
                             .coordination_summary
-                            .as_deref()
-                            .unwrap_or("-")
+                            .unwrap_or_else(|| "none".to_string()),
+                        response
+                            .task
+                            .result_preview
+                            .map(|value| encode_field_value(&value))
+                            .unwrap_or_else(|| "none".to_string())
                     );
                     Ok(())
                 }
@@ -343,11 +295,18 @@ async fn run_ipc(cli: &Cli) -> Result<(), String> {
             match send_ipc(&cli.socket_path, &request).await? {
                 DaemonResponse::GetTrace(response) => {
                     println!(
-                        "trace_id={} task_id={} events={}",
+                        "trace_id={} task_id={} session_id={} events={}",
                         response.trace.trace_id,
                         response.trace.task_id,
+                        response.trace.session_id,
                         response.trace.events.len()
                     );
+                    for event in response.trace.events {
+                        println!(
+                            "event_sequence={} event_kind={} details={}",
+                            event.event_sequence, event.event_kind, event.details
+                        );
+                    }
                     Ok(())
                 }
                 DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
@@ -363,6 +322,16 @@ async fn run_ipc(cli: &Cli) -> Result<(), String> {
             match send_ipc(&cli.socket_path, &request).await? {
                 DaemonResponse::GetArtifacts(response) => {
                     println!("task_id={} artifacts={}", task_id, response.artifacts.len());
+                    for artifact in response.artifacts {
+                        println!(
+                            "artifact_id={} artifact_kind={} summary={} produced_by_step_id={} produced_by_trace_event_sequence={}",
+                            artifact.artifact_id,
+                            artifact.artifact_kind,
+                            artifact.summary,
+                            artifact.produced_by_step_id,
+                            artifact.produced_by_trace_event_sequence
+                        );
+                    }
                     Ok(())
                 }
                 DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
@@ -372,18 +341,14 @@ async fn run_ipc(cli: &Cli) -> Result<(), String> {
         Command::Approval {
             command: ApprovalCommand::List,
         } => {
-            let request = DaemonRequest::ListPendingApprovals(ListPendingApprovalsRequest {});
+            let request = DaemonRequest::ListPendingApprovals;
             match send_ipc(&cli.socket_path, &request).await? {
                 DaemonResponse::ListPendingApprovals(response) => {
                     println!("pending_approvals={}", response.approvals.len());
                     for approval in response.approvals {
                         println!(
-                            "approval_id={} task_id={} step_id={} state={} reason={}",
-                            approval.approval_id,
-                            approval.task_id,
-                            approval.step_id,
-                            approval.state,
-                            approval.reason
+                            "approval_id={} task_id={} state={} reason={}",
+                            approval.approval_id, approval.task_id, approval.state, approval.reason
                         );
                     }
                     Ok(())
@@ -406,22 +371,9 @@ async fn run_ipc(cli: &Cli) -> Result<(), String> {
             match send_ipc(&cli.socket_path, &request).await? {
                 DaemonResponse::ResolveApproval(response) => {
                     println!(
-                        "approval_id={} task_id={} state={} summary={}",
-                        response.approval_id, response.task_id, response.state, response.summary
+                        "approval_id={} task_id={} state={}",
+                        response.approval_id, response.task_id, response.state
                     );
-                    Ok(())
-                }
-                DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
-                other => Err(format!("unexpected_response={:?}", other)),
-            }
-        }
-        Command::Daemon {
-            command: DaemonCliCommand::Ping,
-        } => {
-            let request = DaemonRequest::DaemonInfo(DaemonInfoRequest {});
-            match send_ipc(&cli.socket_path, &request).await? {
-                DaemonResponse::DaemonInfo(response) => {
-                    println!("daemon_state={} summary={}", response.daemon_state, response.summary);
                     Ok(())
                 }
                 DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
@@ -446,5 +398,23 @@ async fn main() {
     if let Err(error) = result {
         eprintln!("sharo_cli_error={}", error);
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::encode_field_value;
+
+    #[test]
+    fn encode_field_value_preserves_single_token_output() {
+        assert_eq!(
+            encode_field_value("hello world\nnext=line"),
+            "hello%20world%0Anext%3Dline"
+        );
+    }
+
+    #[test]
+    fn encode_field_value_keeps_safe_ascii_readable() {
+        assert_eq!(encode_field_value("deterministic-response"), "deterministic-response");
     }
 }
