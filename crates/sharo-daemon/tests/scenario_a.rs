@@ -4,14 +4,15 @@ use std::net::TcpListener;
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use sharo_core::protocol::{
-    ArtifactSummary, DaemonRequest, DaemonResponse, GetArtifactsRequest, GetTaskRequest, GetTraceRequest,
-    ListPendingApprovalsResponse, RegisterSessionRequest, ResolveApprovalRequest, SubmitTaskOpRequest,
+    ArtifactSummary, DaemonRequest, DaemonResponse, GetArtifactsRequest, GetTaskRequest,
+    GetTraceRequest, ListPendingApprovalsResponse, RegisterSessionRequest, ResolveApprovalRequest,
+    SubmitTaskOpRequest,
 };
 
 fn unique_path(prefix: &str, suffix: &str) -> PathBuf {
@@ -151,7 +152,9 @@ fn start_delayed_response_server(delay: Duration) -> (String, thread::JoinHandle
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind delayed response server");
     let address = format!("http://{}", listener.local_addr().expect("local addr"));
     let handle = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().expect("accept delayed response connection");
+        let (mut stream, _) = listener
+            .accept()
+            .expect("accept delayed response connection");
         let cloned = stream.try_clone().expect("clone delayed response stream");
         let mut reader = BufReader::new(cloned);
         let mut line = String::new();
@@ -181,13 +184,17 @@ fn start_status_response_server(status_line: &str) -> (String, thread::JoinHandl
     let address = format!("http://{}", listener.local_addr().expect("local addr"));
     let status_line = status_line.to_string();
     let handle = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().expect("accept status response connection");
+        let (mut stream, _) = listener
+            .accept()
+            .expect("accept status response connection");
         let cloned = stream.try_clone().expect("clone status response stream");
         let mut reader = BufReader::new(cloned);
         let mut line = String::new();
         loop {
             line.clear();
-            let bytes = reader.read_line(&mut line).expect("read status response request");
+            let bytes = reader
+                .read_line(&mut line)
+                .expect("read status response request");
             if bytes == 0 || line == "\r\n" {
                 break;
             }
@@ -234,7 +241,9 @@ fn start_counting_response_server(
     let handle = thread::spawn(move || {
         let mut workers = Vec::new();
         for _ in 0..expected_requests {
-            let (mut stream, _) = listener.accept().expect("accept counting response connection");
+            let (mut stream, _) = listener
+                .accept()
+                .expect("accept counting response connection");
             let active = Arc::clone(&active_for_thread);
             let max_observed = Arc::clone(&max_observed_for_thread);
             workers.push(thread::spawn(move || {
@@ -272,6 +281,63 @@ fn start_counting_response_server(
     });
 
     (address, max_observed, handle)
+}
+
+fn start_observed_request_server(
+    delay: Duration,
+    accept_window: Duration,
+) -> (String, Arc<AtomicUsize>, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind observed response server");
+    listener
+        .set_nonblocking(true)
+        .expect("set observed listener nonblocking");
+    let address = format!("http://{}", listener.local_addr().expect("local addr"));
+    let observed = Arc::new(AtomicUsize::new(0));
+    let observed_for_thread = Arc::clone(&observed);
+    let handle = thread::spawn(move || {
+        let deadline = std::time::Instant::now() + accept_window;
+        let mut workers = Vec::new();
+        while std::time::Instant::now() < deadline {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    observed_for_thread.fetch_add(1, Ordering::SeqCst);
+                    workers.push(thread::spawn(move || {
+                        let cloned = stream.try_clone().expect("clone observed response stream");
+                        let mut reader = BufReader::new(cloned);
+                        let mut line = String::new();
+                        loop {
+                            line.clear();
+                            let bytes = reader.read_line(&mut line).expect("read observed request");
+                            if bytes == 0 || line == "\r\n" {
+                                break;
+                            }
+                        }
+
+                        thread::sleep(delay);
+                        let body = "{\"id\":\"resp-observed\",\"output_text\":\"observed submit complete\"}";
+                        write!(
+                            stream,
+                            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                            body.len(),
+                            body
+                        )
+                        .expect("write observed response");
+                        stream.flush().expect("flush observed response");
+                    }));
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => panic!("accept observed response connection: {error}"),
+            }
+        }
+
+        for worker in workers {
+            worker.join().expect("join observed response worker");
+        }
+    });
+
+    (address, observed, handle)
 }
 
 fn send_request_on_stream(stream: UnixStream, request: &DaemonRequest) -> DaemonResponse {
@@ -424,14 +490,31 @@ fn scenario_a_read_task_succeeds_with_verification_artifact() {
         DaemonResponse::GetTrace(r) => {
             assert!(r.trace.events.len() >= 3);
             assert_eq!(r.trace.session_id, session_id);
-            assert!(r.trace.events.iter().any(|e| e.event_kind == "route_decision"));
-            assert!(r.trace.events.iter().any(|e| e.event_kind == "fit_loop_fitted"));
             assert!(
-                r.trace.events
+                r.trace
+                    .events
                     .iter()
-                    .any(|e| e.event_kind == "model_output_received" && e.details.contains("deterministic-response"))
+                    .any(|e| e.event_kind == "route_decision")
             );
-            assert!(r.trace.events.iter().any(|e| e.event_kind == "binding_created"));
+            assert!(
+                r.trace
+                    .events
+                    .iter()
+                    .any(|e| e.event_kind == "fit_loop_fitted")
+            );
+            assert!(
+                r.trace
+                    .events
+                    .iter()
+                    .any(|e| e.event_kind == "model_output_received"
+                        && e.details.contains("deterministic-response"))
+            );
+            assert!(
+                r.trace
+                    .events
+                    .iter()
+                    .any(|e| e.event_kind == "binding_created")
+            );
             assert!(
                 r.trace
                     .events
@@ -459,12 +542,9 @@ fn scenario_a_read_task_succeeds_with_verification_artifact() {
             assert!(kinds.contains(&"model_output"));
             assert!(kinds.contains(&"verification_result"));
             assert!(kinds.contains(&"final_result"));
-            assert!(
-                r.artifacts.iter().any(|a| {
-                    a.artifact_kind == "model_output"
-                        && a.summary.contains("deterministic-response")
-                })
-            );
+            assert!(r.artifacts.iter().any(|a| {
+                a.artifact_kind == "model_output" && a.summary.contains("deterministic-response")
+            }));
             for artifact in &r.artifacts {
                 assert!(!artifact.produced_by_step_id.is_empty());
                 assert!(artifact.produced_by_trace_event_sequence > 0);
@@ -563,10 +643,7 @@ fn idempotent_retry_after_save_failure_creates_one_committed_task() {
         .expect("tasks map");
     assert_eq!(task_count, 1, "expected exactly one committed task");
 
-    match send_request(
-        &socket,
-        &DaemonRequest::GetTask(GetTaskRequest { task_id }),
-    ) {
+    match send_request(&socket, &DaemonRequest::GetTask(GetTaskRequest { task_id })) {
         DaemonResponse::GetTask(response) => {
             assert_eq!(response.task.session_id, "session-save-retry");
             assert_eq!(response.task.task_state, "succeeded");
@@ -590,8 +667,7 @@ fn daemon_burst_submit_never_exceeds_configured_connector_workers() {
     let max_threads = 2;
     let (base_url, max_observed, server_handle) =
         start_counting_response_server(Duration::from_millis(120), burst_count);
-    let config =
-        write_bounded_openai_config("sharo-scenario-a-burst", &base_url, 1, max_threads);
+    let config = write_bounded_openai_config("sharo-scenario-a-burst", &base_url, 1, max_threads);
 
     let mut daemon = Command::new(daemon_bin())
         .args([
@@ -651,12 +727,7 @@ fn concurrent_slow_submits_make_parallel_upstream_progress() {
     let store = unique_path("sharo-scenario-submit-parallel", ".json");
     let (base_url, max_observed, server_handle) =
         start_counting_response_server(Duration::from_millis(180), 2);
-    let config = write_bounded_openai_config(
-        "sharo-scenario-submit-parallel",
-        &base_url,
-        1,
-        2,
-    );
+    let config = write_bounded_openai_config("sharo-scenario-submit-parallel", &base_url, 1, 2);
 
     let mut daemon = Command::new(daemon_bin())
         .args([
@@ -747,6 +818,87 @@ fn concurrent_slow_submits_make_parallel_upstream_progress() {
     let _ = fs::remove_file(&socket);
     let _ = fs::remove_file(&store);
     let _ = fs::remove_file(&config);
+}
+
+#[test]
+fn duplicate_submit_during_inflight_reasoning_does_not_double_execute_provider() {
+    let socket = unique_path("sharo-scenario-duplicate-submit", ".sock");
+    let store = unique_path("sharo-scenario-duplicate-submit", ".json");
+    let (base_url, observed_requests, server_thread) =
+        start_observed_request_server(Duration::from_millis(180), Duration::from_millis(450));
+    let config = write_slow_openai_config("sharo-scenario-duplicate-submit", &base_url);
+
+    let mut daemon = Command::new(daemon_bin())
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+            "--config-path",
+            config.to_str().expect("config path"),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let session_id = match send_request(
+        &socket,
+        &DaemonRequest::RegisterSession(RegisterSessionRequest {
+            session_label: "scenario-duplicate-submit".to_string(),
+        }),
+    ) {
+        DaemonResponse::RegisterSession(r) => r.session_id,
+        other => panic!("unexpected response: {other:?}"),
+    };
+
+    let duplicate_request = SubmitTaskOpRequest {
+        session_id: Some(session_id),
+        goal: "duplicate slow submit".to_string(),
+        idempotency_key: Some("idem-duplicate-submit".to_string()),
+    };
+
+    let socket_a = socket.clone();
+    let request_a = duplicate_request.clone();
+    let submit_a =
+        thread::spawn(move || send_request(&socket_a, &DaemonRequest::SubmitTask(request_a)));
+
+    thread::sleep(Duration::from_millis(40));
+
+    let socket_b = socket.clone();
+    let request_b = duplicate_request.clone();
+    let submit_b =
+        thread::spawn(move || send_request(&socket_b, &DaemonRequest::SubmitTask(request_b)));
+
+    let response_a = submit_a.join().expect("submit a join");
+    let response_b = submit_b.join().expect("submit b join");
+
+    let mut task_responses = Vec::new();
+    let mut error_messages = Vec::new();
+    for response in [response_a, response_b] {
+        match response {
+            DaemonResponse::SubmitTask(r) => task_responses.push(r),
+            DaemonResponse::Error { message } => error_messages.push(message),
+            other => panic!("unexpected submit response: {other:?}"),
+        }
+    }
+
+    assert_eq!(
+        observed_requests.load(Ordering::SeqCst),
+        1,
+        "duplicate in-flight submit should not trigger a second provider call",
+    );
+    assert_eq!(task_responses.len(), 1);
+    assert_eq!(error_messages.len(), 1);
+    assert!(error_messages[0].contains("submit_in_progress"));
+
+    daemon.kill().expect("kill daemon");
+    let _ = daemon.wait();
+    server_thread.join().expect("join observed server");
+    let _ = fs::remove_file(socket);
+    let _ = fs::remove_file(store);
+    let _ = fs::remove_file(config);
 }
 
 #[test]
@@ -925,7 +1077,10 @@ fn scenario_b_pending_approval_survives_restart_and_can_be_resolved() {
 
     let approval_id = match send_request(&socket, &DaemonRequest::ListPendingApprovals) {
         DaemonResponse::ListPendingApprovals(ListPendingApprovalsResponse { approvals }) => {
-            let p = approvals.iter().find(|a| a.task_id == task_id).expect("approval for task");
+            let p = approvals
+                .iter()
+                .find(|a| a.task_id == task_id)
+                .expect("approval for task");
             assert_eq!(p.state, "pending");
             p.approval_id.clone()
         }
@@ -1176,7 +1331,12 @@ fn scenario_b_denied_approval_blocks_without_success_records() {
             let last = r.trace.events.last().expect("trace event");
             assert_eq!(last.event_kind, "approval_resolved");
             assert_eq!(last.details, "denied");
-            assert!(!r.trace.events.iter().any(|e| e.event_kind == "task_succeeded"));
+            assert!(
+                !r.trace
+                    .events
+                    .iter()
+                    .any(|e| e.event_kind == "task_succeeded")
+            );
             assert_trace_monotonic(&r.trace);
         }
         other => panic!("unexpected response: {other:?}"),
@@ -1267,9 +1427,24 @@ fn scenario_s2_fit_loop_adjustment_is_visible_in_runtime_records() {
         }),
     ) {
         DaemonResponse::GetTrace(r) => {
-            assert!(r.trace.events.iter().any(|e| e.event_kind == "fit_loop_adjusted"));
-            assert!(r.trace.events.iter().any(|e| e.event_kind == "fit_loop_fitted"));
-            assert!(r.trace.events.iter().any(|e| e.event_kind == "model_output_received"));
+            assert!(
+                r.trace
+                    .events
+                    .iter()
+                    .any(|e| e.event_kind == "fit_loop_adjusted")
+            );
+            assert!(
+                r.trace
+                    .events
+                    .iter()
+                    .any(|e| e.event_kind == "fit_loop_fitted")
+            );
+            assert!(
+                r.trace
+                    .events
+                    .iter()
+                    .any(|e| e.event_kind == "model_output_received")
+            );
             assert_trace_monotonic(&r.trace);
         }
         other => panic!("unexpected response: {other:?}"),
@@ -1286,7 +1461,11 @@ fn scenario_s2_fit_loop_adjustment_is_visible_in_runtime_records() {
                 a.artifact_kind == "fit_loop_decision"
                     && a.summary.contains("final_decision=fitted")
             }));
-            assert!(r.artifacts.iter().any(|a| a.artifact_kind == "final_result"));
+            assert!(
+                r.artifacts
+                    .iter()
+                    .any(|a| a.artifact_kind == "final_result")
+            );
         }
         other => panic!("unexpected response: {other:?}"),
     }
@@ -1386,9 +1565,24 @@ fn scenario_s4_non_convergent_fit_loop_fails_without_success_records() {
         }),
     ) {
         DaemonResponse::GetTrace(r) => {
-            assert!(r.trace.events.iter().any(|e| e.event_kind == "fit_loop_adjusted"));
-            assert!(r.trace.events.iter().any(|e| e.event_kind == "fit_loop_failed"));
-            assert!(!r.trace.events.iter().any(|e| e.event_kind == "model_output_received"));
+            assert!(
+                r.trace
+                    .events
+                    .iter()
+                    .any(|e| e.event_kind == "fit_loop_adjusted")
+            );
+            assert!(
+                r.trace
+                    .events
+                    .iter()
+                    .any(|e| e.event_kind == "fit_loop_failed")
+            );
+            assert!(
+                !r.trace
+                    .events
+                    .iter()
+                    .any(|e| e.event_kind == "model_output_received")
+            );
             assert_trace_monotonic(&r.trace);
         }
         other => panic!("unexpected response: {other:?}"),
@@ -1399,7 +1593,11 @@ fn scenario_s4_non_convergent_fit_loop_fails_without_success_records() {
         &DaemonRequest::GetArtifacts(GetArtifactsRequest { task_id }),
     ) {
         DaemonResponse::GetArtifacts(r) => {
-            let kinds: Vec<&str> = r.artifacts.iter().map(|a| a.artifact_kind.as_str()).collect();
+            let kinds: Vec<&str> = r
+                .artifacts
+                .iter()
+                .map(|a| a.artifact_kind.as_str())
+                .collect();
             assert!(kinds.contains(&"fit_loop_decision"));
             assert!(kinds.contains(&"failure_record"));
             assert!(!kinds.contains(&"model_output"));
@@ -1688,7 +1886,12 @@ fn scenario_c_overlap_visibility_survives_restart() {
     ) {
         DaemonResponse::GetTrace(r) => {
             assert_eq!(r.trace.session_id, "session-000002");
-            assert!(r.trace.events.iter().any(|e| e.event_kind == "conflict_detected"));
+            assert!(
+                r.trace
+                    .events
+                    .iter()
+                    .any(|e| e.event_kind == "conflict_detected")
+            );
             assert_trace_monotonic(&r.trace);
         }
         other => panic!("unexpected response: {other:?}"),
@@ -1925,7 +2128,11 @@ fn store_file_permissions_are_restricted() {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mode = fs::metadata(&store).expect("store metadata").permissions().mode() & 0o777;
+        let mode = fs::metadata(&store)
+            .expect("store metadata")
+            .permissions()
+            .mode()
+            & 0o777;
         assert_eq!(mode, 0o600);
     }
 

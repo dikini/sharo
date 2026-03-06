@@ -1,3 +1,5 @@
+#[cfg(test)]
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::fs;
 #[cfg(unix)]
@@ -6,8 +8,6 @@ use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
-#[cfg(test)]
-use std::cell::Cell;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(not(unix))]
@@ -39,11 +39,18 @@ struct PersistedState {
     resource_claims: BTreeMap<String, Vec<String>>,
     idempotency_keys: BTreeMap<String, String>,
     idempotency_failures: BTreeMap<String, String>,
+    in_flight_idempotency_keys: BTreeMap<String, InFlightIdempotencyReservation>,
     next_session_id: u64,
     next_task_id: u64,
+    next_turn_id_by_session: BTreeMap<String, u64>,
     next_approval_id: u64,
     next_conflict_id: u64,
     next_binding_id: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct InFlightIdempotencyReservation {
+    task_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -66,8 +73,10 @@ impl Default for PersistedState {
             resource_claims: BTreeMap::new(),
             idempotency_keys: BTreeMap::new(),
             idempotency_failures: BTreeMap::new(),
+            in_flight_idempotency_keys: BTreeMap::new(),
             next_session_id: 1,
             next_task_id: 1,
+            next_turn_id_by_session: BTreeMap::new(),
             next_approval_id: 1,
             next_conflict_id: 1,
             next_binding_id: 1,
@@ -78,8 +87,6 @@ impl Default for PersistedState {
 pub struct Store {
     path: PathBuf,
     state: PersistedState,
-    next_task_hint: u64,
-    next_turn_hint_by_session: BTreeMap<String, u64>,
 }
 
 pub enum SubmitReplay {
@@ -119,39 +126,31 @@ impl Store {
         {
             return Ok(SubmitPreparationOutcome::Replay(replay));
         }
-        let task_id_sequence_hint = self.reserve_next_task_hint();
-        Ok(SubmitPreparationOutcome::Ready(SubmitPreparation {
-            task_id_hint: format!("task-{:06}", task_id_sequence_hint),
-            task_id_sequence_hint,
-            session_id_hint: session_id_hint.clone(),
-            turn_id_hint: self.reserve_next_turn_hint(&session_id_hint),
-        }))
-    }
 
-    fn reserve_next_task_hint(&mut self) -> u64 {
-        let next = self.next_task_hint;
-        self.next_task_hint += 1;
-        next
-    }
+        let idempotency_key = request.idempotency_key.as_deref();
+        self.commit_mutation(|state| {
+            let task_id_sequence_hint = state.next_task_id;
+            state.next_task_id += 1;
+            let turn_id_hint = reserve_next_turn_hint(state, &session_id_hint);
+            let task_id_hint = format!("task-{:06}", task_id_sequence_hint);
 
-    fn reserve_next_turn_hint(&mut self, session_id: &str) -> u64 {
-        let next_turn = self
-            .next_turn_hint_by_session
-            .get(session_id)
-            .copied()
-            .unwrap_or_else(|| self.next_turn_id_for_session(session_id));
-        self.next_turn_hint_by_session
-            .insert(session_id.to_string(), next_turn + 1);
-        next_turn
-    }
+            if let Some(key) = idempotency_key {
+                let namespaced = namespaced_idempotency_key(&session_id_hint, key);
+                state.in_flight_idempotency_keys.insert(
+                    namespaced,
+                    InFlightIdempotencyReservation {
+                        task_id: task_id_hint.clone(),
+                    },
+                );
+            }
 
-    pub fn next_turn_id_for_session(&self, session_id: &str) -> u64 {
-        self.state
-            .tasks
-            .values()
-            .filter(|task| task.session_id == session_id)
-            .count() as u64
-            + 1
+            Ok(SubmitPreparationOutcome::Ready(SubmitPreparation {
+                task_id_hint,
+                task_id_sequence_hint,
+                session_id_hint: session_id_hint.clone(),
+                turn_id_hint,
+            }))
+        })
     }
 
     pub fn replay_by_idempotency(
@@ -162,9 +161,15 @@ impl Store {
         let Some(key) = idempotency_key else {
             return Ok(None);
         };
-        let namespaced = format!("{}:{}", session_id, key);
+        let namespaced = namespaced_idempotency_key(session_id, key);
         if let Some(message) = self.state.idempotency_failures.get(&namespaced) {
             return Ok(Some(SubmitReplay::Error(message.clone())));
+        }
+        if let Some(reservation) = self.state.in_flight_idempotency_keys.get(&namespaced) {
+            return Ok(Some(SubmitReplay::Error(format!(
+                "submit_in_progress task_id={}",
+                reservation.task_id
+            ))));
         }
         let Some(existing_task_id) = self.state.idempotency_keys.get(&namespaced) else {
             return Ok(None);
@@ -190,8 +195,9 @@ impl Store {
         let Some(key) = idempotency_key else {
             return Ok(());
         };
-        let namespaced = format!("{}:{}", session_id, key);
+        let namespaced = namespaced_idempotency_key(session_id, key);
         self.commit_mutation(|state| {
+            state.in_flight_idempotency_keys.remove(&namespaced);
             state
                 .idempotency_failures
                 .insert(namespaced, message.to_string());
@@ -205,8 +211,6 @@ impl Store {
             return Ok(Self {
                 path,
                 state: PersistedState::default(),
-                next_task_hint: PersistedState::default().next_task_id,
-                next_turn_hint_by_session: BTreeMap::new(),
             });
         }
 
@@ -215,13 +219,14 @@ impl Store {
 
         let state = serde_json::from_str::<PersistedState>(&content)
             .map_err(|e| format!("store_parse_failed path={} error={}", path.display(), e))?;
-
-        Ok(Self {
-            path,
-            next_task_hint: state.next_task_id,
-            next_turn_hint_by_session: BTreeMap::new(),
-            state,
-        })
+        let mut store = Self { path, state };
+        if recover_stale_in_flight_idempotency(&mut store.state) {
+            match store.save_state(&store.state)? {
+                SaveStateOutcome::Clean => {}
+                SaveStateOutcome::DurabilityError(message) => return Err(message),
+            }
+        }
+        Ok(store)
     }
 
     fn save_state(&self, state: &PersistedState) -> Result<SaveStateOutcome, String> {
@@ -240,7 +245,12 @@ impl Store {
             .duration_since(UNIX_EPOCH)
             .map_err(|e| format!("store_time_failed error={}", e))?
             .as_nanos();
-        let tmp_path = parent.join(format!(".{}.tmp-{}-{}", file_name, std::process::id(), nanos));
+        let tmp_path = parent.join(format!(
+            ".{}.tmp-{}-{}",
+            file_name,
+            std::process::id(),
+            nanos
+        ));
 
         #[cfg(unix)]
         {
@@ -249,13 +259,18 @@ impl Store {
                 .create_new(true)
                 .mode(0o600)
                 .open(&tmp_path)
-                .map_err(|e| format!("store_open_failed path={} error={}", tmp_path.display(), e))?;
-            file.write_all(data.as_bytes())
-                .map_err(|e| format!("store_write_failed path={} error={}", tmp_path.display(), e))?;
-            file.sync_all()
-                .map_err(|e| format!("store_sync_failed path={} error={}", tmp_path.display(), e))?;
-            fs::set_permissions(&tmp_path, fs::Permissions::from_mode(0o600))
-                .map_err(|e| format!("store_chmod_failed path={} error={}", tmp_path.display(), e))?;
+                .map_err(|e| {
+                    format!("store_open_failed path={} error={}", tmp_path.display(), e)
+                })?;
+            file.write_all(data.as_bytes()).map_err(|e| {
+                format!("store_write_failed path={} error={}", tmp_path.display(), e)
+            })?;
+            file.sync_all().map_err(|e| {
+                format!("store_sync_failed path={} error={}", tmp_path.display(), e)
+            })?;
+            fs::set_permissions(&tmp_path, fs::Permissions::from_mode(0o600)).map_err(|e| {
+                format!("store_chmod_failed path={} error={}", tmp_path.display(), e)
+            })?;
             fs::rename(&tmp_path, &self.path).map_err(|e| {
                 format!(
                     "store_rename_failed src={} dst={} error={}",
@@ -314,8 +329,13 @@ impl Store {
         let namespaced_idempotency_key = request
             .idempotency_key
             .as_deref()
-            .map(|key| format!("{}:{}", session_id, key));
-        if let Some(replay) = self.replay_by_idempotency(&session_id, request.idempotency_key.as_deref())? {
+            .map(|key| namespaced_idempotency_key(&session_id, key));
+        if !self.owns_in_flight_idempotency(
+            namespaced_idempotency_key.as_deref(),
+            &preparation.task_id_hint,
+        ) && let Some(replay) =
+            self.replay_by_idempotency(&session_id, request.idempotency_key.as_deref())?
+        {
             return match replay {
                 SubmitReplay::Task(response) => Ok(response),
                 SubmitReplay::Error(message) => Err(format!(
@@ -369,7 +389,8 @@ impl Store {
                         reason: "policy require_approval".to_string(),
                     },
                 );
-                task.current_step_summary = "awaiting approval for restricted capability".to_string();
+                task.current_step_summary =
+                    "awaiting approval for restricted capability".to_string();
                 task.blocking_reason = Some(format!("approval_required approval_id={approval_id}"));
             }
 
@@ -430,7 +451,10 @@ impl Store {
                     push_trace_event(
                         &mut trace,
                         "binding_created",
-                        &format!("binding_id={} visibility=approval_gated", binding.binding_id),
+                        &format!(
+                            "binding_id={} visibility=approval_gated",
+                            binding.binding_id
+                        ),
                     );
                     push_trace_event(
                         &mut trace,
@@ -473,7 +497,10 @@ impl Store {
             }
 
             if let Some(resource_key) = resource {
-                let claim_entry = state.resource_claims.entry(resource_key.clone()).or_default();
+                let claim_entry = state
+                    .resource_claims
+                    .entry(resource_key.clone())
+                    .or_default();
                 if !claim_entry.is_empty() {
                     let conflict_id = format!("conflict-{:06}", state.next_conflict_id);
                     state.next_conflict_id += 1;
@@ -484,7 +511,11 @@ impl Store {
                     push_trace_event(
                         &mut trace,
                         "conflict_detected",
-                        &format!("resource={} related_tasks={}", resource_key, claim_entry.join(",")),
+                        &format!(
+                            "resource={} related_tasks={}",
+                            resource_key,
+                            claim_entry.join(",")
+                        ),
                     );
                 }
                 claim_entry.push(task_id.clone());
@@ -500,7 +531,10 @@ impl Store {
                         format!("selected {} route", route_decision_details)
                     },
                     produced_by_step_id: step_id.clone(),
-                    produced_by_trace_event_sequence: event_sequence_by_kind(&trace, "route_decision"),
+                    produced_by_trace_event_sequence: event_sequence_by_kind(
+                        &trace,
+                        "route_decision",
+                    ),
                 },
                 ArtifactSummary {
                     artifact_id: format!("artifact-{}-fit-loop", task_id),
@@ -509,10 +543,7 @@ impl Store {
                     produced_by_step_id: step_id.clone(),
                     produced_by_trace_event_sequence: event_sequence_by_kind(
                         &trace,
-                        if fit_loop_records
-                            .last()
-                            .map(|r| r.decision.as_str())
-                            == Some("adjusted")
+                        if fit_loop_records.last().map(|r| r.decision.as_str()) == Some("adjusted")
                         {
                             "fit_loop_adjusted"
                         } else {
@@ -570,7 +601,10 @@ impl Store {
                     artifact_kind: "verification_result".to_string(),
                     summary: "restricted step is approval gated".to_string(),
                     produced_by_step_id: step_id.clone(),
-                    produced_by_trace_event_sequence: event_sequence_by_kind(&trace, "approval_requested"),
+                    produced_by_trace_event_sequence: event_sequence_by_kind(
+                        &trace,
+                        "approval_requested",
+                    ),
                 });
             }
             if task.coordination_summary.is_some() {
@@ -579,7 +613,10 @@ impl Store {
                     artifact_kind: "verification_result".to_string(),
                     summary: "coordination summary recorded".to_string(),
                     produced_by_step_id: step_id.clone(),
-                    produced_by_trace_event_sequence: event_sequence_by_kind(&trace, "conflict_detected"),
+                    produced_by_trace_event_sequence: event_sequence_by_kind(
+                        &trace,
+                        "conflict_detected",
+                    ),
                 });
             }
 
@@ -588,7 +625,10 @@ impl Store {
             state.artifacts.insert(task_id.clone(), artifacts);
             state.bindings.insert(task_id.clone(), task_bindings);
             if let Some(idempotency_key) = namespaced_idempotency_key.clone() {
-                state.idempotency_keys.insert(idempotency_key, task_id.clone());
+                state.in_flight_idempotency_keys.remove(&idempotency_key);
+                state
+                    .idempotency_keys
+                    .insert(idempotency_key, task_id.clone());
             }
 
             let response_state = state
@@ -616,8 +656,13 @@ impl Store {
         let namespaced_idempotency_key = request
             .idempotency_key
             .as_deref()
-            .map(|key| format!("{}:{}", session_id, key));
-        if let Some(replay) = self.replay_by_idempotency(&session_id, request.idempotency_key.as_deref())? {
+            .map(|key| namespaced_idempotency_key(&session_id, key));
+        if !self.owns_in_flight_idempotency(
+            namespaced_idempotency_key.as_deref(),
+            &preparation.task_id_hint,
+        ) && let Some(replay) =
+            self.replay_by_idempotency(&session_id, request.idempotency_key.as_deref())?
+        {
             return match replay {
                 SubmitReplay::Task(response) => Ok(response),
                 SubmitReplay::Error(message) => Err(format!(
@@ -697,7 +742,10 @@ impl Store {
             state.artifacts.insert(task_id.clone(), artifacts);
             state.bindings.insert(task_id.clone(), Vec::new());
             if let Some(idempotency_key) = namespaced_idempotency_key.clone() {
-                state.idempotency_keys.insert(idempotency_key, task_id.clone());
+                state.in_flight_idempotency_keys.remove(&idempotency_key);
+                state
+                    .idempotency_keys
+                    .insert(idempotency_key, task_id.clone());
             }
 
             Ok(SubmitTaskOpResponse {
@@ -712,12 +760,26 @@ impl Store {
         self.state.tasks.get(task_id).cloned()
     }
 
+    fn owns_in_flight_idempotency(
+        &self,
+        namespaced_idempotency_key: Option<&str>,
+        task_id: &str,
+    ) -> bool {
+        namespaced_idempotency_key
+            .and_then(|key| self.state.in_flight_idempotency_keys.get(key))
+            .is_some_and(|reservation| reservation.task_id == task_id)
+    }
+
     pub fn get_trace(&self, task_id: &str) -> Option<TraceSummary> {
         self.state.traces.get(task_id).cloned()
     }
 
     pub fn get_artifacts(&self, task_id: &str) -> Vec<ArtifactSummary> {
-        self.state.artifacts.get(task_id).cloned().unwrap_or_default()
+        self.state
+            .artifacts
+            .get(task_id)
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub fn list_pending_approvals(&self) -> ListPendingApprovalsResponse {
@@ -833,6 +895,52 @@ impl Store {
     }
 }
 
+fn namespaced_idempotency_key(session_id: &str, key: &str) -> String {
+    format!("{session_id}:{key}")
+}
+
+fn next_turn_id_for_session(state: &PersistedState, session_id: &str) -> u64 {
+    state
+        .next_turn_id_by_session
+        .get(session_id)
+        .copied()
+        .unwrap_or_else(|| {
+            state
+                .tasks
+                .values()
+                .filter(|task| task.session_id == session_id)
+                .count() as u64
+                + 1
+        })
+}
+
+fn reserve_next_turn_hint(state: &mut PersistedState, session_id: &str) -> u64 {
+    let next_turn = next_turn_id_for_session(state, session_id);
+    state
+        .next_turn_id_by_session
+        .insert(session_id.to_string(), next_turn + 1);
+    next_turn
+}
+
+fn recover_stale_in_flight_idempotency(state: &mut PersistedState) -> bool {
+    if state.in_flight_idempotency_keys.is_empty() {
+        return false;
+    }
+
+    for (namespaced_key, reservation) in std::mem::take(&mut state.in_flight_idempotency_keys) {
+        state
+            .idempotency_failures
+            .entry(namespaced_key)
+            .or_insert_with(|| {
+                format!(
+                    "submit_interrupted_by_restart task_id={}",
+                    reservation.task_id
+                )
+            });
+    }
+    true
+}
+
 #[cfg(unix)]
 fn sync_directory(path: &Path) -> Result<(), String> {
     #[cfg(test)]
@@ -842,13 +950,20 @@ fn sync_directory(path: &Path) -> Result<(), String> {
             path.display()
         ));
     }
-    let directory = OpenOptions::new()
-        .read(true)
-        .open(path)
-        .map_err(|e| format!("store_directory_sync_failed path={} error={}", path.display(), e))?;
-    directory
-        .sync_all()
-        .map_err(|e| format!("store_directory_sync_failed path={} error={}", path.display(), e))
+    let directory = OpenOptions::new().read(true).open(path).map_err(|e| {
+        format!(
+            "store_directory_sync_failed path={} error={}",
+            path.display(),
+            e
+        )
+    })?;
+    directory.sync_all().map_err(|e| {
+        format!(
+            "store_directory_sync_failed path={} error={}",
+            path.display(),
+            e
+        )
+    })
 }
 
 #[cfg(test)]
@@ -923,7 +1038,10 @@ fn summarize_fit_loop(records: &[FitLoopRecord]) -> String {
         .last()
         .map(|r| r.decision.as_str())
         .unwrap_or("unknown");
-    format!("fit_loop iterations={} final_decision={}", iterations, final_decision)
+    format!(
+        "fit_loop iterations={} final_decision={}",
+        iterations, final_decision
+    )
 }
 
 fn summarize_fit_loop_failure(records: &[FitLoopRecord]) -> String {
@@ -964,11 +1082,10 @@ mod tests {
         ApprovalRecord, PersistedState, Store, SubmitPreparation, SubmitReplay, sync_directory,
         with_directory_sync_failure_for_test,
     };
-    use std::collections::BTreeMap;
+    use sharo_core::protocol::{SubmitTaskOpRequest, TaskSummary, TraceSummary};
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
-    use sharo_core::protocol::{SubmitTaskOpRequest, TaskSummary, TraceSummary};
 
     fn unique_store_path(prefix: &str) -> PathBuf {
         let nanos = SystemTime::now()
@@ -989,8 +1106,6 @@ mod tests {
         Store {
             path: missing_parent.join("store.json"),
             state: PersistedState::default(),
-            next_task_hint: 1,
-            next_turn_hint_by_session: BTreeMap::new(),
         }
     }
 
@@ -1032,7 +1147,9 @@ mod tests {
         let mut store = store_with_failing_save();
         let before = store.state.clone();
 
-        let error = store.register_session("session-label").expect_err("save failure");
+        let error = store
+            .register_session("session-label")
+            .expect_err("save failure");
 
         assert_save_failed(&error);
         assert_eq!(store.state, before);
@@ -1194,6 +1311,101 @@ mod tests {
 
         assert_ne!(first.task_id_hint, second.task_id_hint);
         assert_ne!(first.turn_id_hint, second.turn_id_hint);
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn prepare_submit_blocks_duplicate_inflight_idempotency_keys() {
+        let path = unique_store_path("sharo-prepare-submit-idempotency");
+        let mut store = Store::open(&path).expect("open store");
+        let request = SubmitTaskOpRequest {
+            session_id: Some("session-000001".to_string()),
+            goal: "first".to_string(),
+            idempotency_key: Some("idem-1".to_string()),
+        };
+
+        match store.prepare_submit(&request).expect("first prepare") {
+            super::SubmitPreparationOutcome::Ready(_) => {}
+            super::SubmitPreparationOutcome::Replay(_) => panic!("unexpected replay"),
+        }
+        assert_eq!(store.state.next_task_id, 2);
+        assert_eq!(store.state.in_flight_idempotency_keys.len(), 1);
+
+        match store
+            .prepare_submit(&request)
+            .expect("duplicate prepare should not fail")
+        {
+            super::SubmitPreparationOutcome::Replay(super::SubmitReplay::Error(message)) => {
+                assert!(message.contains("submit_in_progress"));
+            }
+            super::SubmitPreparationOutcome::Replay(super::SubmitReplay::Task(_))
+            | super::SubmitPreparationOutcome::Ready(_) => {
+                panic!("unexpected duplicate prepare outcome")
+            }
+        }
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reopened_store_keeps_reserved_identity_high_water_marks() {
+        let path = unique_store_path("sharo-reopen-submit-reservation");
+        let mut store = Store::open(&path).expect("open store");
+
+        let first = match store
+            .prepare_submit(&SubmitTaskOpRequest {
+                session_id: Some("session-000001".to_string()),
+                goal: "first".to_string(),
+                idempotency_key: Some("idem-restart".to_string()),
+            })
+            .expect("first prepare")
+        {
+            super::SubmitPreparationOutcome::Ready(preparation) => preparation,
+            super::SubmitPreparationOutcome::Replay(_) => panic!("unexpected replay"),
+        };
+        assert_eq!(store.state.next_task_id, 2);
+        assert_eq!(
+            store.state.next_turn_id_by_session.get("session-000001"),
+            Some(&2)
+        );
+
+        drop(store);
+
+        let mut reopened = Store::open(&path).expect("reopen store");
+        match reopened
+            .prepare_submit(&SubmitTaskOpRequest {
+                session_id: Some("session-000001".to_string()),
+                goal: "duplicate".to_string(),
+                idempotency_key: Some("idem-restart".to_string()),
+            })
+            .expect("duplicate replay after reopen")
+        {
+            super::SubmitPreparationOutcome::Replay(super::SubmitReplay::Error(message)) => {
+                assert!(message.contains("submit_interrupted_by_restart"));
+                assert!(message.contains(&first.task_id_hint));
+            }
+            super::SubmitPreparationOutcome::Replay(super::SubmitReplay::Task(_))
+            | super::SubmitPreparationOutcome::Ready(_) => {
+                panic!("unexpected reopened duplicate outcome")
+            }
+        }
+        let second = match reopened
+            .prepare_submit(&SubmitTaskOpRequest {
+                session_id: Some("session-000001".to_string()),
+                goal: "second".to_string(),
+                idempotency_key: None,
+            })
+            .expect("second prepare")
+        {
+            super::SubmitPreparationOutcome::Ready(preparation) => preparation,
+            super::SubmitPreparationOutcome::Replay(_) => panic!("unexpected replay"),
+        };
+
+        assert_ne!(first.task_id_hint, second.task_id_hint);
+        assert_ne!(first.turn_id_hint, second.turn_id_hint);
+        assert_eq!(second.task_id_hint, "task-000002");
+        assert_eq!(second.turn_id_hint, 2);
 
         let _ = fs::remove_file(path);
     }

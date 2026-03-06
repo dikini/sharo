@@ -99,9 +99,15 @@ The format is based on Common Changelog:
   - update in-memory state once the canonical store file has been replaced, even if parent-directory fsync reports degraded durability
   - add deterministic unit coverage for the post-rename directory-sync failure path
 - Reserved submit task and turn identities before reasoning starts:
-  - allocate unique in-memory task and turn hints during submit preparation instead of deriving them from committed state only
+  - durably advance task and per-session turn high-water marks during submit preparation instead of deriving them from committed state only
+  - reserve in-flight idempotency ownership before provider execution so concurrent duplicate submits do not double-execute reasoning
+  - recover interrupted in-flight reservations after restart as deterministic idempotent failures without reusing exposed logical IDs
   - thread the reserved task identity through successful and failed submit commit paths
-  - add regression coverage proving repeated pre-commit preparations in the same session no longer reuse logical IDs
+  - add regression coverage for duplicate in-flight submits and restart-after-reservation identity reuse
+- Hardened submit reservation durability and duplicate idempotency suppression:
+  - persist task and per-session turn high-water marks during `prepare_submit` so crash/restart cannot recycle already exposed identities
+  - persist in-flight idempotency ownership before provider execution and reject duplicate in-flight submits without a second provider call
+  - recover stale in-flight idempotency reservations on daemon restart as replayable failures so abandoned submits do not remain unresolved
 - Allowed the daemon to keep serving independent IPC requests while a slow submit is still running:
   - moved non-`serve_once` connections onto spawned Tokio tasks
   - stopped holding the store across provider-backed submit reasoning
