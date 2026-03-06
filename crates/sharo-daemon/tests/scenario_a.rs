@@ -176,6 +176,36 @@ fn start_delayed_response_server(delay: Duration) -> (String, thread::JoinHandle
     (address, handle)
 }
 
+fn start_status_response_server(status_line: &str) -> (String, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind status response server");
+    let address = format!("http://{}", listener.local_addr().expect("local addr"));
+    let status_line = status_line.to_string();
+    let handle = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept status response connection");
+        let cloned = stream.try_clone().expect("clone status response stream");
+        let mut reader = BufReader::new(cloned);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            let bytes = reader.read_line(&mut line).expect("read status response request");
+            if bytes == 0 || line == "\r\n" {
+                break;
+            }
+        }
+
+        let body = "{\"error\":\"simulated\"}";
+        write!(
+            stream,
+            "HTTP/1.1 {status_line}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .expect("write status response");
+        stream.flush().expect("flush status response");
+    });
+    (address, handle)
+}
+
 fn update_max_observed(max_observed: &AtomicUsize, candidate: usize) {
     let mut current = max_observed.load(Ordering::SeqCst);
     while candidate > current {
@@ -1355,6 +1385,84 @@ fn scenario_s3_provider_auth_failure_returns_error_without_persisted_task() {
         other => panic!("unexpected response: {other:?}"),
     }
 
+    daemon.kill().expect("kill daemon");
+    let _ = daemon.wait();
+    let _ = fs::remove_file(&socket);
+    let _ = fs::remove_file(&store);
+    let _ = fs::remove_file(&config);
+}
+
+#[test]
+fn scenario_s5_provider_unavailable_returns_error_without_persisted_task() {
+    let socket = unique_path("sharo-scenario-s5", ".sock");
+    let store = unique_path("sharo-scenario-s5", ".json");
+    let (base_url, server_thread) = start_status_response_server("503 Service Unavailable");
+    let config = write_slow_openai_config("sharo-scenario-s5", &base_url);
+
+    let mut daemon = Command::new(daemon_bin())
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+            "--config-path",
+            config.to_str().expect("config path"),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let session_id = match send_request(
+        &socket,
+        &DaemonRequest::RegisterSession(RegisterSessionRequest {
+            session_label: "scenario-s5".to_string(),
+        }),
+    ) {
+        DaemonResponse::RegisterSession(r) => r.session_id,
+        other => panic!("unexpected response: {other:?}"),
+    };
+
+    let first_error = match send_request(
+        &socket,
+        &DaemonRequest::SubmitTask(SubmitTaskOpRequest {
+            session_id: Some(session_id),
+            goal: "retryable provider failure".to_string(),
+            idempotency_key: Some("idem-s5".to_string()),
+        }),
+    ) {
+        DaemonResponse::Error { message } => {
+            assert!(message.contains("provider unavailable status=503"));
+            message
+        }
+        other => panic!("unexpected response: {other:?}"),
+    };
+
+    let replayed_error = match send_request(
+        &socket,
+        &DaemonRequest::SubmitTask(SubmitTaskOpRequest {
+            session_id: Some("session-000001".to_string()),
+            goal: "retryable provider failure".to_string(),
+            idempotency_key: Some("idem-s5".to_string()),
+        }),
+    ) {
+        DaemonResponse::Error { message } => message,
+        other => panic!("unexpected response: {other:?}"),
+    };
+    assert_eq!(replayed_error, first_error);
+
+    match send_request(
+        &socket,
+        &DaemonRequest::GetTask(GetTaskRequest {
+            task_id: "task-000001".to_string(),
+        }),
+    ) {
+        DaemonResponse::Error { message } => assert!(message.contains("task_not_found")),
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    server_thread.join().expect("join status server");
     daemon.kill().expect("kill daemon");
     let _ = daemon.wait();
     let _ = fs::remove_file(&socket);

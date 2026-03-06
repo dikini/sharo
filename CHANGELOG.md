@@ -63,6 +63,10 @@ The format is based on Common Changelog:
   - reserved worker slots atomically before spawning threads instead of incrementing after spawn
   - released reserved worker count if thread creation fails
   - added race-focused unit coverage and a daemon burst test that bounds concurrent upstream provider requests by `connector_pool.max_threads`
+- Corrected provider failure classification so retryable upstream errors no longer collapse into invalid requests:
+  - mapped `408` and `504` to timeout, `429` to rate limit, `402` to quota, and `5xx` to unavailable
+  - kept auth failures distinct for `401` and `403`
+  - added core and daemon regression coverage for transient provider failures without persisted success records
 - Added explicit restart recovery evidence for successful Scenario A tasks:
   - proved `task get` state and `result_preview` survive restart unchanged
   - proved recovered trace id, event payloads, and monotonic ordering remain intact after restart
