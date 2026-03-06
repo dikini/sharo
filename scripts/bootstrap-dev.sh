@@ -16,7 +16,7 @@ Usage:
 Options:
   --check      Validate required toolchain/tools without installing them.
   --apply      Install or configure missing project dependencies.
-  --no-verify  Skip final scripts/check-fast-feedback.sh run.
+  --no-verify  Skip final scripts/check-fast-feedback.sh --all run.
 USAGE
 }
 
@@ -171,8 +171,8 @@ ensure_cargo_tool nextest cargo-nextest
 ensure_hooks
 
 if [[ "$run_verify" == true ]]; then
-  echo "bootstrap-dev: running verification gate"
-  scripts/check-fast-feedback.sh
+  echo "bootstrap-dev: running full verification gate"
+  scripts/check-fast-feedback.sh --all
 fi
 
 echo "bootstrap-dev: OK"

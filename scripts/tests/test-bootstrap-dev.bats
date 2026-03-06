@@ -24,3 +24,7 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
+@test "bootstrap apply mode runs full verification gate by default" {
+  run rg 'scripts/check-fast-feedback\.sh --all' "$ROOT/scripts/bootstrap-dev.sh"
+  [ "$status" -eq 0 ]
+}
