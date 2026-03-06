@@ -144,7 +144,11 @@ The format is based on Common Changelog:
 ### Fixed
 
 - Fixed no-sudo bootstrap behavior for workflow lint tooling:
-  - replaced invalid Cargo-based `actionlint` installation path with deterministic local binary install into `.tools/actionlint` via upstream release installer script
+  - replaced invalid Cargo-based `actionlint` installation path with deterministic local binary install into `.tools/actionlint` from pinned release `v1.7.11`
+  - added actionlint archive integrity verification during bootstrap apply:
+    - pinned checksums-file SHA-256 verification
+    - release metadata digest match check for selected archive
+    - archive SHA-256 verification before extraction
   - updated workflow-lint command discovery to use local `.tools/actionlint/actionlint` when not on `PATH`
 - Fixed daemon invariant gate command invocation in `scripts/check-daemon-invariants.sh`:
   - run each named invariant test in a separate `cargo test` command so Cargo argument parsing is valid

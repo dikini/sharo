@@ -139,7 +139,19 @@ ensure_system_tool() {
 }
 
 ensure_actionlint() {
+  local actionlint_version="1.7.11"
+  local checksums_file="actionlint_${actionlint_version}_checksums.txt"
+  local checksums_sha256="7d588eeb1ceb1e926b5618162a082453e1618b7772597e4ef8270e08777a8114"
+  local release_base_url="https://github.com/rhysd/actionlint/releases/download/v${actionlint_version}"
+  local metadata_url="https://api.github.com/repos/rhysd/actionlint/releases/tags/v${actionlint_version}"
   local local_actionlint="$ROOT/.tools/actionlint/actionlint"
+  local os=""
+  local arch=""
+  local archive_name=""
+  local expected_archive_sha256=""
+  local metadata_archive_digest=""
+  local tmpdir=""
+
   if command -v actionlint >/dev/null 2>&1; then
     echo "bootstrap-dev: actionlint present ($(command -v actionlint))"
     return 0
@@ -150,14 +162,118 @@ ensure_actionlint() {
   fi
 
   if [[ "$mode" == "apply" ]]; then
-    echo "bootstrap-dev: installing actionlint to .tools/actionlint"
+    if ! command -v curl >/dev/null 2>&1; then
+      echo "bootstrap-dev: missing command 'curl' (required to download actionlint release assets)" >&2
+      return 1
+    fi
+    if ! command -v sha256sum >/dev/null 2>&1; then
+      echo "bootstrap-dev: missing command 'sha256sum' (required for archive integrity verification)" >&2
+      return 1
+    fi
+    if ! command -v python3 >/dev/null 2>&1; then
+      echo "bootstrap-dev: missing command 'python3' (required to parse release metadata digest)" >&2
+      return 1
+    fi
+
+    case "${OSTYPE:-}" in
+      linux-*)
+        os="linux"
+        ;;
+      darwin*)
+        os="darwin"
+        ;;
+      freebsd*)
+        os="freebsd"
+        ;;
+      *)
+        echo "bootstrap-dev: unsupported OS for actionlint auto-install: '${OSTYPE:-unknown}'" >&2
+        return 1
+        ;;
+    esac
+
+    case "$(uname -m)" in
+      x86_64)
+        arch="amd64"
+        ;;
+      i?86)
+        arch="386"
+        ;;
+      aarch64 | arm64)
+        arch="arm64"
+        ;;
+      arm*)
+        arch="armv6"
+        ;;
+      *)
+        echo "bootstrap-dev: unsupported architecture for actionlint auto-install: '$(uname -m)'" >&2
+        return 1
+        ;;
+    esac
+
+    archive_name="actionlint_${actionlint_version}_${os}_${arch}.tar.gz"
+
+    tmpdir="$(mktemp -d)"
+    trap 'rm -rf "$tmpdir"' RETURN
+
+    echo "bootstrap-dev: installing actionlint $actionlint_version to .tools/actionlint"
     mkdir -p "$ROOT/.tools/actionlint"
-    curl -sSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash |
-      bash -s -- latest "$ROOT/.tools/actionlint"
+
+    curl -fsSL "${release_base_url}/${checksums_file}" -o "$tmpdir/$checksums_file"
+    echo "${checksums_sha256}  $tmpdir/$checksums_file" | sha256sum --check --status ||
+      {
+        echo "bootstrap-dev: actionlint checksums file verification failed" >&2
+        return 1
+      }
+
+    expected_archive_sha256="$(awk -v name="$archive_name" '$2 == name {print $1}' "$tmpdir/$checksums_file")"
+    if [[ -z "$expected_archive_sha256" ]]; then
+      echo "bootstrap-dev: checksum entry not found for $archive_name in $checksums_file" >&2
+      return 1
+    fi
+
+    curl -fsSL "$metadata_url" -o "$tmpdir/release-metadata.json"
+
+    metadata_archive_digest="$(
+      python3 - "$archive_name" "$tmpdir/release-metadata.json" <<'PY'
+import json
+import sys
+
+archive_name = sys.argv[1]
+payload_path = sys.argv[2]
+with open(payload_path, "r", encoding="utf-8") as fh:
+    payload = json.load(fh)
+for asset in payload.get("assets", []):
+    if asset.get("name") == archive_name:
+        digest = asset.get("digest", "")
+        if digest.startswith("sha256:"):
+            print(digest.split(":", 1)[1])
+            raise SystemExit(0)
+raise SystemExit(1)
+PY
+    )"
+    if [[ -z "$metadata_archive_digest" ]]; then
+      echo "bootstrap-dev: missing archive digest in GitHub release metadata for $archive_name" >&2
+      return 1
+    fi
+    if [[ "$metadata_archive_digest" != "$expected_archive_sha256" ]]; then
+      echo "bootstrap-dev: release metadata digest mismatch for $archive_name" >&2
+      return 1
+    fi
+
+    curl -fsSL "${release_base_url}/${archive_name}" -o "$tmpdir/$archive_name"
+    echo "${expected_archive_sha256}  $tmpdir/$archive_name" | sha256sum --check --status ||
+      {
+        echo "bootstrap-dev: actionlint archive checksum verification failed for $archive_name" >&2
+        return 1
+      }
+
+    tar -xzf "$tmpdir/$archive_name" -C "$ROOT/.tools/actionlint" actionlint
+    chmod +x "$local_actionlint"
+    "$local_actionlint" -version >/dev/null
     return 0
   fi
 
-  echo "bootstrap-dev: missing command 'actionlint' (use --apply to install into .tools/actionlint)" >&2
+  echo "bootstrap-dev: missing command 'actionlint' (use --apply to install pinned verified binary into .tools/actionlint)" >&2
   return 1
 }
 

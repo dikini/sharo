@@ -94,7 +94,11 @@ Current state: slices 000 through 005 are marked `done` in `docs/tasks/tasks.csv
 - After clone:
   - run `scripts/bootstrap-dev.sh --check` to detect missing dependencies.
   - install missing system tools (`shellcheck`, `shfmt`) via package manager.
-  - `scripts/bootstrap-dev.sh --apply` installs `actionlint` into `.tools/actionlint` when missing.
+  - `scripts/bootstrap-dev.sh --apply` installs pinned `actionlint` into `.tools/actionlint` when missing.
+  - bootstrap verifies `actionlint` archive integrity using:
+    - pinned checksum-file SHA-256
+    - release metadata asset digest match
+    - archive SHA-256 match before extraction
   - run `scripts/bootstrap-dev.sh --apply` to install project-managed tools/hooks and execute full verification.
 
 ## Tooling Inputs

@@ -40,8 +40,17 @@ setup() {
   [ "$status" -eq 0 ]
 
   run rg 'download-actionlint\.bash' "$ROOT/scripts/bootstrap-dev.sh"
-  [ "$status" -eq 0 ]
+  [ "$status" -ne 0 ]
 
   run rg '\.tools/actionlint' "$ROOT/scripts/bootstrap-dev.sh"
+  [ "$status" -eq 0 ]
+
+  run rg 'checksums_sha256=' "$ROOT/scripts/bootstrap-dev.sh"
+  [ "$status" -eq 0 ]
+
+  run rg 'sha256sum --check --status' "$ROOT/scripts/bootstrap-dev.sh"
+  [ "$status" -eq 0 ]
+
+  run rg 'metadata_url=' "$ROOT/scripts/bootstrap-dev.sh"
   [ "$status" -eq 0 ]
 }
