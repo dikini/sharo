@@ -78,6 +78,8 @@ impl Default for PersistedState {
 pub struct Store {
     path: PathBuf,
     state: PersistedState,
+    next_task_hint: u64,
+    next_turn_hint_by_session: BTreeMap<String, u64>,
 }
 
 pub enum SubmitReplay {
@@ -88,6 +90,7 @@ pub enum SubmitReplay {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SubmitPreparation {
     pub task_id_hint: String,
+    pub task_id_sequence_hint: u64,
     pub session_id_hint: String,
     pub turn_id_hint: u64,
 }
@@ -104,7 +107,7 @@ enum SaveStateOutcome {
 
 impl Store {
     pub fn prepare_submit(
-        &self,
+        &mut self,
         request: &SubmitTaskOpRequest,
     ) -> Result<SubmitPreparationOutcome, String> {
         let session_id_hint = request
@@ -116,15 +119,30 @@ impl Store {
         {
             return Ok(SubmitPreparationOutcome::Replay(replay));
         }
+        let task_id_sequence_hint = self.reserve_next_task_hint();
         Ok(SubmitPreparationOutcome::Ready(SubmitPreparation {
-            task_id_hint: self.peek_next_task_id(),
+            task_id_hint: format!("task-{:06}", task_id_sequence_hint),
+            task_id_sequence_hint,
             session_id_hint: session_id_hint.clone(),
-            turn_id_hint: self.next_turn_id_for_session(&session_id_hint),
+            turn_id_hint: self.reserve_next_turn_hint(&session_id_hint),
         }))
     }
 
-    pub fn peek_next_task_id(&self) -> String {
-        format!("task-{:06}", self.state.next_task_id)
+    fn reserve_next_task_hint(&mut self) -> u64 {
+        let next = self.next_task_hint;
+        self.next_task_hint += 1;
+        next
+    }
+
+    fn reserve_next_turn_hint(&mut self, session_id: &str) -> u64 {
+        let next_turn = self
+            .next_turn_hint_by_session
+            .get(session_id)
+            .copied()
+            .unwrap_or_else(|| self.next_turn_id_for_session(session_id));
+        self.next_turn_hint_by_session
+            .insert(session_id.to_string(), next_turn + 1);
+        next_turn
     }
 
     pub fn next_turn_id_for_session(&self, session_id: &str) -> u64 {
@@ -187,6 +205,8 @@ impl Store {
             return Ok(Self {
                 path,
                 state: PersistedState::default(),
+                next_task_hint: PersistedState::default().next_task_id,
+                next_turn_hint_by_session: BTreeMap::new(),
             });
         }
 
@@ -196,7 +216,12 @@ impl Store {
         let state = serde_json::from_str::<PersistedState>(&content)
             .map_err(|e| format!("store_parse_failed path={} error={}", path.display(), e))?;
 
-        Ok(Self { path, state })
+        Ok(Self {
+            path,
+            next_task_hint: state.next_task_id,
+            next_turn_hint_by_session: BTreeMap::new(),
+            state,
+        })
     }
 
     fn save_state(&self, state: &PersistedState) -> Result<SaveStateOutcome, String> {
@@ -279,16 +304,13 @@ impl Store {
 
     pub fn submit_task_with_route(
         &mut self,
+        preparation: &SubmitPreparation,
         request: SubmitTaskOpRequest,
-        fallback_session_id: &str,
         route_decision_details: &str,
         model_output_text: &str,
         fit_loop_records: &[FitLoopRecord],
     ) -> Result<SubmitTaskOpResponse, String> {
-        let session_id = request
-            .session_id
-            .clone()
-            .unwrap_or_else(|| fallback_session_id.to_string());
+        let session_id = preparation.session_id_hint.clone();
         let namespaced_idempotency_key = request
             .idempotency_key
             .as_deref()
@@ -302,8 +324,10 @@ impl Store {
             };
         }
         self.commit_mutation(|state| {
-            let task_id = format!("task-{:06}", state.next_task_id);
-            state.next_task_id += 1;
+            let task_id = preparation.task_id_hint.clone();
+            state.next_task_id = state
+                .next_task_id
+                .max(preparation.task_id_sequence_hint.saturating_add(1));
 
             let invalid_manifest = request.goal.contains("invalid_manifest:");
             let restricted = request.goal.contains("restricted:");
@@ -583,15 +607,12 @@ impl Store {
 
     pub fn submit_failed_task(
         &mut self,
+        preparation: &SubmitPreparation,
         request: SubmitTaskOpRequest,
-        fallback_session_id: &str,
         failure_message: &str,
         fit_loop_records: &[FitLoopRecord],
     ) -> Result<SubmitTaskOpResponse, String> {
-        let session_id = request
-            .session_id
-            .clone()
-            .unwrap_or_else(|| fallback_session_id.to_string());
+        let session_id = preparation.session_id_hint.clone();
         let namespaced_idempotency_key = request
             .idempotency_key
             .as_deref()
@@ -605,8 +626,10 @@ impl Store {
             };
         }
         self.commit_mutation(|state| {
-            let task_id = format!("task-{:06}", state.next_task_id);
-            state.next_task_id += 1;
+            let task_id = preparation.task_id_hint.clone();
+            state.next_task_id = state
+                .next_task_id
+                .max(preparation.task_id_sequence_hint.saturating_add(1));
             let step_id = format!("step-{}", task_id);
 
             let task = TaskSummary {
@@ -938,9 +961,10 @@ fn new_binding(
 #[cfg(test)]
 mod tests {
     use super::{
-        ApprovalRecord, PersistedState, Store, SubmitReplay, sync_directory,
+        ApprovalRecord, PersistedState, Store, SubmitPreparation, SubmitReplay, sync_directory,
         with_directory_sync_failure_for_test,
     };
+    use std::collections::BTreeMap;
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -965,6 +989,8 @@ mod tests {
         Store {
             path: missing_parent.join("store.json"),
             state: PersistedState::default(),
+            next_task_hint: 1,
+            next_turn_hint_by_session: BTreeMap::new(),
         }
     }
 
@@ -1016,15 +1042,21 @@ mod tests {
     fn submit_task_rolls_back_when_save_fails() {
         let mut store = store_with_failing_save();
         let before = store.state.clone();
+        let preparation = SubmitPreparation {
+            task_id_hint: "task-000001".to_string(),
+            task_id_sequence_hint: 1,
+            session_id_hint: "session-000001".to_string(),
+            turn_id_hint: 1,
+        };
 
         let error = store
             .submit_task_with_route(
+                &preparation,
                 SubmitTaskOpRequest {
                     session_id: Some("session-000001".to_string()),
                     goal: "read one context item".to_string(),
                     idempotency_key: Some("idem-rollback".to_string()),
                 },
-                "session-000001",
                 "local_mock",
                 "deterministic-response",
                 &[],
@@ -1127,6 +1159,41 @@ mod tests {
         assert_eq!(store.state, reopened.state);
         assert_eq!(store.state.next_session_id, 2);
         assert!(store.state.sessions.contains_key("session-000001"));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn prepare_submit_reserves_unique_hints_under_concurrency() {
+        let path = unique_store_path("sharo-prepare-submit-reservations");
+        let mut store = Store::open(&path).expect("open store");
+
+        let first = match store
+            .prepare_submit(&SubmitTaskOpRequest {
+                session_id: Some("session-000001".to_string()),
+                goal: "first".to_string(),
+                idempotency_key: None,
+            })
+            .expect("first prepare")
+        {
+            super::SubmitPreparationOutcome::Ready(preparation) => preparation,
+            super::SubmitPreparationOutcome::Replay(_) => panic!("unexpected replay"),
+        };
+
+        let second = match store
+            .prepare_submit(&SubmitTaskOpRequest {
+                session_id: Some("session-000001".to_string()),
+                goal: "second".to_string(),
+                idempotency_key: None,
+            })
+            .expect("second prepare")
+        {
+            super::SubmitPreparationOutcome::Ready(preparation) => preparation,
+            super::SubmitPreparationOutcome::Replay(_) => panic!("unexpected replay"),
+        };
+
+        assert_ne!(first.task_id_hint, second.task_id_hint);
+        assert_ne!(first.turn_id_hint, second.turn_id_hint);
 
         let _ = fs::remove_file(path);
     }

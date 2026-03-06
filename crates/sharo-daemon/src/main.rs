@@ -112,7 +112,7 @@ fn handle_submit_task(
     payload: sharo_core::protocol::SubmitTaskOpRequest,
 ) -> Result<SubmitTaskOpResponse, String> {
     let preparation = {
-        let store = lock_unpoisoned(&state.store);
+        let mut store = lock_unpoisoned(&state.store);
         store.prepare_submit(&payload)?
     };
 
@@ -126,14 +126,19 @@ fn handle_submit_task(
     let mut store = lock_unpoisoned(&state.store);
     match reasoning {
         Ok(reasoning) => store.submit_task_with_route(
+            &preparation,
             payload,
-            &preparation.session_id_hint,
             &reasoning.route_decision_details,
             &reasoning.model_output_text,
             &reasoning.fit_loop_records,
         ),
         Err(ReasoningError::FitLoopFailure { message, records }) => {
-            store.submit_failed_task(payload, &preparation.session_id_hint, &message, &records)
+            store.submit_failed_task(
+                &preparation,
+                payload,
+                &message,
+                &records,
+            )
         }
         Err(ReasoningError::ConnectorFailure { message })
         | Err(ReasoningError::ResolveFailure { message }) => {
