@@ -50,6 +50,8 @@ struct PoolState {
     pending_jobs: AtomicUsize,
     active_workers: AtomicUsize,
     last_scale_event: Mutex<Instant>,
+    #[cfg(test)]
+    test_hooks: TestHooks,
 }
 
 #[derive(Clone)]
@@ -60,6 +62,37 @@ pub struct BlockingPool {
 
 impl BlockingPool {
     pub fn new(policy: PoolPolicy) -> Self {
+        #[cfg(test)]
+        let pool = Self::new_with_test_hooks(policy, TestHooks::default());
+
+        #[cfg(not(test))]
+        let pool = {
+            let policy = normalized_policy(policy);
+            let (tx, rx) = bounded::<Job>(policy.queue_capacity);
+            let state = Arc::new(PoolState {
+                policy: policy.clone(),
+                rx,
+                pending_jobs: AtomicUsize::new(0),
+                active_workers: AtomicUsize::new(0),
+                last_scale_event: Mutex::new(
+                    Instant::now()
+                        .checked_sub(Duration::from_millis(policy.cooldown_ms))
+                        .unwrap_or_else(Instant::now),
+                ),
+            });
+
+            let pool = Self { tx, state };
+            for _ in 0..policy.min_threads {
+                pool.spawn_worker();
+            }
+            pool
+        };
+
+        pool
+    }
+
+    #[cfg(test)]
+    fn new_with_test_hooks(policy: PoolPolicy, test_hooks: TestHooks) -> Self {
         let policy = normalized_policy(policy);
         let (tx, rx) = bounded::<Job>(policy.queue_capacity);
         let state = Arc::new(PoolState {
@@ -72,6 +105,8 @@ impl BlockingPool {
                     .checked_sub(Duration::from_millis(policy.cooldown_ms))
                     .unwrap_or_else(Instant::now),
             ),
+            #[cfg(test)]
+            test_hooks,
         });
 
         let pool = Self { tx, state };
@@ -136,14 +171,28 @@ impl BlockingPool {
             return;
         }
 
-        self.spawn_worker();
+        #[cfg(test)]
+        self.run_before_spawn_hook();
+
+        if !self.try_reserve_worker_slot() {
+            return;
+        }
+
+        self.spawn_reserved_worker();
     }
 
     fn spawn_worker(&self) {
-        self.state.active_workers.fetch_add(1, Ordering::SeqCst);
+        if !self.try_reserve_worker_slot() {
+            return;
+        }
+        self.spawn_reserved_worker();
+    }
 
+    fn spawn_reserved_worker(&self) {
         let state = Arc::clone(&self.state);
-        std::thread::spawn(move || {
+        if std::thread::Builder::new()
+            .name("sharo-connector-worker".to_string())
+            .spawn(move || {
             let idle_timeout = Duration::from_millis(state.policy.scale_down_idle_ms);
             loop {
                 match state.rx.recv_timeout(idle_timeout) {
@@ -165,11 +214,43 @@ impl BlockingPool {
                     }
                 }
             }
-        });
+            })
+            .is_err()
+        {
+            self.release_worker_slot();
+        }
     }
 
     fn try_mark_scale_event(&self) -> bool {
         try_mark_scale_event(&self.state)
+    }
+
+    fn try_reserve_worker_slot(&self) -> bool {
+        let max_threads = self.state.policy.max_threads;
+        let mut active = self.state.active_workers.load(Ordering::SeqCst);
+        loop {
+            if active >= max_threads {
+                return false;
+            }
+            match self.state.active_workers.compare_exchange_weak(
+                active,
+                active + 1,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => return true,
+                Err(current) => active = current,
+            }
+        }
+    }
+
+    fn release_worker_slot(&self) {
+        self.state.active_workers.fetch_sub(1, Ordering::SeqCst);
+    }
+
+    #[cfg(test)]
+    fn run_before_spawn_hook(&self) {
+        self.state.test_hooks.run_before_spawn();
     }
 }
 
@@ -197,8 +278,25 @@ fn try_mark_scale_event(state: &Arc<PoolState>) -> bool {
 }
 
 #[cfg(test)]
+#[derive(Clone, Default)]
+struct TestHooks {
+    before_spawn: Option<Arc<dyn Fn() + Send + Sync + 'static>>,
+}
+
+#[cfg(test)]
+impl TestHooks {
+    fn run_before_spawn(&self) {
+        if let Some(hook) = &self.before_spawn {
+            hook();
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
-    use super::{BlockingPool, PoolError, PoolPolicy};
+    use super::{BlockingPool, PoolError, PoolPolicy, TestHooks};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
     use std::time::Duration;
 
     fn wait_until(timeout: Duration, mut predicate: impl FnMut() -> bool) {
@@ -371,5 +469,95 @@ mod tests {
 
         wait_until(Duration::from_millis(200), || pool.current_worker_count() >= 1);
         assert!(pool.current_worker_count() <= 2);
+    }
+
+    #[test]
+    fn scale_up_reservation_is_atomic_under_race() {
+        let hook_calls = Arc::new(AtomicUsize::new(0));
+        let pool = BlockingPool::new_with_test_hooks(
+            PoolPolicy {
+                min_threads: 1,
+                max_threads: 2,
+                queue_capacity: 8,
+                scale_up_queue_threshold: 2,
+                scale_down_idle_ms: 5_000,
+                cooldown_ms: 1,
+            },
+            TestHooks {
+                before_spawn: Some({
+                    let hook_calls = Arc::clone(&hook_calls);
+                    Arc::new(move || {
+                        let call = hook_calls.fetch_add(1, Ordering::SeqCst);
+                        if call == 1 {
+                            std::thread::sleep(Duration::from_millis(100));
+                        }
+                    })
+                }),
+            },
+        );
+        pool.state.pending_jobs.store(2, Ordering::SeqCst);
+
+        let pool_a = pool.clone();
+        let submit_a = std::thread::spawn(move || {
+            pool_a.maybe_scale_up();
+        });
+
+        std::thread::sleep(Duration::from_millis(20));
+
+        let pool_b = pool.clone();
+        let submit_b = std::thread::spawn(move || {
+            pool_b.maybe_scale_up();
+        });
+
+        submit_a.join().expect("join submit a");
+        submit_b.join().expect("join submit b");
+
+        wait_until(Duration::from_millis(500), || pool.current_worker_count() == 2);
+        assert_eq!(pool.current_worker_count(), 2);
+    }
+
+    #[test]
+    fn worker_count_never_exceeds_max_threads_under_parallel_submit() {
+        for _ in 0..4 {
+            let hook_calls = Arc::new(AtomicUsize::new(0));
+            let pool = BlockingPool::new_with_test_hooks(
+                PoolPolicy {
+                    min_threads: 1,
+                    max_threads: 2,
+                    queue_capacity: 8,
+                    scale_up_queue_threshold: 2,
+                    scale_down_idle_ms: 5_000,
+                    cooldown_ms: 1,
+                },
+                TestHooks {
+                    before_spawn: Some({
+                        let hook_calls = Arc::clone(&hook_calls);
+                        Arc::new(move || {
+                            let call = hook_calls.fetch_add(1, Ordering::SeqCst);
+                            if call == 1 {
+                                std::thread::sleep(Duration::from_millis(100));
+                            }
+                        })
+                    }),
+                },
+            );
+            pool.state.pending_jobs.store(2, Ordering::SeqCst);
+
+            let mut submitters = Vec::new();
+            for delay_ms in [0_u64, 5_u64] {
+                let pool = pool.clone();
+                submitters.push(std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_millis(delay_ms));
+                    pool.maybe_scale_up();
+                }));
+            }
+
+            for submitter in submitters {
+                submitter.join().expect("join submitter");
+            }
+
+            wait_until(Duration::from_millis(500), || pool.current_worker_count() == 2);
+            assert!(pool.current_worker_count() <= 2);
+        }
     }
 }

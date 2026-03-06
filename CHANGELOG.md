@@ -25,9 +25,120 @@ The format is based on Common Changelog:
 - Added restart trace continuity hardening artifacts:
   - `docs/plans/2026-03-05-restart-trace-continuity-hardening-plan.md`
   - `TASK-RECOVERY-HARDENING-001` in `docs/tasks/tasks.csv`
+- Added review-driven fix planning artifacts for the reported Rust/runtime issues:
+  - `docs/specs/connector-pool-thread-bound-hardening.md`
+  - `docs/plans/2026-03-06-connector-pool-thread-bound-hardening-plan.md`
+  - `docs/specs/daemon-concurrent-ipc-serving.md`
+  - `docs/plans/2026-03-06-daemon-concurrent-ipc-serving-plan.md`
+  - `docs/specs/store-transactional-persistence.md`
+  - `docs/plans/2026-03-06-store-transactional-persistence-plan.md`
+  - `docs/specs/provider-error-classification.md`
+  - `docs/plans/2026-03-06-provider-error-classification-plan.md`
+  - `docs/specs/rust-lint-hygiene.md`
+  - `docs/plans/2026-03-06-rust-lint-hygiene-plan.md`
+  - task registry entries:
+    - `TASK-CONNECTOR-POOL-HARDENING-SPEC-001`
+    - `TASK-CONNECTOR-POOL-HARDENING-PLAN-001`
+    - `TASK-DAEMON-CONCURRENCY-SPEC-001`
+    - `TASK-DAEMON-CONCURRENCY-PLAN-001`
+    - `TASK-STORE-TRANSACTIONAL-SPEC-001`
+    - `TASK-STORE-TRANSACTIONAL-PLAN-001`
+    - `TASK-PROVIDER-ERROR-SPEC-001`
+    - `TASK-PROVIDER-ERROR-PLAN-001`
+    - `TASK-RUST-LINT-HYGIENE-SPEC-001`
+    - `TASK-RUST-LINT-HYGIENE-PLAN-001`
+- Added follow-up review remediation planning artifacts for remaining concurrency, security, and durability fixes:
+  - `docs/specs/daemon-submit-parallelism.md`
+  - `docs/plans/2026-03-06-daemon-submit-parallelism-plan.md`
+  - `docs/specs/authenticated-provider-base-url-hardening.md`
+  - `docs/plans/2026-03-06-authenticated-provider-base-url-hardening-plan.md`
+  - `docs/specs/store-directory-fsync-durability.md`
+  - `docs/plans/2026-03-06-store-directory-fsync-durability-plan.md`
+  - task registry entries:
+    - `TASK-DAEMON-SUBMIT-PARALLELISM-SPEC-001`
+    - `TASK-DAEMON-SUBMIT-PARALLELISM-PLAN-001`
+    - `TASK-AUTH-BASE-URL-HARDENING-SPEC-001`
+    - `TASK-AUTH-BASE-URL-HARDENING-PLAN-001`
+    - `TASK-STORE-DIR-FSYNC-SPEC-001`
+    - `TASK-STORE-DIR-FSYNC-PLAN-001`
+- Added second-pass review remediation planning artifacts for remaining Tokio, persistence-consistency, and submit-identity fixes:
+  - `docs/specs/daemon-blocking-submit-offload.md`
+  - `docs/plans/2026-03-06-daemon-blocking-submit-offload-plan.md`
+  - `docs/specs/store-directory-fsync-commit-consistency.md`
+  - `docs/plans/2026-03-06-store-directory-fsync-commit-consistency-plan.md`
+  - `docs/specs/submit-identity-reservation.md`
+  - `docs/plans/2026-03-06-submit-identity-reservation-plan.md`
+  - task registry entries:
+    - `TASK-DAEMON-BLOCKING-OFFLOAD-SPEC-001`
+    - `TASK-DAEMON-BLOCKING-OFFLOAD-PLAN-001`
+    - `TASK-STORE-FSYNC-CONSISTENCY-SPEC-001`
+    - `TASK-STORE-FSYNC-CONSISTENCY-PLAN-001`
+    - `TASK-SUBMIT-IDENTITY-SPEC-001`
+    - `TASK-SUBMIT-IDENTITY-PLAN-001`
 
 ### Fixed
 
+- Removed daemon-wide submit serialization so independent provider-backed submits can make parallel progress:
+  - deleted the process-wide submit mutex from `sharo-daemon`
+  - kept submit preparation and commit phases isolated to short store lock windows
+  - added a regression scenario proving two slow submits overlap upstream instead of collapsing to single-flight execution
+- Hardened authenticated provider base URL handling so bearer tokens are not sent to insecure remote endpoints:
+  - reject authenticated provider configs that use non-HTTPS remote base URLs
+  - allow authenticated cleartext HTTP only for explicit loopback hosts used in local and test setups
+  - enforce the same rule in the daemon config boundary and in the connector runtime as a defense-in-depth backstop
+- Made daemon store writes crash-durable across atomic rename by syncing the parent directory:
+  - persist store state to a temp file, sync the file, rename into place, then sync the containing directory
+  - remove the redundant post-rename chmod because the temp file is already created with restricted permissions
+  - add explicit unit coverage for the directory-sync helper used by the atomic save path
+- Moved daemon request execution off Tokio runtime worker threads for blocking IPC handlers:
+  - execute synchronous request handling behind `tokio::task::spawn_blocking`
+  - preserve the existing submit/store semantics while preventing slow submits from monopolizing runtime workers
+  - add daemon IPC regression coverage proving status requests stay responsive under parallel slow-submit pressure
+- Preserved store memory/disk consistency when directory fsync fails after rename:
+  - distinguish pre-rename save failures from post-rename durability failures
+  - update in-memory state once the canonical store file has been replaced, even if parent-directory fsync reports degraded durability
+  - add deterministic unit coverage for the post-rename directory-sync failure path
+- Reserved submit task and turn identities before reasoning starts:
+  - durably advance task and per-session turn high-water marks during submit preparation instead of deriving them from committed state only
+  - reserve in-flight idempotency ownership before provider execution so concurrent duplicate submits do not double-execute reasoning
+  - recover interrupted in-flight reservations after restart as deterministic idempotent failures without reusing exposed logical IDs
+  - thread the reserved task identity through successful and failed submit commit paths
+  - add regression coverage for duplicate in-flight submits and restart-after-reservation identity reuse
+- Hardened submit reservation durability and duplicate idempotency suppression:
+  - persist task and per-session turn high-water marks during `prepare_submit` so crash/restart cannot recycle already exposed identities
+  - persist in-flight idempotency ownership before provider execution and reject duplicate in-flight submits without a second provider call
+  - recover stale in-flight idempotency reservations on daemon restart as replayable failures so abandoned submits do not remain unresolved
+- Hardened retry and local-loopback behavior for the review remediation branch:
+  - clear failed submit reservations from in-memory idempotency replay state so same-process retries are not stuck in `submit_in_progress` after a terminal store save failure
+  - accept the full loopback IP range, including non-canonical IPv4 and IPv6 loopback literals, for authenticated local HTTP provider endpoints
+- Finalized the review-remediation failure semantics:
+  - treat post-rename parent-directory fsync errors as degraded durability warnings after a logically committed mutation instead of surfacing a false failed-mutation result
+  - clear in-memory in-flight idempotency reservations when connector or resolver failure memoization itself cannot be persisted, so same-process retries are not stuck in `submit_in_progress`
+  - preserve the degraded-durability warning signal after committed rename so operators can still detect weakly durable store commits
+- Closed follow-up review regressions in loopback validation and shutdown semantics:
+  - keep authenticated local HTTP base-url validation compatible with non-canonical decimal loopback literals used by local test harnesses
+  - drain already accepted IPC handlers on Ctrl-C shutdown so in-flight requests can still complete and emit exactly one response before process exit
+- Allowed the daemon to keep serving independent IPC requests while a slow submit is still running:
+  - moved non-`serve_once` connections onto spawned Tokio tasks
+  - stopped holding the store across provider-backed submit reasoning
+  - added regression coverage proving `status` and approval-list requests stay responsive during slow submits
+  - restored `sharo-daemon` clippy cleanliness for the touched store module by moving the test module to file end
+- Made daemon store persistence transactional on save failure:
+  - staged mutating store operations on cloned state and commit only after the JSON write succeeds
+  - added rollback regression tests for session registration, task submission, approval resolution, and failure memoization
+  - added an end-to-end retry scenario proving a failed save does not poison idempotent submit replay or create ghost tasks
+- Hardened connector-pool worker scaling to keep the configured upper bound stable:
+  - reserved worker slots atomically before spawning threads instead of incrementing after spawn
+  - released reserved worker count if thread creation fails
+  - added race-focused unit coverage and a daemon burst test that bounds concurrent upstream provider requests by `connector_pool.max_threads`
+- Corrected provider failure classification so retryable upstream errors no longer collapse into invalid requests:
+  - mapped `408` and `504` to timeout, `429` to rate limit, `402` to quota, and `5xx` to unavailable
+  - kept auth failures distinct for `401` and `403`
+  - added core and daemon regression coverage for transient provider failures without persisted success records
+- Restored a clean workspace clippy baseline:
+  - removed unit-struct `::default()` construction from connector tests
+  - kept `store.rs` item ordering compatible with the lint gate after the transactional persistence refactor
+  - re-verified `cargo clippy --all-targets --all-features -- -D warnings` and `cargo test --workspace`
 - Added explicit restart recovery evidence for successful Scenario A tasks:
   - proved `task get` state and `result_preview` survive restart unchanged
   - proved recovered trace id, event payloads, and monotonic ordering remain intact after restart

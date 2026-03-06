@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use crate::model_connector::{
     ConnectorError, ModelConnectorPort, ModelProfile, ModelTurnRequest, ModelTurnResponse,
+    validate_base_url_security,
 };
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -29,6 +30,7 @@ impl ModelConnectorPort for OpenAiCompatibleConnector {
         let base_url = profile.base_url.as_deref().ok_or_else(|| {
             ConnectorError::InvalidRequest("model profile requires base_url".to_string())
         })?;
+        validate_base_url_security(profile)?;
 
         let url = format!("{}/v1/responses", base_url.trim_end_matches('/'));
         let mut req = shared_blocking_client()
@@ -51,27 +53,11 @@ impl ModelConnectorPort for OpenAiCompatibleConnector {
             req = req.bearer_auth(token);
         }
 
-        let response = req.send().map_err(|e| {
-            if e.is_timeout() {
-                ConnectorError::Timeout(e.to_string())
-            } else if e.is_connect() {
-                ConnectorError::Unavailable(e.to_string())
-            } else {
-                ConnectorError::Internal(e.to_string())
-            }
-        })?;
+        let response = req.send().map_err(classify_transport_error)?;
 
         let status = response.status();
-        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            return Err(ConnectorError::RateLimit("provider rate limit".to_string()));
-        }
-        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-            return Err(ConnectorError::Auth(format!("provider auth failure status={status}")));
-        }
         if !status.is_success() {
-            return Err(ConnectorError::InvalidRequest(format!(
-                "provider request failed status={status}"
-            )));
+            return Err(classify_http_status(status));
         }
 
         let body: Value = response
@@ -84,6 +70,37 @@ impl ModelConnectorPort for OpenAiCompatibleConnector {
             route_label: format!("{}:{}", profile.provider_id, profile.model_id),
             content,
         })
+    }
+}
+
+fn classify_transport_error(error: reqwest::Error) -> ConnectorError {
+    if error.is_timeout() {
+        ConnectorError::Timeout(error.to_string())
+    } else if error.is_connect() {
+        ConnectorError::Unavailable(error.to_string())
+    } else {
+        ConnectorError::Internal(error.to_string())
+    }
+}
+
+fn classify_http_status(status: reqwest::StatusCode) -> ConnectorError {
+    match status {
+        reqwest::StatusCode::REQUEST_TIMEOUT | reqwest::StatusCode::GATEWAY_TIMEOUT => {
+            ConnectorError::Timeout(format!("provider timeout status={status}"))
+        }
+        reqwest::StatusCode::TOO_MANY_REQUESTS => {
+            ConnectorError::RateLimit(format!("provider rate limit status={status}"))
+        }
+        reqwest::StatusCode::PAYMENT_REQUIRED => {
+            ConnectorError::Quota(format!("provider quota exceeded status={status}"))
+        }
+        reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN => {
+            ConnectorError::Auth(format!("provider auth failure status={status}"))
+        }
+        status if status.is_server_error() => {
+            ConnectorError::Unavailable(format!("provider unavailable status={status}"))
+        }
+        _ => ConnectorError::InvalidRequest(format!("provider request failed status={status}")),
     }
 }
 
@@ -142,7 +159,7 @@ impl ModelConnectorPort for OllamaConnector {
 mod tests {
     use crate::model_connector::ConnectorError;
 
-    use super::extract_output_text;
+    use super::{classify_http_status, extract_output_text};
 
     #[test]
     fn extract_output_text_accepts_output_text_field() {
@@ -207,5 +224,53 @@ mod tests {
         });
         let parsed = extract_output_text(&body).expect("multiple chunks should parse");
         assert_eq!(parsed, "line one\nline two");
+    }
+
+    #[test]
+    fn http_500_maps_to_unavailable() {
+        let error = classify_http_status(reqwest::StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(matches!(error, ConnectorError::Unavailable(_)));
+    }
+
+    #[test]
+    fn http_408_maps_to_timeout() {
+        let error = classify_http_status(reqwest::StatusCode::REQUEST_TIMEOUT);
+        assert!(matches!(error, ConnectorError::Timeout(_)));
+    }
+
+    #[test]
+    fn http_429_maps_to_rate_limit() {
+        let error = classify_http_status(reqwest::StatusCode::TOO_MANY_REQUESTS);
+        assert!(matches!(error, ConnectorError::RateLimit(_)));
+    }
+
+    #[test]
+    fn http_402_maps_to_quota() {
+        let error = classify_http_status(reqwest::StatusCode::PAYMENT_REQUIRED);
+        assert!(matches!(error, ConnectorError::Quota(_)));
+    }
+
+    #[test]
+    fn http_400_maps_to_invalid_request() {
+        let error = classify_http_status(reqwest::StatusCode::BAD_REQUEST);
+        assert!(matches!(error, ConnectorError::InvalidRequest(_)));
+    }
+
+    #[test]
+    fn non_success_statuses_never_default_retryable_codes_to_invalid_request() {
+        for status in [
+            reqwest::StatusCode::REQUEST_TIMEOUT,
+            reqwest::StatusCode::TOO_MANY_REQUESTS,
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            reqwest::StatusCode::BAD_GATEWAY,
+            reqwest::StatusCode::SERVICE_UNAVAILABLE,
+            reqwest::StatusCode::GATEWAY_TIMEOUT,
+        ] {
+            let error = classify_http_status(status);
+            assert!(
+                !matches!(error, ConnectorError::InvalidRequest(_)),
+                "retryable status {status} mapped to invalid request"
+            );
+        }
     }
 }

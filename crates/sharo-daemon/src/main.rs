@@ -1,16 +1,19 @@
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex, MutexGuard};
 #[cfg(unix)]
 use std::{fs, os::unix::fs::PermissionsExt};
 
 use clap::{Parser, Subcommand};
 use sharo_core::client::{RuntimeClient, StubClient};
-use sharo_core::kernel::{KernelApprovalInput, KernelPort, KernelSubmitInput};
+use sharo_core::kernel::KernelApprovalInput;
 use sharo_core::protocol::{
     DaemonRequest, DaemonResponse, GetArtifactsResponse, GetTaskResponse, GetTraceResponse,
-    RegisterSessionResponse, TaskStatusRequest,
+    RegisterSessionResponse, SubmitTaskOpResponse, TaskStatusRequest,
 };
+use sharo_core::reasoning::ReasoningError;
 use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
+use tokio::task::JoinSet;
 
 mod store;
 mod config;
@@ -18,11 +21,17 @@ mod connector_pool;
 mod kernel;
 use config::{default_daemon_config_path, load_daemon_config};
 use kernel::{DaemonKernel, DaemonKernelRuntime, KernelRuntimeConfig};
-use store::Store;
+use store::{Store, SubmitPreparationOutcome, SubmitReplay};
 
 const DEFAULT_SOCKET_PATH: &str = "/tmp/sharo-daemon.sock";
 const DEFAULT_STORE_PATH: &str = "/tmp/sharo-daemon-store.json";
 const MAX_REQUEST_BYTES: usize = 1_048_576;
+
+struct AppState {
+    client: StubClient,
+    store: Mutex<Store>,
+    daemon_kernel: DaemonKernel,
+}
 
 #[derive(Debug, Parser)]
 #[command(name = "sharo-daemon")]
@@ -50,46 +59,44 @@ enum DaemonCommand {
 
 fn handle_request(
     request: DaemonRequest,
-    client: &impl RuntimeClient,
-    store: &mut Store,
-    daemon_kernel: &DaemonKernel,
+    state: &AppState,
 ) -> DaemonResponse {
     match request {
-        DaemonRequest::Submit(submit) => DaemonResponse::Submit(client.submit(&submit)),
-        DaemonRequest::Status(status) => DaemonResponse::Status(client.status(&TaskStatusRequest {
+        DaemonRequest::Submit(submit) => DaemonResponse::Submit(state.client.submit(&submit)),
+        DaemonRequest::Status(status) => DaemonResponse::Status(state.client.status(&TaskStatusRequest {
             task_id: status.task_id,
         })),
-        DaemonRequest::RegisterSession(payload) => match store.register_session(&payload.session_label) {
+        DaemonRequest::RegisterSession(payload) => match lock_unpoisoned(&state.store)
+            .register_session(&payload.session_label)
+        {
             Ok(session_id) => DaemonResponse::RegisterSession(RegisterSessionResponse { session_id }),
             Err(message) => DaemonResponse::Error { message },
         },
-        DaemonRequest::SubmitTask(payload) => {
-            let mut kernel = DaemonKernelRuntime::new(store, daemon_kernel);
-            match kernel.submit_task(KernelSubmitInput { request: payload }) {
-                Ok(response) => DaemonResponse::SubmitTask(response.response),
-                Err(message) => DaemonResponse::Error { message },
-            }
-        }
-        DaemonRequest::GetTask(payload) => match store.get_task(&payload.task_id) {
+        DaemonRequest::SubmitTask(payload) => match handle_submit_task(state, payload) {
+            Ok(response) => DaemonResponse::SubmitTask(response),
+            Err(message) => DaemonResponse::Error { message },
+        },
+        DaemonRequest::GetTask(payload) => match lock_unpoisoned(&state.store).get_task(&payload.task_id) {
             Some(task) => DaemonResponse::GetTask(GetTaskResponse { task }),
             None => DaemonResponse::Error {
                 message: format!("task_not_found task_id={}", payload.task_id),
             },
         },
-        DaemonRequest::GetTrace(payload) => match store.get_trace(&payload.task_id) {
+        DaemonRequest::GetTrace(payload) => match lock_unpoisoned(&state.store).get_trace(&payload.task_id) {
             Some(trace) => DaemonResponse::GetTrace(GetTraceResponse { trace }),
             None => DaemonResponse::Error {
                 message: format!("trace_not_found task_id={}", payload.task_id),
             },
         },
         DaemonRequest::GetArtifacts(payload) => DaemonResponse::GetArtifacts(GetArtifactsResponse {
-            artifacts: store.get_artifacts(&payload.task_id),
+            artifacts: lock_unpoisoned(&state.store).get_artifacts(&payload.task_id),
         }),
         DaemonRequest::ListPendingApprovals => {
-            DaemonResponse::ListPendingApprovals(store.list_pending_approvals())
+            DaemonResponse::ListPendingApprovals(lock_unpoisoned(&state.store).list_pending_approvals())
         }
         DaemonRequest::ResolveApproval(payload) => {
-            let mut kernel = DaemonKernelRuntime::new(store, daemon_kernel);
+            let mut store = lock_unpoisoned(&state.store);
+            let mut kernel = DaemonKernelRuntime::new(&mut store);
             match kernel.resolve_approval(KernelApprovalInput {
                 approval_id: payload.approval_id,
                 decision: payload.decision,
@@ -101,11 +108,84 @@ fn handle_request(
     }
 }
 
+fn handle_submit_task(
+    state: &AppState,
+    payload: sharo_core::protocol::SubmitTaskOpRequest,
+) -> Result<SubmitTaskOpResponse, String> {
+    let preparation = {
+        let mut store = lock_unpoisoned(&state.store);
+        store.prepare_submit(&payload)?
+    };
+
+    let preparation = match preparation {
+        SubmitPreparationOutcome::Replay(SubmitReplay::Task(response)) => return Ok(response),
+        SubmitPreparationOutcome::Replay(SubmitReplay::Error(message)) => return Err(message),
+        SubmitPreparationOutcome::Ready(preparation) => preparation,
+    };
+
+    let reasoning = state.daemon_kernel.reason_submit(&preparation, &payload);
+    let mut store = lock_unpoisoned(&state.store);
+    let idempotency_key = payload.idempotency_key.clone();
+    match reasoning {
+        Ok(reasoning) => match store.submit_task_with_route(
+            &preparation,
+            payload,
+            &reasoning.route_decision_details,
+            &reasoning.model_output_text,
+            &reasoning.fit_loop_records,
+        ) {
+            Ok(response) => Ok(response),
+            Err(message) => {
+                store.release_inflight_idempotency_retry_lock(
+                    &preparation.session_id_hint,
+                    idempotency_key.as_deref(),
+                    &preparation.task_id_hint,
+                );
+                Err(message)
+            }
+        },
+        Err(ReasoningError::FitLoopFailure { message, records }) => match store.submit_failed_task(
+            &preparation,
+            payload,
+            &message,
+            &records,
+        ) {
+            Ok(response) => Ok(response),
+            Err(store_error) => {
+                store.release_inflight_idempotency_retry_lock(
+                    &preparation.session_id_hint,
+                    idempotency_key.as_deref(),
+                    &preparation.task_id_hint,
+                );
+                Err(store_error)
+            }
+        },
+        Err(ReasoningError::ConnectorFailure { message })
+        | Err(ReasoningError::ResolveFailure { message }) => {
+            if let Err(store_error) = store.record_submission_failure(
+                &preparation.session_id_hint,
+                payload.idempotency_key.as_deref(),
+                &message,
+            ) {
+                store.release_inflight_idempotency_retry_lock(
+                    &preparation.session_id_hint,
+                    idempotency_key.as_deref(),
+                    &preparation.task_id_hint,
+                );
+                return Err(store_error);
+            }
+            Err(message)
+        }
+    }
+}
+
+fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 async fn handle_stream(
     stream: UnixStream,
-    client: &impl RuntimeClient,
-    store: &mut Store,
-    daemon_kernel: &DaemonKernel,
+    state: Arc<AppState>,
 ) {
     let (mut reader, mut writer) = stream.into_split();
     let mut bytes = Vec::new();
@@ -173,7 +253,17 @@ async fn handle_stream(
     };
 
     let response = match serde_json::from_str::<DaemonRequest>(line.trim()) {
-        Ok(request) => handle_request(request, client, store, daemon_kernel),
+        Ok(request) => match tokio::task::spawn_blocking({
+            let state = Arc::clone(&state);
+            move || handle_request(request, &state)
+        })
+        .await
+        {
+            Ok(response) => response,
+            Err(error) => DaemonResponse::Error {
+                message: format!("request_task_join_failed error={error}"),
+            },
+        },
         Err(error) => DaemonResponse::Error {
             message: format!("invalid request: {error}"),
         },
@@ -228,7 +318,7 @@ async fn main() {
                 std::process::exit(1);
             }
 
-            let mut store = match Store::open(&store_path) {
+            let store = match Store::open(&store_path) {
                 Ok(store) => store,
                 Err(message) => {
                     eprintln!("daemon_error=store_open_failed message={}", message);
@@ -250,13 +340,20 @@ async fn main() {
                     std::process::exit(1);
                 }
             };
-            let daemon_kernel = DaemonKernel::new(&kernel_config);
-
-            let client = StubClient;
+            let state = Arc::new(AppState {
+                client: StubClient,
+                store: Mutex::new(store),
+                daemon_kernel: DaemonKernel::new(&kernel_config),
+            });
+            let mut handlers = JoinSet::new();
+            let mut shutdown_requested = false;
 
             loop {
+                if shutdown_requested && handlers.is_empty() {
+                    break;
+                }
                 tokio::select! {
-                    accept_result = listener.accept() => {
+                    accept_result = listener.accept(), if !shutdown_requested => {
                         let (stream, _) = match accept_result {
                             Ok(pair) => pair,
                             Err(error) => {
@@ -265,14 +362,20 @@ async fn main() {
                             }
                         };
 
-                        handle_stream(stream, &client, &mut store, &daemon_kernel).await;
-
                         if serve_once {
+                            handle_stream(stream, Arc::clone(&state)).await;
                             break;
                         }
+
+                        handlers.spawn(handle_stream(stream, Arc::clone(&state)));
                     }
-                    _ = tokio::signal::ctrl_c() => {
-                        break;
+                    joined = handlers.join_next(), if !handlers.is_empty() => {
+                        if let Some(Err(error)) = joined {
+                            eprintln!("daemon_error=request_handler_failed message={}", error);
+                        }
+                    }
+                    _ = tokio::signal::ctrl_c(), if !shutdown_requested => {
+                        shutdown_requested = true;
                     }
                 }
             }
