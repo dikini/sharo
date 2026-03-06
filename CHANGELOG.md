@@ -9,6 +9,12 @@ The format is based on Common Changelog:
 
 ### Added
 
+- Added workflow tooling rollout planning artifacts for the six high-impact guardrail/tooling upgrades:
+  - `docs/specs/workflow-tooling-rollout.md`
+  - `docs/plans/2026-03-06-workflow-tooling-rollout-plan.md`
+  - task registry entries:
+    - `TASK-WORKFLOW-TOOLING-SPEC-001`
+    - `TASK-WORKFLOW-TOOLING-PLAN-001`
 - Added deterministic workflow hardening planning artifacts:
   - `docs/specs/deterministic-workflow-hardening.md`
   - `docs/plans/2026-03-06-deterministic-workflow-hardening-plan.md`
