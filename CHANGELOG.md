@@ -118,6 +118,9 @@ The format is based on Common Changelog:
 
 ### Fixed
 
+- Fixed daemon invariant gate command invocation in `scripts/check-daemon-invariants.sh`:
+  - run each named invariant test in a separate `cargo test` command so Cargo argument parsing is valid
+  - restore executable `daemon-invariants` gate behavior for local and CI task-runner workflows
 - Restored post-merge test compatibility with the current protocol shape:
   - added `result_preview` to `TaskSummary` initialization in `crates/sharo-core/tests/protocol_tests.rs`
 - Removed daemon-wide submit serialization so independent provider-backed submits can make parallel progress:
