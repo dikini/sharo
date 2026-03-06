@@ -46,6 +46,7 @@ fn protocol_includes_optional_coordination_summary() {
         current_step_summary: "restricted write pending approval".to_string(),
         blocking_reason: Some("approval_required approval_id=approval-000001".to_string()),
         coordination_summary: Some("conflict_id=conflict-000001 scope=notes related_task_id=task-41".to_string()),
+        result_preview: None,
     };
 
     let payload = serde_json::to_string(&task).expect("serialize task summary");

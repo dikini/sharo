@@ -78,6 +78,8 @@ The format is based on Common Changelog:
 
 ### Fixed
 
+- Restored post-merge test compatibility with the current protocol shape:
+  - added `result_preview` to `TaskSummary` initialization in `crates/sharo-core/tests/protocol_tests.rs`
 - Removed daemon-wide submit serialization so independent provider-backed submits can make parallel progress:
   - deleted the process-wide submit mutex from `sharo-daemon`
   - kept submit preparation and commit phases isolated to short store lock windows
