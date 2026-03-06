@@ -28,3 +28,14 @@ setup() {
   run rg 'scripts/check-fast-feedback\.sh --all' "$ROOT/scripts/bootstrap-dev.sh"
   [ "$status" -eq 0 ]
 }
+
+@test "bootstrap checks shell and workflow lint prerequisites" {
+  run rg 'ensure_system_tool shellcheck' "$ROOT/scripts/bootstrap-dev.sh"
+  [ "$status" -eq 0 ]
+
+  run rg 'ensure_system_tool shfmt' "$ROOT/scripts/bootstrap-dev.sh"
+  [ "$status" -eq 0 ]
+
+  run rg 'ensure_system_tool actionlint' "$ROOT/scripts/bootstrap-dev.sh"
+  [ "$status" -eq 0 ]
+}

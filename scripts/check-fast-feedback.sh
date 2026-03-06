@@ -33,7 +33,7 @@ while [[ $# -gt 0 ]]; do
       write_marker=false
       shift
       ;;
-    -h|--help)
+    -h | --help)
       usage
       exit 0
       ;;
@@ -71,6 +71,8 @@ content_sha() {
 
 scripts/doc-lint.sh --changed --strict-new
 scripts/check-doc-terms.sh --changed
+scripts/check-workflows.sh --warn-missing
+scripts/check-shell-quality.sh --changed --warn-missing
 scripts/check-tasks-registry.sh
 scripts/check-tasks-sync.sh --changed
 scripts/check-rust-policy.sh
@@ -94,7 +96,7 @@ if [[ "$write_marker" == true ]]; then
     echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "head=$(git rev-parse HEAD)"
     echo "content_sha=$(content_sha)"
-  } > "$marker_file"
+  } >"$marker_file"
   echo "fast-feedback: marker updated at $marker_file"
 fi
 

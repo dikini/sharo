@@ -37,7 +37,7 @@ while [[ $# -gt 0 ]]; do
       run_verify=false
       shift
       ;;
-    -h|--help)
+    -h | --help)
       usage
       exit 0
       ;;
@@ -126,6 +126,18 @@ ensure_just() {
   return 1
 }
 
+ensure_system_tool() {
+  local command_name="$1"
+  local install_hint="$2"
+  if command -v "$command_name" >/dev/null 2>&1; then
+    echo "bootstrap-dev: $command_name present ($(command -v "$command_name"))"
+    return 0
+  fi
+
+  echo "bootstrap-dev: missing command '$command_name' ($install_hint)" >&2
+  return 1
+}
+
 ensure_cargo_tool() {
   local subcommand="$1"
   local package="$2"
@@ -168,6 +180,12 @@ ensure_just
 ensure_cargo_tool deny cargo-deny
 ensure_cargo_tool audit cargo-audit
 ensure_cargo_tool nextest cargo-nextest
+ensure_cargo_tool udeps cargo-udeps
+ensure_cargo_tool msrv cargo-msrv
+ensure_cargo_tool semver-checks cargo-semver-checks
+ensure_system_tool shellcheck "apt install -y shellcheck"
+ensure_system_tool shfmt "apt install -y shfmt"
+ensure_system_tool actionlint "apt install -y actionlint"
 ensure_hooks
 
 if [[ "$run_verify" == true ]]; then

@@ -16,10 +16,18 @@ setup() {
 
   run rg '^daemon-invariants:\s*$' "$ROOT/justfile"
   [ "$status" -eq 0 ]
+
+  run rg '^shell-quality:\s*$' "$ROOT/justfile"
+  [ "$status" -eq 0 ]
+
+  run rg '^workflow-lint:\s*$' "$ROOT/justfile"
+  [ "$status" -eq 0 ]
+
+  run rg '^rust-hygiene:\s*$' "$ROOT/justfile"
+  [ "$status" -eq 0 ]
 }
 
 @test "policy checks workflow uses just verify entrypoint" {
   run rg 'run: just verify' "$ROOT/.github/workflows/policy-checks.yml"
   [ "$status" -eq 0 ]
 }
-

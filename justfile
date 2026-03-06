@@ -14,3 +14,12 @@ merge-gate:
 
 daemon-invariants:
     scripts/check-daemon-invariants.sh
+
+shell-quality:
+    scripts/check-shell-quality.sh --all
+
+workflow-lint:
+    scripts/check-workflows.sh
+
+rust-hygiene:
+    scripts/check-rust-hygiene.sh --advisory --check all

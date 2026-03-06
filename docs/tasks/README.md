@@ -39,6 +39,10 @@ This keeps task state deterministic and reduces stale registry entries.
 - Run Knot diff check: `scripts/check-knot-diff.sh --mapping docs/tasks/knot-diff-mapping.csv`
 - Run research reference check: `scripts/check-research-references.sh --registry docs/tasks/research-reference-rules.csv`
 - Run shell tests (Bats): `scripts/run-shell-tests.sh --all`
+- Run shell formatting/lint checks: `scripts/check-shell-quality.sh --all`
+- Run GitHub workflow lint checks: `scripts/check-workflows.sh`
+- Run Rust hygiene checks (advisory): `scripts/check-rust-hygiene.sh --advisory --check all`
+- Run Rust hygiene checks (strict): `scripts/check-rust-hygiene.sh --strict --check all`
 - Run MVP matrix map quality gate: `scripts/check-mvp-matrix-map.sh`
 - Run merge-result gate checks: `scripts/check-merge-result.sh`
 - Run daemon invariant checks: `scripts/check-daemon-invariants.sh`
@@ -71,6 +75,26 @@ Current state: slices 000 through 005 are marked `done` in `docs/tasks/tasks.csv
 - `TASK-RESEARCH-LINT-001`: implemented registry-driven research citation/addendum verifier with marker and path checks.
 - `TASK-BATS-TESTS-001`: migrated shell-script test harnesses to `bats-core` with deterministic installer and unified runner.
 - `TASK-DEV-BOOTSTRAP-001`: added deterministic fresh-clone bootstrap flow for required local tools and hooks.
+- `TASK-WORKFLOW-TOOL-GUIDES-SPEC-001`: defined shell/workflow/rust-hygiene guide contracts with CI and decision-support expectations.
+- `TASK-WORKFLOW-TOOL-GUIDES-PLAN-001`: implemented shell/workflow/rust-hygiene wrappers, CI gates, and operator docs.
+
+## Tool Usage Guide
+
+- Use `scripts/check-shell-quality.sh --all` before changing shell scripts to catch formatting/lint issues early.
+- Use `scripts/check-workflows.sh` before changing `.github/workflows/*` to catch invalid actions syntax and expressions.
+- Use `scripts/check-rust-hygiene.sh --advisory --check all` during feature work for dependency hygiene signal without blocking iteration.
+- Use `scripts/check-rust-hygiene.sh --strict --check all` before dependency bumps or release preparation.
+- `cargo semver-checks` is scoped to `sharo-core` because that crate is the public library surface in this workspace.
+
+## Fresh Clone Tool Bootstrap
+
+- Required local tools for full workflow checks:
+  - system: `shellcheck`, `shfmt`, `actionlint`
+  - cargo: `cargo-nextest`, `cargo-deny`, `cargo-audit`, `cargo-udeps`, `cargo-msrv`, `cargo-semver-checks`
+- After clone:
+  - run `scripts/bootstrap-dev.sh --check` to detect missing dependencies.
+  - install missing system tools via package manager.
+  - run `scripts/bootstrap-dev.sh --apply` to install project-managed tools/hooks and execute full verification.
 
 ## Tooling Inputs
 

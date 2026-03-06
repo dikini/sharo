@@ -17,11 +17,25 @@ jobs:
       - name: Install just
         uses: taiki-e/install-action@just
 
+      - name: Install actionlint
+        uses: taiki-e/install-action@actionlint
+
+      - name: Install shell quality tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck shfmt
+
       - name: Make scripts executable
         run: chmod +x scripts/*.sh
 
       - name: Run canonical verification entrypoint
         run: just verify
+
+      - name: Run workflow lint checks
+        run: scripts/check-workflows.sh
+
+      - name: Run shell quality checks
+        run: scripts/check-shell-quality.sh --all
 
       - name: Install dependency security tools
         run: cargo install --locked cargo-deny cargo-audit
