@@ -121,6 +121,10 @@ The format is based on Common Changelog:
 - Fixed daemon invariant gate command invocation in `scripts/check-daemon-invariants.sh`:
   - run each named invariant test in a separate `cargo test` command so Cargo argument parsing is valid
   - restore executable `daemon-invariants` gate behavior for local and CI task-runner workflows
+- Fixed worktree compatibility in `scripts/tests/test-fast-feedback-marker.bats`:
+  - write marker files using `git rev-parse --git-dir` instead of assuming `.git/` directory layout
+  - restore original working directory during teardown to avoid cross-test repository-state leakage
+  - unset hook-injected `GIT_DIR` and `GIT_WORK_TREE` in test setup so temp-repo commits do not target the parent repository
 - Restored post-merge test compatibility with the current protocol shape:
   - added `result_preview` to `TaskSummary` initialization in `crates/sharo-core/tests/protocol_tests.rs`
 - Removed daemon-wide submit serialization so independent provider-backed submits can make parallel progress:
