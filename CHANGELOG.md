@@ -61,6 +61,20 @@ The format is based on Common Changelog:
     - `TASK-AUTH-BASE-URL-HARDENING-PLAN-001`
     - `TASK-STORE-DIR-FSYNC-SPEC-001`
     - `TASK-STORE-DIR-FSYNC-PLAN-001`
+- Added second-pass review remediation planning artifacts for remaining Tokio, persistence-consistency, and submit-identity fixes:
+  - `docs/specs/daemon-blocking-submit-offload.md`
+  - `docs/plans/2026-03-06-daemon-blocking-submit-offload-plan.md`
+  - `docs/specs/store-directory-fsync-commit-consistency.md`
+  - `docs/plans/2026-03-06-store-directory-fsync-commit-consistency-plan.md`
+  - `docs/specs/submit-identity-reservation.md`
+  - `docs/plans/2026-03-06-submit-identity-reservation-plan.md`
+  - task registry entries:
+    - `TASK-DAEMON-BLOCKING-OFFLOAD-SPEC-001`
+    - `TASK-DAEMON-BLOCKING-OFFLOAD-PLAN-001`
+    - `TASK-STORE-FSYNC-CONSISTENCY-SPEC-001`
+    - `TASK-STORE-FSYNC-CONSISTENCY-PLAN-001`
+    - `TASK-SUBMIT-IDENTITY-SPEC-001`
+    - `TASK-SUBMIT-IDENTITY-PLAN-001`
 
 ### Fixed
 
