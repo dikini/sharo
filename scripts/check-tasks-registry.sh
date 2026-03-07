@@ -7,7 +7,10 @@ CSV="docs/tasks/tasks.csv"
 
 allowed_statuses='planned deferred in_progress done cancelled'
 
-[[ -f "$CSV" ]] || { echo "tasks-registry: missing $CSV" >&2; exit 1; }
+[[ -f "$CSV" ]] || {
+  echo "tasks-registry: missing $CSV" >&2
+  exit 1
+}
 
 header='id,type,title,source,status,blocked_by,notes'
 actual_header="$(head -n1 "$CSV")"
@@ -23,7 +26,7 @@ fail() {
   failures=$((failures + 1))
 }
 
-while IFS=',' read -r id type title source status blocked_by notes; do
+while IFS=',' read -r id type title source status _blocked_by _notes; do
   [[ -z "$id" ]] && continue
   if [[ "$id" == "id" ]]; then
     continue
@@ -35,7 +38,7 @@ while IFS=',' read -r id type title source status blocked_by notes; do
   [[ -n "$source" ]] || fail "$id missing source"
   [[ -n "$status" ]] || fail "$id missing status"
 
-  if ! grep -Eq "(^| )$status( |$)" <<< "$allowed_statuses"; then
+  if ! grep -Eq "(^| )$status( |$)" <<<"$allowed_statuses"; then
     fail "$id has invalid status '$status'"
   fi
 
@@ -47,7 +50,7 @@ while IFS=',' read -r id type title source status blocked_by notes; do
   if ! rg -n -F "$id" "$source" >/dev/null 2>&1; then
     fail "$id not referenced in source: $source"
   fi
-done < "$CSV"
+done <"$CSV"
 
 if [[ "$failures" -gt 0 ]]; then
   echo "tasks-registry: FAILED ($failures issue(s))" >&2

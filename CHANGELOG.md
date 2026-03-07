@@ -13,6 +13,12 @@ The format is based on Common Changelog:
   - `docs/templates/README.template.md` for top-level repository onboarding and workflow conventions
   - `docs/templates/AGENTS.template.md` for project governance and agent/contributor execution policy
   - `scripts/init-repo.sh` to initialize top-level `README.md` and `AGENTS.md` from templates with safe overwrite control
+  - `scripts/extract-backbone.sh` to generate a standalone reusable backbone directory at `backbone/project-template`
+  - `just extract-backbone` wrapper command for deterministic backbone regeneration
+  - `scripts/init-from-backbone.sh` to initialize a new repository from `backbone/project-template` in one command
+  - `just init-backbone-repo <dest> [project]` wrapper for backbone-based repo initialization
+  - Bats coverage in `scripts/tests/test-init-from-backbone.bats`
+  - generated backbone package includes reusable scripts, hooks, templates, task-registry baseline, sync artifacts, and CI workflow scaffolding
   - `just init-repo` as wrapper command for starter initialization
   - Bats coverage in `scripts/tests/test-init-repo.bats` and `scripts/tests/test-justfile-targets.bats`
   - template catalog updates in `docs/templates/README.md`

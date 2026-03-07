@@ -6,6 +6,12 @@ setup:
 init-repo:
     scripts/init-repo.sh --apply
 
+extract-backbone:
+    scripts/extract-backbone.sh
+
+init-backbone-repo dest project='':
+    if [ -n "{{project}}" ]; then scripts/init-from-backbone.sh --dest "{{dest}}" --project "{{project}}"; else scripts/init-from-backbone.sh --dest "{{dest}}"; fi
+
 verify:
     scripts/check-fast-feedback.sh
 

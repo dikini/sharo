@@ -8,6 +8,12 @@ setup() {
   run rg '^init-repo:\s*$' "$ROOT/justfile"
   [ "$status" -eq 0 ]
 
+  run rg '^extract-backbone:\s*$' "$ROOT/justfile"
+  [ "$status" -eq 0 ]
+
+  run rg '^init-backbone-repo dest project=' "$ROOT/justfile"
+  [ "$status" -eq 0 ]
+
   run rg '^verify:\s*$' "$ROOT/justfile"
   [ "$status" -eq 0 ]
 

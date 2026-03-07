@@ -61,6 +61,12 @@ Example:
 - Initialize or refresh top-level starter files from templates:
   - `scripts/init-repo.sh --apply`
   - `scripts/init-repo.sh --apply --force` to overwrite existing top-level starter files
+- Extract standalone reusable backbone package from current workflow/tooling/templates:
+  - `scripts/extract-backbone.sh`
+  - `scripts/extract-backbone.sh --target <path>` for custom output location
+- Initialize a fresh repository from extracted backbone:
+  - `scripts/init-from-backbone.sh --dest <path>`
+  - `scripts/init-from-backbone.sh --dest <path> --project <name>`
 - Create new specs/plans via `scripts/doc-new.sh` (or `scripts/doc-start.sh`).
 - For strict-profile docs, use `--strict-filled`:
   - `scripts/doc-new.sh spec <slug> --strict-filled`

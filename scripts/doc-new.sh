@@ -78,6 +78,7 @@ apply_strict_filled_spec() {
 
 apply_strict_filled_plan() {
   local file="$1"
+  # shellcheck disable=SC2016
   sed -i \
     -e 's/^### Task N: <Task Name>$/### Task 1: Define Initial Work Slice/' \
     -e 's/^- Create:$/- Create: <new-path>/' \
@@ -99,7 +100,10 @@ case "$kind" in
   spec)
     parse_slug_and_flags "$@"
     target="docs/specs/${slug}.md"
-    [[ -e "$target" ]] && { echo "doc-new: exists: $target" >&2; exit 1; }
+    [[ -e "$target" ]] && {
+      echo "doc-new: exists: $target" >&2
+      exit 1
+    }
     cp "docs/templates/spec.template.md" "$target"
     sed -i \
       -e "s|<Spec Title>|$(title_case "$slug")|g" \
@@ -113,7 +117,10 @@ case "$kind" in
   plan)
     parse_slug_and_flags "$@"
     target="docs/plans/$(date +%F)-${slug}-plan.md"
-    [[ -e "$target" ]] && { echo "doc-new: exists: $target" >&2; exit 1; }
+    [[ -e "$target" ]] && {
+      echo "doc-new: exists: $target" >&2
+      exit 1
+    }
     cp "docs/templates/plan.template.md" "$target"
     sed -i "s|<Feature>|$(title_case "$slug")|g" "$target"
     if [[ "$strict_filled" == true ]]; then
@@ -122,9 +129,15 @@ case "$kind" in
     echo "$target"
     ;;
   changelog)
-    [[ $# -eq 0 ]] || { usage; exit 2; }
+    [[ $# -eq 0 ]] || {
+      usage
+      exit 2
+    }
     target="CHANGELOG.md"
-    [[ -e "$target" ]] && { echo "doc-new: exists: $target" >&2; exit 1; }
+    [[ -e "$target" ]] && {
+      echo "doc-new: exists: $target" >&2
+      exit 1
+    }
     cp "docs/templates/CHANGELOG.template.md" "$target"
     echo "$target"
     ;;

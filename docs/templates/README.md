@@ -43,6 +43,12 @@ This allows gradual adoption:
 - Initialize top-level starter files from templates:
   - `scripts/init-repo.sh --apply`
   - optional overwrite mode: `scripts/init-repo.sh --apply --force`
+- Extract a standalone reusable backbone package:
+  - `scripts/extract-backbone.sh`
+  - optional target path: `scripts/extract-backbone.sh --target <path>`
+- Initialize a new repository from extracted backbone:
+  - `scripts/init-from-backbone.sh --dest <path>`
+  - optional project override: `scripts/init-from-backbone.sh --dest <path> --project <name>`
 - Run lint at task start and before commit:
   - `scripts/doc-lint.sh --changed --strict-new`
 
