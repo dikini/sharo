@@ -56,6 +56,11 @@ Example:
   - `spec.template.md` for new specs
   - `plan.template.md` for new plans
   - `CHANGELOG.template.md` when initializing changelog structure
+  - `README.template.md` for top-level project readme scaffolding
+  - `AGENTS.template.md` for project governance and contributor/agent policy scaffolding
+- Initialize or refresh top-level starter files from templates:
+  - `scripts/init-repo.sh --apply`
+  - `scripts/init-repo.sh --apply --force` to overwrite existing top-level starter files
 - Create new specs/plans via `scripts/doc-new.sh` (or `scripts/doc-start.sh`).
 - For strict-profile docs, use `--strict-filled`:
   - `scripts/doc-new.sh spec <slug> --strict-filled`

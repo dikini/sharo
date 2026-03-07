@@ -6,6 +6,10 @@ These templates standardize project artifacts while keeping dependencies minimal
 
 - `CHANGELOG.template.md`
   - Common Changelog baseline.
+- `README.template.md`
+  - Top-level project starter with status, layout, quick start, workflow, verification, and contribution sections.
+- `AGENTS.template.md`
+  - Project governance starter covering language/tooling policy, docs workflow, checks, and fast-feedback expectations.
 - `spec.template.md`
   - Spec structure with task contracts and verification focus.
 - `plan.template.md`
@@ -36,6 +40,9 @@ This allows gradual adoption:
   - `scripts/doc-start.sh spec <slug>`
   - `scripts/doc-start.sh plan <slug>`
   - `doc-start` applies strict-filled scaffolding by default.
+- Initialize top-level starter files from templates:
+  - `scripts/init-repo.sh --apply`
+  - optional overwrite mode: `scripts/init-repo.sh --apply --force`
 - Run lint at task start and before commit:
   - `scripts/doc-lint.sh --changed --strict-new`
 

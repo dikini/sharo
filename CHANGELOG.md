@@ -9,6 +9,14 @@ The format is based on Common Changelog:
 
 ### Added
 
+- Added starter backbone templates for current and future projects:
+  - `docs/templates/README.template.md` for top-level repository onboarding and workflow conventions
+  - `docs/templates/AGENTS.template.md` for project governance and agent/contributor execution policy
+  - `scripts/init-repo.sh` to initialize top-level `README.md` and `AGENTS.md` from templates with safe overwrite control
+  - `just init-repo` as wrapper command for starter initialization
+  - Bats coverage in `scripts/tests/test-init-repo.bats` and `scripts/tests/test-justfile-targets.bats`
+  - template catalog updates in `docs/templates/README.md`
+  - AGENTS template usage guidance update in `AGENTS.md`
 - Added explicit opt-in control for real OpenAI smoke checks:
   - `scripts/check-fast-feedback.sh` now skips live OpenAI smoke by default and only runs it when `SHARO_ENABLE_LIVE_OPENAI_SMOKE=true`
   - `.github/workflows/openai-live-smoke.yml` adds manual (`workflow_dispatch`) CI smoke execution with required `OPENAI_API_KEY` secret

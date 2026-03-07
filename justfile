@@ -3,6 +3,9 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 setup:
     scripts/bootstrap-dev.sh --apply
 
+init-repo:
+    scripts/init-repo.sh --apply
+
 verify:
     scripts/check-fast-feedback.sh
 

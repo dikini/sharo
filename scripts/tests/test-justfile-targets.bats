@@ -5,6 +5,9 @@ setup() {
 }
 
 @test "justfile includes required workflow targets" {
+  run rg '^init-repo:\s*$' "$ROOT/justfile"
+  [ "$status" -eq 0 ]
+
   run rg '^verify:\s*$' "$ROOT/justfile"
   [ "$status" -eq 0 ]
 
