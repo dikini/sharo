@@ -9,6 +9,48 @@ The format is based on Common Changelog:
 
 ### Added
 
+- Added Hazel structured memory architecture artifacts:
+  - `docs/specs/hazel-structured-memory.md`
+  - `docs/plans/2026-03-10-hazel-structured-memory-plan.md`
+  - task registry entries:
+    - `TASK-HAZEL-MEMORY-SPEC-001`
+    - `TASK-HAZEL-MEMORY-PLAN-001`
+  - strict structural MCP hook contract policy with v1 single-binding composition baseline
+  - additive `policy_ids` model with runtime policy-registry mapping and deterministic strict merge semantics
+  - explicit dependency-constraint synchronization requirement for shared workspace libraries
+- Added initial shared Hazel hook contract types in `sharo-core`:
+  - `PrePromptComposeHookInput`
+  - `RecollectionCard`, `RecollectionPayload`, and provenance support types
+  - `EffectivePolicyBundle` with deterministic `policy_ids` normalization
+  - strict unknown-field rejection coverage for pre-prompt hook payload parsing
+- Added daemon-side strict pre-prompt hook policy gating:
+  - enforce `pre_prompt_compose` single-binding policy at config validation time
+  - add strict unknown-policy-id handling through hook policy registry config
+  - map configured policy definitions to deterministic effective policy metadata for reasoning
+  - inject deterministic `HAZEL_POLICY_CONTROL` block into resolved memory context when effective policies are configured
+  - add daemon unit coverage for single-binding rejection, strict unknown-policy rejection, and effective policy metadata emission
+- Added `sharo-hazel-core` crate with deterministic structured-memory contracts:
+  - canonical domain model types (`Chunk`, `Entity`, `Relation`, `Association`, `Assertion`, `Activation`) with strict unknown-field rejection behavior
+  - deterministic lifecycle scoring/transition helpers for candidate/active/contested assertion states
+  - proposal batch contracts with idempotency/provenance fields for ingestion-safe acceptance surfaces
+  - baseline ingestion interfaces for conversation-log normalization (`OpenAiMessage` -> `ProposalBatch`) and bulk batch validation
+  - baseline sleep-orchestration contracts enforcing proposal-batch-only outputs with bounded budget checks
+- Added `sharo-hazel-mcp` crate as stdio-first Hazel MCP wrapper:
+  - explicit object-schema contracts for pre-prompt compose input and recollection output payloads
+  - structural input/output compatibility checks for hook binding validation
+  - wire-output normalization and semantic lint gates before memory injection formatting
+  - strict rejection of invalid recollection payloads (for example missing provenance or unsupported fields)
+  - contract coverage tests for compatibility failures/success and validation-before-injection invariants
+- Added daemon-side pre-prompt Hazel tool execution path over stdio:
+  - `pre_prompt_compose` can execute a configured single binding command before reasoning prompt composition
+  - strict request/response validation now uses shared `sharo-core` hook contracts (`ToolCallRequest`, `ToolCallResponse`, schema/value validators)
+  - fail-closed behavior on tool spawn/timeouts/non-zero exits/schema mismatch/semantic lint mismatch
+  - canonical recollection payloads are injected into memory as deterministic `HAZEL_RECOLLECTIONS` blocks with provenance references
+- Added Hazel manifest support for card-policy behavior in daemon config:
+  - `hazel_manifest.cards` supports kind-scoped policy IDs and per-kind max-card hints
+  - policy IDs from hook defaults and card manifest are composed additively and deterministically
+  - strict unknown-policy rejection extends to manifest-sourced policy IDs when strict mode is enabled
+  - effective card hints are exposed in reasoning metadata (`policy.card_hints`)
 - Added starter backbone templates for current and future projects:
   - `docs/templates/README.template.md` for top-level repository onboarding and workflow conventions
   - `docs/templates/AGENTS.template.md` for project governance and agent/contributor execution policy

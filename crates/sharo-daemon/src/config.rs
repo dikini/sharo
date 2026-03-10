@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -13,6 +14,12 @@ pub struct DaemonConfigFile {
     pub reasoning_policy: ReasoningPolicyConfig,
     #[serde(default)]
     pub reasoning_context: ReasoningContextConfig,
+    #[serde(default)]
+    pub reasoning_hooks: ReasoningHooksConfig,
+    #[serde(default)]
+    pub hook_policies: BTreeMap<String, HookPolicyDefinitionConfig>,
+    #[serde(default)]
+    pub hazel_manifest: HazelManifestConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -49,6 +56,49 @@ pub struct ReasoningContextConfig {
     pub persona: Option<String>,
     pub memory: Option<String>,
     pub runtime: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ReasoningHooksConfig {
+    #[serde(default)]
+    pub pre_prompt_compose: PrePromptComposeHookConfig,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct PrePromptComposeHookConfig {
+    pub composition: Option<String>,
+    pub bindings: Option<Vec<HookBindingConfig>>,
+    pub default_policy_ids: Option<Vec<String>>,
+    pub strict_unknown_policy_ids: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct HookBindingConfig {
+    pub id: String,
+    pub tool: String,
+    pub command: Option<String>,
+    pub args: Option<Vec<String>>,
+    pub timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct HookPolicyDefinitionConfig {
+    #[serde(default)]
+    pub rules: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct HazelManifestConfig {
+    #[serde(default)]
+    pub cards: Vec<HazelCardManifestConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct HazelCardManifestConfig {
+    pub kind: String,
+    #[serde(default)]
+    pub policy_ids: Vec<String>,
+    pub max_cards: Option<usize>,
 }
 
 fn daemon_config_path_from_home(home: &Path) -> PathBuf {
@@ -96,10 +146,20 @@ pub fn load_daemon_config(path: Option<&Path>) -> Result<DaemonConfigFile, Strin
         return Ok(DaemonConfigFile::default());
     }
 
-    let raw = fs::read_to_string(path)
-        .map_err(|e| format!("daemon_config_read_failed path={} error={}", path.display(), e))?;
-    toml::from_str::<DaemonConfigFile>(&raw)
-        .map_err(|e| format!("daemon_config_parse_failed path={} error={}", path.display(), e))
+    let raw = fs::read_to_string(path).map_err(|e| {
+        format!(
+            "daemon_config_read_failed path={} error={}",
+            path.display(),
+            e
+        )
+    })?;
+    toml::from_str::<DaemonConfigFile>(&raw).map_err(|e| {
+        format!(
+            "daemon_config_parse_failed path={} error={}",
+            path.display(),
+            e
+        )
+    })
 }
 
 #[cfg(test)]
@@ -107,8 +167,8 @@ mod tests {
     use std::path::PathBuf;
 
     use super::{
-        DaemonConfigFile, daemon_config_path_from_home, default_daemon_config_path,
-        load_daemon_config,
+        DaemonConfigFile, HookBindingConfig, daemon_config_path_from_home,
+        default_daemon_config_path, load_daemon_config,
     };
 
     #[test]
@@ -132,7 +192,10 @@ profile_id = "openai-main"
         let parsed: DaemonConfigFile = toml::from_str(raw).expect("parse");
         assert_eq!(parsed.model.provider.as_deref(), Some("openai"));
         assert_eq!(parsed.model.model_id.as_deref(), Some("gpt-5-mini"));
-        assert_eq!(parsed.model.base_url.as_deref(), Some("https://api.openai.com"));
+        assert_eq!(
+            parsed.model.base_url.as_deref(),
+            Some("https://api.openai.com")
+        );
         assert_eq!(parsed.model.auth_env_key.as_deref(), Some("OPENAI_API_KEY"));
         assert_eq!(parsed.model.timeout_ms, Some(5000));
         assert_eq!(parsed.model.max_retries, Some(2));
@@ -184,7 +247,85 @@ runtime = "secret=abc123"
             parsed.reasoning_context.persona.as_deref(),
             Some("verbosity=high")
         );
-        assert_eq!(parsed.reasoning_context.runtime.as_deref(), Some("secret=abc123"));
+        assert_eq!(
+            parsed.reasoning_context.runtime.as_deref(),
+            Some("secret=abc123")
+        );
+    }
+
+    #[test]
+    fn parse_reasoning_hook_and_policy_registry_from_toml() {
+        let raw = r#"
+[reasoning_hooks.pre_prompt_compose]
+composition = "single"
+default_policy_ids = ["hunch.v1"]
+strict_unknown_policy_ids = true
+
+[[reasoning_hooks.pre_prompt_compose.bindings]]
+id = "hazel"
+tool = "hazel.recollect"
+command = "/usr/bin/hazel-mcp"
+args = ["--stdio"]
+timeout_ms = 250
+
+[hook_policies."hunch.v1"]
+rules = ["label_guesses", "prefer_supported_facts"]
+
+[[hazel_manifest.cards]]
+kind = "association_cue"
+policy_ids = ["hunch.v1"]
+max_cards = 3
+"#;
+        let parsed: DaemonConfigFile = toml::from_str(raw).expect("parse");
+        assert_eq!(
+            parsed
+                .reasoning_hooks
+                .pre_prompt_compose
+                .composition
+                .as_deref(),
+            Some("single")
+        );
+        assert_eq!(
+            parsed
+                .reasoning_hooks
+                .pre_prompt_compose
+                .default_policy_ids
+                .as_deref(),
+            Some(&["hunch.v1".to_string()][..])
+        );
+        assert_eq!(
+            parsed
+                .reasoning_hooks
+                .pre_prompt_compose
+                .bindings
+                .as_deref(),
+            Some(
+                &[HookBindingConfig {
+                    id: "hazel".to_string(),
+                    tool: "hazel.recollect".to_string(),
+                    command: Some("/usr/bin/hazel-mcp".to_string()),
+                    args: Some(vec!["--stdio".to_string()]),
+                    timeout_ms: Some(250)
+                }][..]
+            )
+        );
+        assert_eq!(
+            parsed
+                .hook_policies
+                .get("hunch.v1")
+                .map(|p| p.rules.clone()),
+            Some(vec![
+                "label_guesses".to_string(),
+                "prefer_supported_facts".to_string()
+            ])
+        );
+        assert_eq!(parsed.hazel_manifest.cards.len(), 1);
+        assert_eq!(parsed.hazel_manifest.cards[0].kind, "association_cue");
+        assert_eq!(
+            parsed.hazel_manifest.cards[0].policy_ids,
+            vec!["hunch.v1".to_string()]
+        );
+        assert_eq!(parsed.hazel_manifest.cards[0].max_cards, Some(3));
     }
 
     #[test]

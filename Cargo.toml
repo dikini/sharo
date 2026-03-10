@@ -3,5 +3,7 @@ members = [
   "crates/sharo-core",
   "crates/sharo-cli",
   "crates/sharo-daemon",
+  "crates/sharo-hazel-core",
+  "crates/sharo-hazel-mcp",
 ]
 resolver = "2"
