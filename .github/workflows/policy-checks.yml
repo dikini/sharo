@@ -29,7 +29,7 @@ jobs:
         run: just verify
 
       - name: Run workflow lint checks
-        uses: rhysd/actionlint@v1
+        uses: rhysd/actionlint@v1.7.11
 
       - name: Run shell quality checks
         run: scripts/check-shell-quality.sh --all

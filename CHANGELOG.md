@@ -32,6 +32,7 @@ The format is based on Common Changelog:
 - Fixed policy-check workflow actionlint installer step to use explicit `taiki-e/install-action@v2` tool selection (`tool: actionlint`) for compatibility with current action catalog.
 - Fixed policy-check fuzz smoke environment by installing nightly Rust with `llvm-tools-preview` and running fuzz smoke under `RUSTUP_TOOLCHAIN=nightly`.
 - Switched policy-check workflow action linting to dedicated `rhysd/actionlint@v1` action for toolchain-independent workflow lint execution.
+- Fixed workflow actionlint reference to an existing tag (`rhysd/actionlint@v1.7.11`), because the repository does not publish a floating `v1` tag.
 
 ### Added
 
