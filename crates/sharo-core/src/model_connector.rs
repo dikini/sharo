@@ -144,7 +144,10 @@ impl ModelConnectorPort for DeterministicConnector {
         Ok(ModelTurnResponse {
             provider_request_id: None,
             route_label: "local_mock".to_string(),
-            content: format!("deterministic-response task={} prompt={}", request.task_id, request.prompt),
+            content: format!(
+                "deterministic-response task={} prompt={}",
+                request.task_id, request.prompt
+            ),
         })
     }
 }

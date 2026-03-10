@@ -66,7 +66,10 @@ impl ModelConnectorPort for OpenAiCompatibleConnector {
         let content = extract_output_text(&body)?;
 
         Ok(ModelTurnResponse {
-            provider_request_id: body.get("id").and_then(Value::as_str).map(|v| v.to_string()),
+            provider_request_id: body
+                .get("id")
+                .and_then(Value::as_str)
+                .map(|v| v.to_string()),
             route_label: format!("{}:{}", profile.provider_id, profile.model_id),
             content,
         })
@@ -178,10 +181,7 @@ mod tests {
             "output": []
         });
         let error = extract_output_text(&body).expect_err("missing text should fail");
-        assert!(matches!(
-            error,
-            ConnectorError::ProtocolMismatch(_)
-        ));
+        assert!(matches!(error, ConnectorError::ProtocolMismatch(_)));
     }
 
     #[test]

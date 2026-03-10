@@ -23,5 +23,8 @@ pub struct KernelApprovalResult {
 
 pub trait KernelPort {
     fn submit_task(&mut self, input: KernelSubmitInput) -> Result<KernelSubmitResult, String>;
-    fn resolve_approval(&mut self, input: KernelApprovalInput) -> Result<KernelApprovalResult, String>;
+    fn resolve_approval(
+        &mut self,
+        input: KernelApprovalInput,
+    ) -> Result<KernelApprovalResult, String>;
 }

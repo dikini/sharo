@@ -1,9 +1,8 @@
 use sharo_core::protocol::{
     ArtifactSummary, DaemonRequest, DaemonResponse, GetArtifactsResponse, GetTaskResponse,
-    GetTraceResponse,
-    ResolveApprovalRequest, ResolveApprovalResponse, SubmitTaskRequest, SubmitTaskResponse,
-    TaskState, TaskStatusRequest, TaskStatusResponse, TaskSummary, TraceEventSummary,
-    TraceSummary,
+    GetTraceResponse, ResolveApprovalRequest, ResolveApprovalResponse, SubmitTaskRequest,
+    SubmitTaskResponse, TaskState, TaskStatusRequest, TaskStatusResponse, TaskSummary,
+    TraceEventSummary, TraceSummary,
 };
 
 #[test]
@@ -81,23 +80,33 @@ fn approval_envelope_roundtrip() {
     let resolve_req_json = serde_json::to_string(&resolve_req).expect("serialize resolve request");
     let resolve_req_parsed: DaemonRequest =
         serde_json::from_str(&resolve_req_json).expect("deserialize resolve request");
-    assert!(matches!(resolve_req_parsed, DaemonRequest::ResolveApproval(_)));
+    assert!(matches!(
+        resolve_req_parsed,
+        DaemonRequest::ResolveApproval(_)
+    ));
 
     let resolve_resp = DaemonResponse::ResolveApproval(ResolveApprovalResponse {
         approval_id: "approval-000001".to_string(),
         task_id: "task-000001".to_string(),
         state: "approved".to_string(),
     });
-    let resolve_resp_json = serde_json::to_string(&resolve_resp).expect("serialize resolve response");
+    let resolve_resp_json =
+        serde_json::to_string(&resolve_resp).expect("serialize resolve response");
     let resolve_resp_parsed: DaemonResponse =
         serde_json::from_str(&resolve_resp_json).expect("deserialize resolve response");
-    assert!(matches!(resolve_resp_parsed, DaemonResponse::ResolveApproval(_)));
+    assert!(matches!(
+        resolve_resp_parsed,
+        DaemonResponse::ResolveApproval(_)
+    ));
 
     let list_req = DaemonRequest::ListPendingApprovals;
     let list_req_json = serde_json::to_string(&list_req).expect("serialize list request");
     let list_req_parsed: DaemonRequest =
         serde_json::from_str(&list_req_json).expect("deserialize list request");
-    assert!(matches!(list_req_parsed, DaemonRequest::ListPendingApprovals));
+    assert!(matches!(
+        list_req_parsed,
+        DaemonRequest::ListPendingApprovals
+    ));
 }
 
 #[test]
@@ -114,7 +123,8 @@ fn trace_and_artifact_envelopes_include_conformance_fields() {
         },
     });
     let task_json = serde_json::to_string(&task_resp).expect("serialize task response");
-    let task_parsed: DaemonResponse = serde_json::from_str(&task_json).expect("deserialize task response");
+    let task_parsed: DaemonResponse =
+        serde_json::from_str(&task_json).expect("deserialize task response");
     match task_parsed {
         DaemonResponse::GetTask(payload) => {
             assert_eq!(payload.task.result_preview.as_deref(), Some("preview"));
@@ -135,7 +145,8 @@ fn trace_and_artifact_envelopes_include_conformance_fields() {
         },
     });
     let trace_json = serde_json::to_string(&trace_resp).expect("serialize trace response");
-    let trace_parsed: DaemonResponse = serde_json::from_str(&trace_json).expect("deserialize trace response");
+    let trace_parsed: DaemonResponse =
+        serde_json::from_str(&trace_json).expect("deserialize trace response");
     match trace_parsed {
         DaemonResponse::GetTrace(payload) => {
             assert_eq!(payload.trace.session_id, "session-1");
@@ -152,7 +163,8 @@ fn trace_and_artifact_envelopes_include_conformance_fields() {
             produced_by_trace_event_sequence: 3,
         }],
     });
-    let artifacts_json = serde_json::to_string(&artifacts_resp).expect("serialize artifacts response");
+    let artifacts_json =
+        serde_json::to_string(&artifacts_resp).expect("serialize artifacts response");
     let artifacts_parsed: DaemonResponse =
         serde_json::from_str(&artifacts_json).expect("deserialize artifacts response");
     match artifacts_parsed {

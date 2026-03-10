@@ -15,10 +15,10 @@ use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::task::JoinSet;
 
-mod store;
 mod config;
 mod connector_pool;
 mod kernel;
+mod store;
 use config::{default_daemon_config_path, load_daemon_config};
 use kernel::{DaemonKernel, DaemonKernelRuntime, KernelRuntimeConfig};
 use store::{Store, SubmitPreparationOutcome, SubmitReplay};
@@ -57,43 +57,50 @@ enum DaemonCommand {
     },
 }
 
-fn handle_request(
-    request: DaemonRequest,
-    state: &AppState,
-) -> DaemonResponse {
+fn handle_request(request: DaemonRequest, state: &AppState) -> DaemonResponse {
     match request {
         DaemonRequest::Submit(submit) => DaemonResponse::Submit(state.client.submit(&submit)),
-        DaemonRequest::Status(status) => DaemonResponse::Status(state.client.status(&TaskStatusRequest {
-            task_id: status.task_id,
-        })),
-        DaemonRequest::RegisterSession(payload) => match lock_unpoisoned(&state.store)
-            .register_session(&payload.session_label)
-        {
-            Ok(session_id) => DaemonResponse::RegisterSession(RegisterSessionResponse { session_id }),
-            Err(message) => DaemonResponse::Error { message },
-        },
+        DaemonRequest::Status(status) => {
+            DaemonResponse::Status(state.client.status(&TaskStatusRequest {
+                task_id: status.task_id,
+            }))
+        }
+        DaemonRequest::RegisterSession(payload) => {
+            match lock_unpoisoned(&state.store).register_session(&payload.session_label) {
+                Ok(session_id) => {
+                    DaemonResponse::RegisterSession(RegisterSessionResponse { session_id })
+                }
+                Err(message) => DaemonResponse::Error { message },
+            }
+        }
         DaemonRequest::SubmitTask(payload) => match handle_submit_task(state, payload) {
             Ok(response) => DaemonResponse::SubmitTask(response),
             Err(message) => DaemonResponse::Error { message },
         },
-        DaemonRequest::GetTask(payload) => match lock_unpoisoned(&state.store).get_task(&payload.task_id) {
-            Some(task) => DaemonResponse::GetTask(GetTaskResponse { task }),
-            None => DaemonResponse::Error {
-                message: format!("task_not_found task_id={}", payload.task_id),
-            },
-        },
-        DaemonRequest::GetTrace(payload) => match lock_unpoisoned(&state.store).get_trace(&payload.task_id) {
-            Some(trace) => DaemonResponse::GetTrace(GetTraceResponse { trace }),
-            None => DaemonResponse::Error {
-                message: format!("trace_not_found task_id={}", payload.task_id),
-            },
-        },
-        DaemonRequest::GetArtifacts(payload) => DaemonResponse::GetArtifacts(GetArtifactsResponse {
-            artifacts: lock_unpoisoned(&state.store).get_artifacts(&payload.task_id),
-        }),
-        DaemonRequest::ListPendingApprovals => {
-            DaemonResponse::ListPendingApprovals(lock_unpoisoned(&state.store).list_pending_approvals())
+        DaemonRequest::GetTask(payload) => {
+            match lock_unpoisoned(&state.store).get_task(&payload.task_id) {
+                Some(task) => DaemonResponse::GetTask(GetTaskResponse { task }),
+                None => DaemonResponse::Error {
+                    message: format!("task_not_found task_id={}", payload.task_id),
+                },
+            }
         }
+        DaemonRequest::GetTrace(payload) => {
+            match lock_unpoisoned(&state.store).get_trace(&payload.task_id) {
+                Some(trace) => DaemonResponse::GetTrace(GetTraceResponse { trace }),
+                None => DaemonResponse::Error {
+                    message: format!("trace_not_found task_id={}", payload.task_id),
+                },
+            }
+        }
+        DaemonRequest::GetArtifacts(payload) => {
+            DaemonResponse::GetArtifacts(GetArtifactsResponse {
+                artifacts: lock_unpoisoned(&state.store).get_artifacts(&payload.task_id),
+            })
+        }
+        DaemonRequest::ListPendingApprovals => DaemonResponse::ListPendingApprovals(
+            lock_unpoisoned(&state.store).list_pending_approvals(),
+        ),
         DaemonRequest::ResolveApproval(payload) => {
             let mut store = lock_unpoisoned(&state.store);
             let mut kernel = DaemonKernelRuntime::new(&mut store);
@@ -144,22 +151,19 @@ fn handle_submit_task(
                 Err(message)
             }
         },
-        Err(ReasoningError::FitLoopFailure { message, records }) => match store.submit_failed_task(
-            &preparation,
-            payload,
-            &message,
-            &records,
-        ) {
-            Ok(response) => Ok(response),
-            Err(store_error) => {
-                store.release_inflight_idempotency_retry_lock(
-                    &preparation.session_id_hint,
-                    idempotency_key.as_deref(),
-                    &preparation.task_id_hint,
-                );
-                Err(store_error)
+        Err(ReasoningError::FitLoopFailure { message, records }) => {
+            match store.submit_failed_task(&preparation, payload, &message, &records) {
+                Ok(response) => Ok(response),
+                Err(store_error) => {
+                    store.release_inflight_idempotency_retry_lock(
+                        &preparation.session_id_hint,
+                        idempotency_key.as_deref(),
+                        &preparation.task_id_hint,
+                    );
+                    Err(store_error)
+                }
             }
-        },
+        }
         Err(ReasoningError::ConnectorFailure { message })
         | Err(ReasoningError::ResolveFailure { message }) => {
             if let Err(store_error) = store.record_submission_failure(
@@ -180,13 +184,12 @@ fn handle_submit_task(
 }
 
 fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-async fn handle_stream(
-    stream: UnixStream,
-    state: Arc<AppState>,
-) {
+async fn handle_stream(stream: UnixStream, state: Arc<AppState>) {
     let (mut reader, mut writer) = stream.into_split();
     let mut bytes = Vec::new();
 
@@ -313,7 +316,8 @@ async fn main() {
                 }
             };
             #[cfg(unix)]
-            if let Err(error) = fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600)) {
+            if let Err(error) = fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))
+            {
                 eprintln!("daemon_error=socket_permission_failed message={}", error);
                 std::process::exit(1);
             }

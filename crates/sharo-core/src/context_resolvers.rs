@@ -72,13 +72,19 @@ pub struct ResolvedContext {
 fn apply_component_local_filters(mut component: ResolvedComponent) -> ResolvedComponent {
     let trimmed = component.content.trim().to_string();
     if trimmed != component.content {
-        component.provenance.applied_filters.push("trim_whitespace".to_string());
+        component
+            .provenance
+            .applied_filters
+            .push("trim_whitespace".to_string());
         component.content = trimmed;
     }
     component
 }
 
-pub fn resolve_context(bundle: &ResolverBundle, scope: &TurnScope) -> Result<ResolvedContext, String> {
+pub fn resolve_context(
+    bundle: &ResolverBundle,
+    scope: &TurnScope,
+) -> Result<ResolvedContext, String> {
     Ok(ResolvedContext {
         system: apply_component_local_filters(bundle.system.resolve(scope)?),
         persona: apply_component_local_filters(bundle.persona.resolve(scope)?),

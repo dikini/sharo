@@ -226,7 +226,11 @@ impl PolicyFitter for HeuristicPolicyFitter {
             steps.push(AdjustmentStep::RedactRuntimeFields { fields: matches });
         }
 
-        let memory_line_count = state.memory.lines().filter(|v| !v.trim().is_empty()).count();
+        let memory_line_count = state
+            .memory
+            .lines()
+            .filter(|v| !v.trim().is_empty())
+            .count();
         if memory_line_count > self.config.max_memory_lines {
             steps.push(AdjustmentStep::DropMemoryByRank {
                 max_items: self.config.max_memory_lines,
@@ -305,7 +309,11 @@ impl AdjustmentApplier for DeterministicAdjustmentApplier {
                     }
                 }
                 AdjustmentStep::CompressMemoryToTokens { token_budget } => {
-                    let words: Vec<&str> = state.memory.split_whitespace().take(*token_budget).collect();
+                    let words: Vec<&str> = state
+                        .memory
+                        .split_whitespace()
+                        .take(*token_budget)
+                        .collect();
                     let updated = words.join(" ");
                     if updated != state.memory {
                         state.memory = updated;

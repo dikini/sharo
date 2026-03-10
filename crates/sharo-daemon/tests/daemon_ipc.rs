@@ -7,7 +7,9 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use sharo_core::protocol::{DaemonRequest, DaemonResponse, SubmitTaskOpRequest, SubmitTaskRequest, TaskStatusRequest};
+use sharo_core::protocol::{
+    DaemonRequest, DaemonResponse, SubmitTaskOpRequest, SubmitTaskRequest, TaskStatusRequest,
+};
 
 fn socket_path() -> PathBuf {
     let nanos = SystemTime::now()
@@ -46,13 +48,17 @@ fn start_delayed_response_server(delay: Duration) -> (String, thread::JoinHandle
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind delayed response server");
     let address = format!("http://{}", listener.local_addr().expect("local addr"));
     let handle = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().expect("accept delayed response connection");
+        let (mut stream, _) = listener
+            .accept()
+            .expect("accept delayed response connection");
         let cloned = stream.try_clone().expect("clone delayed response stream");
         let mut reader = BufReader::new(cloned);
         let mut line = String::new();
         loop {
             line.clear();
-            let bytes = reader.read_line(&mut line).expect("read delayed response request");
+            let bytes = reader
+                .read_line(&mut line)
+                .expect("read delayed response request");
             if bytes == 0 || line == "\r\n" {
                 break;
             }
@@ -80,7 +86,9 @@ fn start_multi_delayed_response_server(
     let handle = thread::spawn(move || {
         let mut workers = Vec::with_capacity(expected_requests);
         for _ in 0..expected_requests {
-            let (mut stream, _) = listener.accept().expect("accept delayed response connection");
+            let (mut stream, _) = listener
+                .accept()
+                .expect("accept delayed response connection");
             workers.push(thread::spawn(move || {
                 let cloned = stream.try_clone().expect("clone delayed response stream");
                 let mut reader = BufReader::new(cloned);
@@ -217,8 +225,11 @@ fn daemon_ipc_invalid_json_returns_valid_error_envelope() {
     }
 
     let mut stream = connected.expect("connect to daemon socket");
-    writeln!(stream, "{{\"Submit\":{{\"goal\":\"a \\\"quoted\\\" value\"}}")
-        .expect("write malformed request");
+    writeln!(
+        stream,
+        "{{\"Submit\":{{\"goal\":\"a \\\"quoted\\\" value\"}}"
+    )
+    .expect("write malformed request");
 
     let mut line = String::new();
     let mut reader = BufReader::new(stream);
@@ -307,7 +318,11 @@ fn daemon_socket_permissions_are_owner_only() {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mode = fs::metadata(&socket).expect("socket metadata").permissions().mode() & 0o777;
+        let mode = fs::metadata(&socket)
+            .expect("socket metadata")
+            .permissions()
+            .mode()
+            & 0o777;
         assert_eq!(mode, 0o600);
     }
 
@@ -514,7 +529,10 @@ fn ctrl_c_waits_for_inflight_request_completion() {
     }
 
     let exit_status = child.wait().expect("wait daemon exit");
-    assert!(exit_status.success(), "daemon should exit cleanly after draining handlers");
+    assert!(
+        exit_status.success(),
+        "daemon should exit cleanly after draining handlers"
+    );
 
     server_thread.join().expect("delayed server join");
     let _ = fs::remove_file(&socket);

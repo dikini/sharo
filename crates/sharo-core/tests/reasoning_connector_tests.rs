@@ -2,13 +2,15 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::thread;
 
+use sharo_core::context_resolvers::{ResolverBundle, StaticTextResolver};
 use sharo_core::model_connector::{
-    DeterministicConnector, ModelCapabilityFlags, ModelConnectorPort, ModelProfile, ModelTurnRequest,
-    validate_base_url_security,
+    DeterministicConnector, ModelCapabilityFlags, ModelConnectorPort, ModelProfile,
+    ModelTurnRequest, validate_base_url_security,
 };
 use sharo_core::model_connectors::OpenAiCompatibleConnector;
-use sharo_core::context_resolvers::{ResolverBundle, StaticTextResolver};
-use sharo_core::reasoning::{IdReasoningEngine, ReasoningEnginePort, ReasoningError, ReasoningInput};
+use sharo_core::reasoning::{
+    IdReasoningEngine, ReasoningEnginePort, ReasoningError, ReasoningInput,
+};
 
 fn test_profile() -> ModelProfile {
     ModelProfile {
@@ -101,8 +103,16 @@ fn id_reasoning_engine_uses_connector_route_decision() {
 
     assert_eq!(outcome.route_decision_details, "local_mock");
     assert!(outcome.model_output_text.contains("deterministic-response"));
-    assert_eq!(outcome.resolved_context.system.provenance.source, "default-system");
-    assert!(outcome.fit_loop_records.iter().any(|r| r.decision == "fitted"));
+    assert_eq!(
+        outcome.resolved_context.system.provenance.source,
+        "default-system"
+    );
+    assert!(
+        outcome
+            .fit_loop_records
+            .iter()
+            .any(|r| r.decision == "fitted")
+    );
 }
 
 #[test]
@@ -193,8 +203,7 @@ fn authenticated_loopback_ip_literals_remain_allowed() {
     ipv4_profile.model_id = "gpt-5-mini".to_string();
     ipv4_profile.base_url = Some("http://127.0.0.2:8080".to_string());
     ipv4_profile.auth_env_key = Some("SHARO_TEST_OPENAI_KEY".to_string());
-    validate_base_url_security(&ipv4_profile)
-        .expect("loopback IPv4 literal should remain allowed");
+    validate_base_url_security(&ipv4_profile).expect("loopback IPv4 literal should remain allowed");
 
     let mut ipv6_profile = test_profile();
     ipv6_profile.provider_id = "openai".to_string();
@@ -215,7 +224,9 @@ fn authenticated_noncanonical_loopback_ipv4_literals_remain_allowed() {
         profile.auth_env_key = Some("SHARO_TEST_OPENAI_KEY".to_string());
 
         validate_base_url_security(&profile).unwrap_or_else(|error| {
-            panic!("non-canonical IPv4 loopback literal {loopback} should remain allowed: {error:?}")
+            panic!(
+                "non-canonical IPv4 loopback literal {loopback} should remain allowed: {error:?}"
+            )
         });
     }
 }
@@ -231,7 +242,8 @@ fn s2_fit_loop_converges_under_budget_pressure() {
         )),
         runtime: Box::new(StaticTextResolver::new("secret=abc123", "test-runtime")),
     };
-    let engine = IdReasoningEngine::with_resolvers(DeterministicConnector, test_profile(), resolvers);
+    let engine =
+        IdReasoningEngine::with_resolvers(DeterministicConnector, test_profile(), resolvers);
     let mut metadata = std::collections::BTreeMap::new();
     metadata.insert("policy.max_prompt_chars".to_string(), "10000".to_string());
     metadata.insert("policy.max_memory_lines".to_string(), "1".to_string());
@@ -250,12 +262,14 @@ fn s2_fit_loop_converges_under_budget_pressure() {
         })
         .expect("fit loop should converge");
 
-    assert!(outcome.fit_loop_records.iter().any(|r| r.decision == "adjusted"));
-    assert_eq!(
+    assert!(
         outcome
             .fit_loop_records
-            .last()
-            .map(|r| r.decision.as_str()),
+            .iter()
+            .any(|r| r.decision == "adjusted")
+    );
+    assert_eq!(
+        outcome.fit_loop_records.last().map(|r| r.decision.as_str()),
         Some("fitted")
     );
     assert!(outcome.model_output_text.contains("deterministic-response"));
@@ -315,10 +329,7 @@ fn s3_provider_auth_failure_is_explicit_and_non_success() {
 #[test]
 fn reasoning_engine_surfaces_retryable_provider_failure_without_task_success() {
     let (base_url, server_thread) = start_status_server("503 Service Unavailable");
-    let engine = IdReasoningEngine::new(
-        OpenAiCompatibleConnector,
-        local_openai_profile(base_url),
-    );
+    let engine = IdReasoningEngine::new(OpenAiCompatibleConnector, local_openai_profile(base_url));
 
     let error = engine
         .plan(&ReasoningInput {

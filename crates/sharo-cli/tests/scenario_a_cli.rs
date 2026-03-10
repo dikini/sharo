@@ -118,7 +118,10 @@ fn cli_scenario_a_end_to_end() {
     assert!(session.status.success());
     let session_out = String::from_utf8_lossy(&session.stdout);
     assert!(session_out.contains("session_id="));
-    let session_id = session_out.trim().trim_start_matches("session_id=").to_string();
+    let session_id = session_out
+        .trim()
+        .trim_start_matches("session_id=")
+        .to_string();
 
     let submit = Command::new(env!("CARGO_BIN_EXE_sharo"))
         .args([

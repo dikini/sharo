@@ -154,10 +154,17 @@ fn run_stub(client: &impl RuntimeClient, cli: &Cli) {
     }
 }
 
-async fn send_ipc(socket_path: &PathBuf, request: &DaemonRequest) -> Result<DaemonResponse, String> {
-    let stream = UnixStream::connect(socket_path)
-        .await
-        .map_err(|error| format!("connect_failed path={} error={}", socket_path.display(), error))?;
+async fn send_ipc(
+    socket_path: &PathBuf,
+    request: &DaemonRequest,
+) -> Result<DaemonResponse, String> {
+    let stream = UnixStream::connect(socket_path).await.map_err(|error| {
+        format!(
+            "connect_failed path={} error={}",
+            socket_path.display(),
+            error
+        )
+    })?;
     let (reader, mut writer) = stream.into_split();
 
     let payload = serde_json::to_string(request)
@@ -415,6 +422,9 @@ mod tests {
 
     #[test]
     fn encode_field_value_keeps_safe_ascii_readable() {
-        assert_eq!(encode_field_value("deterministic-response"), "deterministic-response");
+        assert_eq!(
+            encode_field_value("deterministic-response"),
+            "deterministic-response"
+        );
     }
 }

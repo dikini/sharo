@@ -743,10 +743,8 @@ fn same_process_retry_after_terminal_save_failure_is_not_stuck_in_progress() {
     let store_dir = unique_path("sharo-scenario-submit-retry-unlocked", ".d");
     fs::create_dir_all(&store_dir).expect("create store dir");
     let store = store_dir.join("daemon-store.json");
-    let (base_url, observed_requests, server_thread) = start_observed_request_server(
-        Duration::from_millis(180),
-        Duration::from_millis(900),
-    );
+    let (base_url, observed_requests, server_thread) =
+        start_observed_request_server(Duration::from_millis(180), Duration::from_millis(900));
     let config = write_slow_openai_config("sharo-scenario-submit-retry-unlocked", &base_url);
 
     let mut daemon = Command::new(daemon_bin())

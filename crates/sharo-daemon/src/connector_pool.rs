@@ -193,27 +193,28 @@ impl BlockingPool {
         if std::thread::Builder::new()
             .name("sharo-connector-worker".to_string())
             .spawn(move || {
-            let idle_timeout = Duration::from_millis(state.policy.scale_down_idle_ms);
-            loop {
-                match state.rx.recv_timeout(idle_timeout) {
-                    Ok(job) => {
-                        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(job));
-                        state.pending_jobs.fetch_sub(1, Ordering::SeqCst);
-                    }
-                    Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
-                        if state.active_workers.load(Ordering::SeqCst) > state.policy.min_threads
-                            && try_mark_scale_event(&state)
-                        {
+                let idle_timeout = Duration::from_millis(state.policy.scale_down_idle_ms);
+                loop {
+                    match state.rx.recv_timeout(idle_timeout) {
+                        Ok(job) => {
+                            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(job));
+                            state.pending_jobs.fetch_sub(1, Ordering::SeqCst);
+                        }
+                        Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                            if state.active_workers.load(Ordering::SeqCst)
+                                > state.policy.min_threads
+                                && try_mark_scale_event(&state)
+                            {
+                                state.active_workers.fetch_sub(1, Ordering::SeqCst);
+                                return;
+                            }
+                        }
+                        Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
                             state.active_workers.fetch_sub(1, Ordering::SeqCst);
                             return;
                         }
                     }
-                    Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
-                        state.active_workers.fetch_sub(1, Ordering::SeqCst);
-                        return;
-                    }
                 }
-            }
             })
             .is_err()
         {
@@ -295,8 +296,8 @@ impl TestHooks {
 #[cfg(test)]
 mod tests {
     use super::{BlockingPool, PoolError, PoolPolicy, TestHooks};
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
     fn wait_until(timeout: Duration, mut predicate: impl FnMut() -> bool) {
@@ -384,7 +385,9 @@ mod tests {
             })
             .expect("held task");
 
-        wait_until(Duration::from_millis(500), || pool.current_worker_count() == 2);
+        wait_until(Duration::from_millis(500), || {
+            pool.current_worker_count() == 2
+        });
 
         let _another = pool.submit(|| 2_u64).expect("another task");
         std::thread::sleep(Duration::from_millis(100));
@@ -406,8 +409,12 @@ mod tests {
         });
 
         let _ = pool.execute_with_result(|| 42_u64).expect("initial job");
-        wait_until(Duration::from_millis(400), || pool.current_worker_count() >= 2);
-        wait_until(Duration::from_millis(2_000), || pool.current_worker_count() == 1);
+        wait_until(Duration::from_millis(400), || {
+            pool.current_worker_count() >= 2
+        });
+        wait_until(Duration::from_millis(2_000), || {
+            pool.current_worker_count() == 1
+        });
     }
 
     #[test]
@@ -467,7 +474,9 @@ mod tests {
             assert_eq!(handle.wait().expect("wait"), 1_u64);
         }
 
-        wait_until(Duration::from_millis(200), || pool.current_worker_count() >= 1);
+        wait_until(Duration::from_millis(200), || {
+            pool.current_worker_count() >= 1
+        });
         assert!(pool.current_worker_count() <= 2);
     }
 
@@ -512,7 +521,9 @@ mod tests {
         submit_a.join().expect("join submit a");
         submit_b.join().expect("join submit b");
 
-        wait_until(Duration::from_millis(500), || pool.current_worker_count() == 2);
+        wait_until(Duration::from_millis(500), || {
+            pool.current_worker_count() == 2
+        });
         assert_eq!(pool.current_worker_count(), 2);
     }
 
@@ -556,7 +567,9 @@ mod tests {
                 submitter.join().expect("join submitter");
             }
 
-            wait_until(Duration::from_millis(500), || pool.current_worker_count() == 2);
+            wait_until(Duration::from_millis(500), || {
+                pool.current_worker_count() == 2
+            });
             assert!(pool.current_worker_count() <= 2);
         }
     }

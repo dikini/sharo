@@ -1,9 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::context_resolvers::{ResolvedContext, ResolverBundle, resolve_context};
-use crate::model_connector::{
-    ConnectorError, ModelConnectorPort, ModelProfile, ModelTurnRequest,
-};
+use crate::model_connector::{ConnectorError, ModelConnectorPort, ModelProfile, ModelTurnRequest};
 use crate::reasoning_context::{
     ComposePrompt, Composer, ContextState, DeterministicAdjustmentApplier, FitLoopRecord,
     HeuristicPolicyFitter, PolicyConfig, ReasoningContextError, TurnScope, run_fit_loop,
@@ -170,11 +168,9 @@ fn format_reasoning_context_error(error: ReasoningContextError) -> ReasoningErro
                 records,
             }
         }
-        ReasoningContextError::ApplyFailed { message, records } => {
-            ReasoningError::FitLoopFailure {
-                message: format!("context_adjustment_apply_failed reason={message}"),
-                records,
-            }
-        }
+        ReasoningContextError::ApplyFailed { message, records } => ReasoningError::FitLoopFailure {
+            message: format!("context_adjustment_apply_failed reason={message}"),
+            records,
+        },
     }
 }

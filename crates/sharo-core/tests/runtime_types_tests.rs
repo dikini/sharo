@@ -66,13 +66,24 @@ fn scenario_a_record_roundtrip_json() {
 #[test]
 fn step_terminal_state_is_explicit() {
     let terminal = [StepState::Completed, StepState::Blocked, StepState::Failed];
-    let non_terminal = [StepState::Proposed, StepState::Ready, StepState::Executing, StepState::AwaitingApproval];
+    let non_terminal = [
+        StepState::Proposed,
+        StepState::Ready,
+        StepState::Executing,
+        StepState::AwaitingApproval,
+    ];
 
     for state in terminal {
-        assert!(matches!(state, StepState::Completed | StepState::Blocked | StepState::Failed));
+        assert!(matches!(
+            state,
+            StepState::Completed | StepState::Blocked | StepState::Failed
+        ));
     }
     for state in non_terminal {
-        assert!(!matches!(state, StepState::Completed | StepState::Blocked | StepState::Failed));
+        assert!(!matches!(
+            state,
+            StepState::Completed | StepState::Blocked | StepState::Failed
+        ));
     }
 }
 

@@ -2,8 +2,7 @@ use sharo_core::reasoning::ReasoningInput;
 use sharo_core::reasoning_context::{
     AdjustmentPlan, AdjustmentStep, AlwaysFitPolicyFitter, ComposePrompt, Composer, ContextState,
     FitDecision, HeuristicPolicyFitter, NoOpComposer, PolicyConfig, PolicyFitter,
-    ReasoningContextError,
-    TurnScope, run_fit_loop,
+    ReasoningContextError, TurnScope, run_fit_loop,
 };
 
 #[test]
@@ -138,22 +137,26 @@ fn heuristic_policy_fitter_emits_adjustments_for_budget_and_runtime_redaction() 
     let decision = fitter.fit(&prompt, &state);
     match decision {
         FitDecision::Adjust(plan) => {
-            assert!(plan.steps.iter().any(|s| matches!(
-                s,
-                AdjustmentStep::RedactRuntimeFields { .. }
-            )));
-            assert!(plan.steps.iter().any(|s| matches!(
-                s,
-                AdjustmentStep::DropMemoryByRank { .. }
-            )));
-            assert!(plan.steps.iter().any(|s| matches!(
-                s,
-                AdjustmentStep::CompressMemoryToTokens { .. }
-            )));
-            assert!(plan.steps.iter().any(|s| matches!(
-                s,
-                AdjustmentStep::ClampPersonaVerbosity { .. }
-            )));
+            assert!(
+                plan.steps
+                    .iter()
+                    .any(|s| matches!(s, AdjustmentStep::RedactRuntimeFields { .. }))
+            );
+            assert!(
+                plan.steps
+                    .iter()
+                    .any(|s| matches!(s, AdjustmentStep::DropMemoryByRank { .. }))
+            );
+            assert!(
+                plan.steps
+                    .iter()
+                    .any(|s| matches!(s, AdjustmentStep::CompressMemoryToTokens { .. }))
+            );
+            assert!(
+                plan.steps
+                    .iter()
+                    .any(|s| matches!(s, AdjustmentStep::ClampPersonaVerbosity { .. }))
+            );
         }
         other => panic!("unexpected decision: {other:?}"),
     }
