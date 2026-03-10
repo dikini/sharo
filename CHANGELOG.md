@@ -46,11 +46,18 @@ The format is based on Common Changelog:
   - strict request/response validation now uses shared `sharo-core` hook contracts (`ToolCallRequest`, `ToolCallResponse`, schema/value validators)
   - fail-closed behavior on tool spawn/timeouts/non-zero exits/schema mismatch/semantic lint mismatch
   - canonical recollection payloads are injected into memory as deterministic `HAZEL_RECOLLECTIONS` blocks with provenance references
+  - hook execution now emits operator-visible observability events (`hazel_hook`) with binding, task, elapsed time, and failure reason details
 - Added Hazel manifest support for card-policy behavior in daemon config:
   - `hazel_manifest.cards` supports kind-scoped policy IDs and per-kind max-card hints
   - policy IDs from hook defaults and card manifest are composed additively and deterministically
   - strict unknown-policy rejection extends to manifest-sourced policy IDs when strict mode is enabled
   - effective card hints are exposed in reasoning metadata (`policy.card_hints`)
+- Added deterministic retrieval engine in `sharo-hazel-core` and connected `sharo-hazel-mcp` to use it for `hazel.recollect`.
+- Added pre-prompt retrieval control knobs in daemon config and hook input contract:
+  - `top_k`
+  - `token_budget`
+  - `relevance_threshold`
+- Added daemon integration coverage that executes the real `sharo-hazel-mcp` binary for pre-prompt hook flow validation.
 - Added starter backbone templates for current and future projects:
   - `docs/templates/README.template.md` for top-level repository onboarding and workflow conventions
   - `docs/templates/AGENTS.template.md` for project governance and agent/contributor execution policy

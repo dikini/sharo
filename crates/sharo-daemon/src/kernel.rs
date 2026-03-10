@@ -5,6 +5,7 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
+use std::time::Instant;
 
 use sharo_core::context_resolvers::{
     ComponentProvenance, ComponentResolver, ResolvedComponent, ResolverBundle, StaticTextResolver,
@@ -50,6 +51,9 @@ pub struct KernelRuntimeConfig {
     pub pre_prompt_effective_policy: Option<EffectivePolicyBundle>,
     pub pre_prompt_hook_binding: Option<HookBindingRuntimeConfig>,
     pub hazel_card_policy_hints: Vec<HazelCardPolicyHint>,
+    pub pre_prompt_top_k: Option<usize>,
+    pub pre_prompt_token_budget: Option<usize>,
+    pub pre_prompt_relevance_threshold: Option<f32>,
 }
 
 #[derive(Debug, Clone)]
@@ -168,6 +172,12 @@ impl KernelRuntimeConfig {
             pre_prompt_effective_policy,
             pre_prompt_hook_binding,
             hazel_card_policy_hints,
+            pre_prompt_top_k: config.reasoning_hooks.pre_prompt_compose.top_k,
+            pre_prompt_token_budget: config.reasoning_hooks.pre_prompt_compose.token_budget,
+            pre_prompt_relevance_threshold: config
+                .reasoning_hooks
+                .pre_prompt_compose
+                .relevance_threshold,
         })
     }
 }
@@ -418,6 +428,9 @@ struct PrePromptComposeMemoryResolver {
     effective_policy: Option<EffectivePolicyBundle>,
     card_policy_hints: Vec<HazelCardPolicyHint>,
     hook_binding: Option<HookBindingRuntimeConfig>,
+    top_k: Option<usize>,
+    token_budget: Option<usize>,
+    relevance_threshold: Option<f32>,
 }
 
 impl PrePromptComposeMemoryResolver {
@@ -428,6 +441,7 @@ impl PrePromptComposeMemoryResolver {
         let Some(binding) = &self.hook_binding else {
             return Ok(None);
         };
+        let started = Instant::now();
         let input = PrePromptComposeHookInput {
             session_id: scope.session_id.clone(),
             task_id: scope.task_id.clone(),
@@ -436,6 +450,9 @@ impl PrePromptComposeMemoryResolver {
                 .runtime_context
                 .clone()
                 .unwrap_or_else(|| "daemon".to_string()),
+            top_k: self.top_k,
+            token_budget: self.token_budget,
+            relevance_threshold: self.relevance_threshold,
             policy_ids: self
                 .effective_policy
                 .as_ref()
@@ -459,6 +476,13 @@ impl PrePromptComposeMemoryResolver {
             let error = response
                 .error
                 .unwrap_or_else(|| "pre_prompt_tool_error_unknown".to_string());
+            eprintln!(
+                "hazel_hook event=tool_failed binding={} task_id={} elapsed_ms={} error={}",
+                binding.id,
+                scope.task_id,
+                started.elapsed().as_millis(),
+                error
+            );
             return Err(format!(
                 "pre_prompt_tool_failed binding={} error={error}",
                 binding.id
@@ -471,6 +495,13 @@ impl PrePromptComposeMemoryResolver {
             ));
         };
         let recollection = validate_recollection_payload_value(&output)?;
+        eprintln!(
+            "hazel_hook event=tool_succeeded binding={} task_id={} elapsed_ms={} cards={}",
+            binding.id,
+            scope.task_id,
+            started.elapsed().as_millis(),
+            recollection.cards.len()
+        );
         Ok(Some(recollection))
     }
 }
@@ -648,6 +679,9 @@ pub struct DaemonKernel {
     reasoning_policy: ReasoningPolicyConfig,
     pre_prompt_effective_policy: Option<EffectivePolicyBundle>,
     hazel_card_policy_hints: Vec<HazelCardPolicyHint>,
+    pre_prompt_top_k: Option<usize>,
+    pre_prompt_token_budget: Option<usize>,
+    pre_prompt_relevance_threshold: Option<f32>,
 }
 
 impl DaemonKernel {
@@ -682,6 +716,9 @@ impl DaemonKernel {
                 effective_policy: config.pre_prompt_effective_policy.clone(),
                 card_policy_hints: config.hazel_card_policy_hints.clone(),
                 hook_binding: config.pre_prompt_hook_binding.clone(),
+                top_k: config.pre_prompt_top_k,
+                token_budget: config.pre_prompt_token_budget,
+                relevance_threshold: config.pre_prompt_relevance_threshold,
             }),
             runtime: Box::new(StaticTextResolver::new(
                 config.reasoning_context.runtime.as_deref().unwrap_or(""),
@@ -697,6 +734,9 @@ impl DaemonKernel {
             reasoning_policy: config.reasoning_policy.clone(),
             pre_prompt_effective_policy: config.pre_prompt_effective_policy.clone(),
             hazel_card_policy_hints: config.hazel_card_policy_hints.clone(),
+            pre_prompt_top_k: config.pre_prompt_top_k,
+            pre_prompt_token_budget: config.pre_prompt_token_budget,
+            pre_prompt_relevance_threshold: config.pre_prompt_relevance_threshold,
         }
     }
 }
@@ -766,6 +806,21 @@ impl DaemonKernel {
                 .collect::<Vec<_>>();
             metadata.insert("policy.effective_rules".to_string(), rule_names.join(","));
         }
+        if let Some(value) = self.pre_prompt_top_k {
+            metadata.insert("hook.pre_prompt.top_k".to_string(), value.to_string());
+        }
+        if let Some(value) = self.pre_prompt_token_budget {
+            metadata.insert(
+                "hook.pre_prompt.token_budget".to_string(),
+                value.to_string(),
+            );
+        }
+        if let Some(value) = self.pre_prompt_relevance_threshold {
+            metadata.insert(
+                "hook.pre_prompt.relevance_threshold".to_string(),
+                value.to_string(),
+            );
+        }
         if !self.hazel_card_policy_hints.is_empty() {
             let serialized = self
                 .hazel_card_policy_hints
@@ -814,6 +869,8 @@ mod tests {
     use std::collections::BTreeMap;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
+    use std::path::PathBuf;
+    use std::process::Command;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::{ConnectorKind, KernelRuntimeConfig};
@@ -840,6 +897,29 @@ mod tests {
         permissions.set_mode(0o700);
         fs::set_permissions(&path, permissions).expect("chmod script");
         path.to_string_lossy().to_string()
+    }
+
+    fn ensure_real_hazel_mcp_binary() -> String {
+        let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("crates dir")
+            .parent()
+            .expect("workspace root")
+            .to_path_buf();
+        let status = Command::new("cargo")
+            .arg("build")
+            .arg("-p")
+            .arg("sharo-hazel-mcp")
+            .current_dir(&workspace_root)
+            .status()
+            .expect("build sharo-hazel-mcp");
+        assert!(status.success(), "sharo-hazel-mcp build must succeed");
+        let bin_path = workspace_root
+            .join("target")
+            .join("debug")
+            .join("sharo-hazel-mcp");
+        assert!(bin_path.exists(), "expected hazel mcp binary");
+        bin_path.to_string_lossy().to_string()
     }
 
     #[test]
@@ -1012,6 +1092,9 @@ mod tests {
                     ]),
                     default_policy_ids: None,
                     strict_unknown_policy_ids: Some(true),
+                    top_k: None,
+                    token_budget: None,
+                    relevance_threshold: None,
                 },
             },
             ..DaemonConfigFile::default()
@@ -1030,6 +1113,9 @@ mod tests {
                     bindings: None,
                     default_policy_ids: Some(vec!["unknown.v1".to_string()]),
                     strict_unknown_policy_ids: Some(true),
+                    top_k: None,
+                    token_budget: None,
+                    relevance_threshold: None,
                 },
             },
             ..DaemonConfigFile::default()
@@ -1065,6 +1151,9 @@ mod tests {
                         "hunch.v1".to_string(),
                     ]),
                     strict_unknown_policy_ids: Some(true),
+                    top_k: None,
+                    token_budget: None,
+                    relevance_threshold: None,
                 },
             },
             hook_policies,
@@ -1106,6 +1195,9 @@ mod tests {
                     bindings: None,
                     default_policy_ids: Some(vec!["safety.strict.v1".to_string()]),
                     strict_unknown_policy_ids: Some(true),
+                    top_k: None,
+                    token_budget: None,
+                    relevance_threshold: None,
                 },
             },
             hazel_manifest: crate::config::HazelManifestConfig {
@@ -1152,6 +1244,9 @@ mod tests {
                     bindings: None,
                     default_policy_ids: Some(vec!["hunch.v1".to_string()]),
                     strict_unknown_policy_ids: Some(true),
+                    top_k: None,
+                    token_budget: None,
+                    relevance_threshold: None,
                 },
             },
             hook_policies,
@@ -1208,6 +1303,9 @@ mod tests {
                     }]),
                     default_policy_ids: Some(vec!["hunch.v1".to_string()]),
                     strict_unknown_policy_ids: Some(true),
+                    top_k: None,
+                    token_budget: None,
+                    relevance_threshold: None,
                 },
             },
             hook_policies,
@@ -1239,6 +1337,70 @@ mod tests {
     }
 
     #[test]
+    fn pre_prompt_compose_with_real_hazel_mcp_binary_injects_cards() {
+        let mcp_bin = ensure_real_hazel_mcp_binary();
+        let mut hook_policies = BTreeMap::new();
+        hook_policies.insert(
+            "hunch.v1".to_string(),
+            HookPolicyDefinitionConfig {
+                rules: vec!["label_guesses".to_string()],
+            },
+        );
+        let cfg = DaemonConfigFile {
+            reasoning_hooks: ReasoningHooksConfig {
+                pre_prompt_compose: PrePromptComposeHookConfig {
+                    composition: Some("single".to_string()),
+                    bindings: Some(vec![HookBindingConfig {
+                        id: "hazel".to_string(),
+                        tool: "hazel.recollect".to_string(),
+                        command: Some(mcp_bin),
+                        args: Some(vec![]),
+                        timeout_ms: Some(1_500),
+                    }]),
+                    default_policy_ids: Some(vec!["hunch.v1".to_string()]),
+                    strict_unknown_policy_ids: Some(true),
+                    top_k: Some(1),
+                    token_budget: Some(256),
+                    relevance_threshold: Some(0.0),
+                },
+            },
+            hook_policies,
+            hazel_manifest: crate::config::HazelManifestConfig {
+                cards: vec![crate::config::HazelCardManifestConfig {
+                    kind: "association_cue".to_string(),
+                    policy_ids: vec!["hunch.v1".to_string()],
+                    max_cards: Some(1),
+                }],
+            },
+            ..DaemonConfigFile::default()
+        };
+
+        let runtime = KernelRuntimeConfig::from_daemon_config(&cfg).expect("runtime config");
+        let kernel = super::DaemonKernel::new(&runtime);
+        let outcome = kernel
+            .reason_submit(
+                &SubmitPreparation {
+                    task_id_hint: "task-000001".to_string(),
+                    task_id_sequence_hint: 1,
+                    session_id_hint: "session-000001".to_string(),
+                    turn_id_hint: 1,
+                },
+                &sharo_core::protocol::SubmitTaskOpRequest {
+                    session_id: Some("session-000001".to_string()),
+                    goal: "memory subsystem architecture".to_string(),
+                    idempotency_key: None,
+                },
+            )
+            .expect("reasoning outcome");
+        assert!(outcome.model_output_text.contains("HAZEL_RECOLLECTIONS:"));
+        assert!(
+            outcome
+                .model_output_text
+                .contains("structured memory subsystem for sharo")
+        );
+    }
+
+    #[test]
     fn pre_prompt_compose_rejects_schema_mismatch_output() {
         let script_path = write_mock_mcp_script(
             r#"{"ok":true,"output":{"policy_ids":["hunch.v1"],"cards":[],"unexpected":true}}"#,
@@ -1256,6 +1418,9 @@ mod tests {
                     }]),
                     default_policy_ids: None,
                     strict_unknown_policy_ids: Some(true),
+                    top_k: None,
+                    token_budget: None,
+                    relevance_threshold: None,
                 },
             },
             ..DaemonConfigFile::default()
@@ -1303,6 +1468,9 @@ mod tests {
                     }]),
                     default_policy_ids: None,
                     strict_unknown_policy_ids: Some(true),
+                    top_k: None,
+                    token_budget: None,
+                    relevance_threshold: None,
                 },
             },
             ..DaemonConfigFile::default()

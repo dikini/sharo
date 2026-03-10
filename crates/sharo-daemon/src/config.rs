@@ -70,6 +70,9 @@ pub struct PrePromptComposeHookConfig {
     pub bindings: Option<Vec<HookBindingConfig>>,
     pub default_policy_ids: Option<Vec<String>>,
     pub strict_unknown_policy_ids: Option<bool>,
+    pub top_k: Option<usize>,
+    pub token_budget: Option<usize>,
+    pub relevance_threshold: Option<f32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -260,6 +263,9 @@ runtime = "secret=abc123"
 composition = "single"
 default_policy_ids = ["hunch.v1"]
 strict_unknown_policy_ids = true
+top_k = 4
+token_budget = 600
+relevance_threshold = 0.2
 
 [[reasoning_hooks.pre_prompt_compose.bindings]]
 id = "hazel"
@@ -292,6 +298,18 @@ max_cards = 3
                 .default_policy_ids
                 .as_deref(),
             Some(&["hunch.v1".to_string()][..])
+        );
+        assert_eq!(parsed.reasoning_hooks.pre_prompt_compose.top_k, Some(4));
+        assert_eq!(
+            parsed.reasoning_hooks.pre_prompt_compose.token_budget,
+            Some(600)
+        );
+        assert_eq!(
+            parsed
+                .reasoning_hooks
+                .pre_prompt_compose
+                .relevance_threshold,
+            Some(0.2)
         );
         assert_eq!(
             parsed

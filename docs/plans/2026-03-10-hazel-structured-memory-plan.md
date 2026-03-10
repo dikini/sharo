@@ -24,6 +24,10 @@ Implementation Update (2026-03-10):
 - Implemented daemon pre-prompt stdio hook execution for Hazel with strict shared-contract validation and fail-closed behavior.
 - Centralized hook schema/value contracts in `sharo-core` and aligned both `sharo-daemon` and `sharo-hazel-mcp` to those contracts.
 - Implemented manifest-driven card policy hints (`hazel_manifest.cards`) with additive deterministic policy resolution.
+- Implemented deterministic retrieval in `sharo-hazel-core` and wired `sharo-hazel-mcp` to use it for `hazel.recollect`.
+- Added daemon test coverage that invokes the actual `sharo-hazel-mcp` binary (not only mock scripts).
+- Added configurable retrieval knobs in pre-prompt hook flow (`top_k`, `token_budget`, `relevance_threshold`) and daemon metadata emission.
+- Decision status: keep dedicated `sharo-hazel-cli` / `sharo-hazel-ingest` as future work; current phase keeps ingestion interfaces in `sharo-hazel-core` and daemon-side orchestration.
 
 ## Instruction Priority
 

@@ -128,6 +128,10 @@ This spec keeps the current daemon persistence layer as-is and introduces Hazel 
   - input compatibility: expected hook input schema must be accepted by bound tool input schema
   - output compatibility: bound tool output schema must be accepted by expected hook output schema
 - Runtime MUST validate every request and response payload against the negotiated schemas.
+- Pre-prompt retrieval knobs MUST be configurable and transmitted as hook input:
+  - `top_k`
+  - `token_budget`
+  - `relevance_threshold`
 - Runtime MUST run semantic lint after schema validation and before prompt injection:
   - required provenance per card
   - allowed memory states only
@@ -157,6 +161,31 @@ This spec keeps the current daemon persistence layer as-is and introduces Hazel 
   - sleep jobs may create proposal batches
   - sleep jobs MUST NOT perform opaque direct canonical writes
 - Sleep execution contract MUST support bounded budgets (time/work units), deterministic run identifiers, and idempotent retry behavior.
+- Daemon hook observability MUST emit operator-visible success/failure events for pre-prompt tool execution including:
+  - binding id
+  - task id
+  - elapsed time
+  - failure reason (when applicable)
+
+## Daemon Config Hook Surface (v1)
+
+- `reasoning_hooks.pre_prompt_compose.bindings[]`:
+  - `id`
+  - `tool`
+  - `command`
+  - `args` (optional)
+  - `timeout_ms` (optional, defaults in runtime)
+- `reasoning_hooks.pre_prompt_compose`:
+  - `composition`
+  - `default_policy_ids`
+  - `strict_unknown_policy_ids`
+  - `top_k` (optional)
+  - `token_budget` (optional)
+  - `relevance_threshold` (optional)
+- `hazel_manifest.cards[]`:
+  - `kind`
+  - `policy_ids`
+  - `max_cards` (optional)
 
 ## Invariants
 

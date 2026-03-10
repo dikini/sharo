@@ -93,13 +93,16 @@ impl EffectivePolicyBundle {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PrePromptComposeHookInput {
     pub session_id: String,
     pub task_id: String,
     pub goal: String,
     pub runtime: String,
+    pub top_k: Option<usize>,
+    pub token_budget: Option<usize>,
+    pub relevance_threshold: Option<f32>,
     #[serde(default)]
     pub policy_ids: Vec<String>,
     #[serde(default)]
@@ -145,6 +148,9 @@ pub fn expected_pre_prompt_compose_input_schema() -> ObjectSchema {
             "task_id",
             "goal",
             "runtime",
+            "top_k",
+            "token_budget",
+            "relevance_threshold",
             "policy_ids",
             "card_policy_hints",
         ],
@@ -153,6 +159,9 @@ pub fn expected_pre_prompt_compose_input_schema() -> ObjectSchema {
             "task_id",
             "goal",
             "runtime",
+            "top_k",
+            "token_budget",
+            "relevance_threshold",
             "policy_ids",
             "card_policy_hints",
         ],
