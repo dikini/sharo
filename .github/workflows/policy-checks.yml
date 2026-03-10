@@ -17,11 +17,6 @@ jobs:
       - name: Install just
         uses: taiki-e/install-action@just
 
-      - name: Install actionlint
-        uses: taiki-e/install-action@v2
-        with:
-          tool: actionlint
-
       - name: Install shell quality tools
         run: |
           sudo apt-get update
@@ -34,7 +29,7 @@ jobs:
         run: just verify
 
       - name: Run workflow lint checks
-        run: scripts/check-workflows.sh
+        uses: rhysd/actionlint@v1
 
       - name: Run shell quality checks
         run: scripts/check-shell-quality.sh --all

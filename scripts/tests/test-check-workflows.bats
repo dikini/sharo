@@ -9,7 +9,7 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "policy checks workflow invokes workflow lint script" {
-  run rg 'run: scripts/check-workflows\.sh' "$ROOT/.github/workflows/policy-checks.yml"
+@test "policy checks workflow invokes rhysd actionlint action" {
+  run rg 'uses: rhysd/actionlint@v1' "$ROOT/.github/workflows/policy-checks.yml"
   [ "$status" -eq 0 ]
 }
