@@ -37,6 +37,9 @@ jobs:
       - name: Run shell quality checks
         run: scripts/check-shell-quality.sh --all
 
+      - name: Install cargo-fuzz
+        run: cargo install --locked cargo-fuzz
+
       - name: Install dependency security tools
         run: cargo install --locked cargo-deny cargo-audit
 
@@ -48,6 +51,9 @@ jobs:
 
       - name: Run Rust workspace tests
         run: scripts/check-rust-tests.sh --all
+
+      - name: Run fuzz smoke checks
+        run: scripts/check-fuzz.sh --smoke --all
 
       - name: Run property test profile
         run: cargo test -p sharo-core --test protocol_tests prop_protocol_roundtrip_preserves_task_summary_fields

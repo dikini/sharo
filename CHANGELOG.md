@@ -7,6 +7,29 @@ The format is based on Common Changelog:
 
 ## Unreleased
 
+### Fixed
+
+- Closed remaining Hazel hook/runtime hardening gaps:
+  - re-validate pre-prompt hook command identity at execution time to detect replacement drift after startup validation
+  - include executable content hashing in hook command fingerprinting to detect in-place command mutation
+  - execute a verified ephemeral command copy per pre-prompt hook call to remove check/spawn replacement races
+  - keep retrieval fallback card token-bounded so long goals do not blow token budgets
+  - canonicalize imported ingestion idempotency keys before storing proposal batch metadata
+  - require sleep outputs to use deterministic content-derived run identifiers for idempotent retry semantics
+  - centralize recollection token-estimation logic in shared protocol helpers to reduce cross-crate drift
+- Hardened pre-prompt MCP transport and hook execution safety:
+  - bounded stdio response size before parsing to prevent unbounded line reads
+  - removed panic-prone spawn path in daemon hook tool execution
+  - added parent-directory safety checks for hook command binaries to reduce replacement risk
+- Aligned pre-prompt retrieval limit behavior with explicit policy:
+  - removed silent lint-limit clamping for `top_k` and `token_budget`
+  - added strict config validation with explicit hard maxima for `top_k` and `token_budget`
+- Completed Hazel ingestion surface required by spec:
+  - added canonical `import_conversation_log` interface
+  - added `validate_proposal_batch` / `validate_proposal_batches`
+  - added `submit_proposal_batch` / `submit_proposal_batches`
+- Removed panic-based serialization paths in `sharo-hazel-mcp` stdio server and replaced them with structured error responses.
+
 ### Added
 
 - Added Hazel structured memory architecture artifacts:
@@ -18,6 +41,14 @@ The format is based on Common Changelog:
   - strict structural MCP hook contract policy with v1 single-binding composition baseline
   - additive `policy_ids` model with runtime policy-registry mapping and deterministic strict merge semantics
   - explicit dependency-constraint synchronization requirement for shared workspace libraries
+- Added adversarial validation coverage for Hazel hook contracts:
+  - property-based tests for schema compatibility determinism and strict well-formedness invariants in `sharo-core`
+  - `cargo-fuzz` harness for `sharo-hazel-mcp` wire request framing (`wire_request_frame`) with seed corpus inputs
+- Added fuzz quality gating for Hazel wire fuzz targets:
+  - new `scripts/check-fuzz.sh` with smoke/full profiles and changed/all scope modes
+  - opt-in local fast-feedback fuzz smoke gate via `SHARO_ENABLE_FUZZ_SMOKE=true`
+  - CI policy-check enforcement for fuzz smoke (`scripts/check-fuzz.sh --smoke --all`)
+  - shell-policy tests for fuzz gating wiring (`scripts/tests/test-fuzz-gating.bats`)
 - Added initial shared Hazel hook contract types in `sharo-core`:
   - `PrePromptComposeHookInput`
   - `RecollectionCard`, `RecollectionPayload`, and provenance support types

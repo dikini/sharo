@@ -98,6 +98,13 @@ else
   echo "fast-feedback: skipping live OpenAI smoke (set SHARO_ENABLE_LIVE_OPENAI_SMOKE=true to enable)"
 fi
 
+if [[ "${SHARO_ENABLE_FUZZ_SMOKE:-false}" == "true" ]]; then
+  echo "fast-feedback: running opt-in fuzz smoke"
+  scripts/check-fuzz.sh --smoke --changed
+else
+  echo "fast-feedback: skipping fuzz smoke (set SHARO_ENABLE_FUZZ_SMOKE=true to enable)"
+fi
+
 if [[ "$write_marker" == true ]]; then
   {
     echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
