@@ -9,6 +9,7 @@ The format is based on Common Changelog:
 
 ### Fixed
 
+- Fixed `policy-checks` CI environment to install `ripgrep` so task-registry and shell-quality checks do not fail due to missing `rg`.
 - Closed remaining Hazel hook/runtime hardening gaps:
   - re-validate pre-prompt hook command identity at execution time to detect replacement drift after startup validation
   - include executable content hashing in hook command fingerprinting to detect in-place command mutation
