@@ -24,11 +24,14 @@ while [[ $# -gt 0 ]]; do
     --range)
       mode="range"
       shift
-      [[ $# -gt 0 ]] || { echo "tasks-sync: --range requires a value" >&2; exit 2; }
+      [[ $# -gt 0 ]] || {
+        echo "tasks-sync: --range requires a value" >&2
+        exit 2
+      }
       range="$1"
       shift
       ;;
-    -h|--help)
+    -h | --help)
       usage
       exit 0
       ;;
@@ -53,7 +56,10 @@ changed_files() {
 }
 
 files="$(changed_files | sed '/^$/d' || true)"
-[[ -n "$files" ]] || { echo "tasks-sync: no changed files in scope"; exit 0; }
+[[ -n "$files" ]] || {
+  echo "tasks-sync: no changed files in scope"
+  exit 0
+}
 
 if echo "$files" | rg -n '^(docs/specs/|docs/plans/|scripts/)' >/dev/null 2>&1; then
   if ! echo "$files" | rg -n '^docs/tasks/tasks\.csv$' >/dev/null 2>&1; then

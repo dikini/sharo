@@ -22,7 +22,7 @@ while [[ $# -gt 0 ]]; do
       target_manifest="$1"
       shift
       ;;
-    -h|--help)
+    -h | --help)
       usage
       exit 0
       ;;
@@ -54,15 +54,15 @@ version_ge() {
   r_minor="${r_minor:-0}"
   r_patch="${r_patch:-0}"
 
-  if (( c_major != r_major )); then
-    (( c_major > r_major ))
+  if ((c_major != r_major)); then
+    ((c_major > r_major))
     return
   fi
-  if (( c_minor != r_minor )); then
-    (( c_minor > r_minor ))
+  if ((c_minor != r_minor)); then
+    ((c_minor > r_minor))
     return
   fi
-  (( c_patch >= r_patch ))
+  ((c_patch >= r_patch))
 }
 
 check_manifest() {

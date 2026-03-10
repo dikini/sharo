@@ -25,7 +25,10 @@ while [[ $# -gt 0 ]]; do
     --range)
       mode="range"
       shift
-      [[ $# -gt 0 ]] || { echo "shell-tests: --range requires a value" >&2; exit 2; }
+      [[ $# -gt 0 ]] || {
+        echo "shell-tests: --range requires a value" >&2
+        exit 2
+      }
       range="$1"
       shift
       ;;
@@ -33,7 +36,7 @@ while [[ $# -gt 0 ]]; do
       mode="all"
       shift
       ;;
-    -h|--help)
+    -h | --help)
       usage
       exit 0
       ;;

@@ -34,7 +34,7 @@ while [[ $# -gt 0 ]]; do
       include_push_back=true
       shift
       ;;
-    -h|--help)
+    -h | --help)
       usage
       exit 0
       ;;
@@ -87,11 +87,11 @@ if [[ "$include_push_back" == "true" ]]; then
   final_status="pushed_back"
 fi
 
-sed -E "s/(\"status\"[[:space:]]*:[[:space:]]*\")([a-z_]+)(\")/\1${final_status}\3/g" "$tmp" > "${tmp}.next"
+sed -E "s/(\"status\"[[:space:]]*:[[:space:]]*\")([a-z_]+)(\")/\1${final_status}\3/g" "$tmp" >"${tmp}.next"
 mv "${tmp}.next" "$tmp"
 
 now_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-sed -E "0,/\"updated_at_utc\"[[:space:]]*:[[:space:]]*\"[^\"]+\"/s//\"updated_at_utc\": \"${now_utc}\"/" "$tmp" > "${tmp}.next"
+sed -E "0,/\"updated_at_utc\"[[:space:]]*:[[:space:]]*\"[^\"]+\"/s//\"updated_at_utc\": \"${now_utc}\"/" "$tmp" >"${tmp}.next"
 mv "${tmp}.next" "$tmp"
 
 mv "$tmp" "$manifest"

@@ -7,7 +7,10 @@ if [[ $# -ne 1 ]]; then
 fi
 
 msg_file="$1"
-[[ -f "$msg_file" ]] || { echo "commit-msg check: file not found: $msg_file" >&2; exit 2; }
+[[ -f "$msg_file" ]] || {
+  echo "commit-msg check: file not found: $msg_file" >&2
+  exit 2
+}
 
 first_line="$(head -n1 "$msg_file")"
 

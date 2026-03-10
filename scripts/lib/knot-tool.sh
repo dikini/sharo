@@ -15,7 +15,7 @@ knot_tool_require_cmds() {
 knot_tool_require_read_only_command() {
   local command_name="$1"
   case "$command_name" in
-    list_notes|list_tags|list_directory|search_notes|graph_neighbors|get_note)
+    list_notes | list_tags | list_directory | search_notes | graph_neighbors | get_note)
       return 0
       ;;
     *)

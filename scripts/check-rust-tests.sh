@@ -37,7 +37,7 @@ while [[ $# -gt 0 ]]; do
       mode="all"
       shift
       ;;
-    -h|--help)
+    -h | --help)
       usage
       exit 0
       ;;

@@ -9,6 +9,7 @@ The format is based on Common Changelog:
 
 ### Fixed
 
+- Fixed shell-quality CI failures by formatting repository shell scripts with the project `shfmt` policy.
 - Fixed `policy-checks` CI environment to install `ripgrep` so task-registry and shell-quality checks do not fail due to missing `rg`.
 - Closed remaining Hazel hook/runtime hardening gaps:
   - re-validate pre-prompt hook command identity at execution time to detect replacement drift after startup validation

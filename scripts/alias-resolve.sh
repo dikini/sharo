@@ -64,7 +64,7 @@ if [[ $# -ne 1 ]]; then
 fi
 
 case "$1" in
-  -h|--help)
+  -h | --help)
     usage
     exit 0
     ;;

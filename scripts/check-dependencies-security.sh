@@ -20,7 +20,7 @@ while [[ $# -gt 0 ]]; do
       strict_mode=false
       shift
       ;;
-    -h|--help)
+    -h | --help)
       usage
       exit 0
       ;;

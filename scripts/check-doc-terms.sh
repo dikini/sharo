@@ -65,7 +65,7 @@ while [[ $# -gt 0 ]]; do
       RULES_FILE="$1"
       shift
       ;;
-    -h|--help)
+    -h | --help)
       usage
       exit 0
       ;;
@@ -135,7 +135,7 @@ while IFS= read -r line; do
       failures=$((failures + 1))
     done < <(rg -n -F "$forbidden" "${files[@]}")
   fi
-done < "$RULES_FILE"
+done <"$RULES_FILE"
 
 if [[ "$failures" -gt 0 ]]; then
   echo "doc-terms: FAILED ($failures issue(s))" >&2

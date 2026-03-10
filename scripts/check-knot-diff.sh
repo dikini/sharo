@@ -23,17 +23,23 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --mapping)
       shift
-      [[ $# -gt 0 ]] || { echo "knot-diff: --mapping requires a value" >&2; exit 2; }
+      [[ $# -gt 0 ]] || {
+        echo "knot-diff: --mapping requires a value" >&2
+        exit 2
+      }
       mapping_path="$1"
       shift
       ;;
     --format)
       shift
-      [[ $# -gt 0 ]] || { echo "knot-diff: --format requires a value" >&2; exit 2; }
+      [[ $# -gt 0 ]] || {
+        echo "knot-diff: --format requires a value" >&2
+        exit 2
+      }
       format="$1"
       shift
       ;;
-    -h|--help)
+    -h | --help)
       usage
       exit 0
       ;;
@@ -45,9 +51,19 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -n "$mapping_path" ]] || { echo "knot-diff: --mapping is required" >&2; usage; exit 2; }
-[[ -f "$mapping_path" ]] || { echo "knot-diff: mapping file not found: $mapping_path" >&2; exit 2; }
-[[ "$format" == "text" || "$format" == "json" ]] || { echo "knot-diff: unsupported format '$format'" >&2; exit 2; }
+[[ -n "$mapping_path" ]] || {
+  echo "knot-diff: --mapping is required" >&2
+  usage
+  exit 2
+}
+[[ -f "$mapping_path" ]] || {
+  echo "knot-diff: mapping file not found: $mapping_path" >&2
+  exit 2
+}
+[[ "$format" == "text" || "$format" == "json" ]] || {
+  echo "knot-diff: unsupported format '$format'" >&2
+  exit 2
+}
 
 normalize_and_hash_text() {
   awk '{ sub(/[[:space:]]+$/, ""); print }' <<<"$1" | sha256sum | awk '{print $1}'
@@ -139,13 +155,16 @@ while IFS=',' read -r canonical_path knot_path extra; do
     add_record "hash_mismatch" "$canonical_path" "$knot_path" "repo_hash=$repo_hash knot_hash=$knot_hash"
     mismatches=$((mismatches + 1))
   fi
-done < "$mapping_path"
+done <"$mapping_path"
 
 if [[ "$format" == "json" ]]; then
   jq -cn \
     --argjson checked "$checked" \
     --argjson mismatches "$mismatches" \
-    --argjson records "[$(IFS=,; echo "${json_records[*]-}")]" \
+    --argjson records "[$(
+      IFS=,
+      echo "${json_records[*]-}"
+    )]" \
     '{checked:$checked, mismatches:$mismatches, records:$records}'
 else
   echo "knot-diff: checked=$checked mismatches=$mismatches"

@@ -49,7 +49,7 @@ while [[ $# -gt 0 ]]; do
       target_range="$1"
       shift
       ;;
-    -h|--help)
+    -h | --help)
       usage
       exit 0
       ;;
@@ -152,7 +152,7 @@ is_allowed_direction() {
 
 is_allowed_status() {
   case "$1" in
-    pulled|validated|promoted|pushed_back|failed) return 0 ;;
+    pulled | validated | promoted | pushed_back | failed) return 0 ;;
     *) return 1 ;;
   esac
 }

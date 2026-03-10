@@ -24,11 +24,14 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --registry)
       shift
-      [[ $# -gt 0 ]] || { echo "research-lint: --registry requires a value" >&2; exit 2; }
+      [[ $# -gt 0 ]] || {
+        echo "research-lint: --registry requires a value" >&2
+        exit 2
+      }
       registry_path="$1"
       shift
       ;;
-    -h|--help)
+    -h | --help)
       usage
       exit 0
       ;;
@@ -40,8 +43,15 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -n "$registry_path" ]] || { echo "research-lint: --registry is required" >&2; usage; exit 2; }
-[[ -f "$registry_path" ]] || { echo "research-lint: registry file not found: $registry_path" >&2; exit 2; }
+[[ -n "$registry_path" ]] || {
+  echo "research-lint: --registry is required" >&2
+  usage
+  exit 2
+}
+[[ -f "$registry_path" ]] || {
+  echo "research-lint: registry file not found: $registry_path" >&2
+  exit 2
+}
 
 failures=0
 checked=0
@@ -65,7 +75,11 @@ while IFS=',' read -r note_path required_markers required_refs extra; do
     continue
   fi
 
-  [[ -n "$note_path" ]] || { echo "research-lint: invalid row line=$line_no details=missing note_path" >&2; failures=$((failures + 1)); continue; }
+  [[ -n "$note_path" ]] || {
+    echo "research-lint: invalid row line=$line_no details=missing note_path" >&2
+    failures=$((failures + 1))
+    continue
+  }
 
   checked=$((checked + 1))
 
@@ -75,7 +89,7 @@ while IFS=',' read -r note_path required_markers required_refs extra; do
     continue
   fi
 
-  IFS=';' read -ra markers <<< "$required_markers"
+  IFS=';' read -ra markers <<<"$required_markers"
   for marker in "${markers[@]}"; do
     marker="${marker## }"
     marker="${marker%% }"
@@ -87,7 +101,7 @@ while IFS=',' read -r note_path required_markers required_refs extra; do
     fi
   done
 
-  IFS=';' read -ra refs <<< "$required_refs"
+  IFS=';' read -ra refs <<<"$required_refs"
   for ref in "${refs[@]}"; do
     ref="${ref## }"
     ref="${ref%% }"
@@ -104,7 +118,7 @@ while IFS=',' read -r note_path required_markers required_refs extra; do
       failures=$((failures + 1))
     fi
   done
-done < "$registry_path"
+done <"$registry_path"
 
 if [[ "$failures" -gt 0 ]]; then
   echo "research-lint: checked=$checked failures=$failures" >&2

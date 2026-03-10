@@ -16,7 +16,7 @@ USAGE
 
 if [[ $# -gt 0 ]]; then
   case "$1" in
-    -h|--help)
+    -h | --help)
       usage
       exit 0
       ;;

@@ -21,7 +21,7 @@ kind="$1"
 slug="$2"
 
 case "$kind" in
-  spec|plan) ;;
+  spec | plan) ;;
   *)
     usage
     exit 2
