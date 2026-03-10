@@ -109,9 +109,13 @@ fn pre_prompt_compose_accepts_structurally_compatible_hazel_binding() {
             "task_id",
             "goal",
             "runtime",
-            "optional_context",
+            "top_k",
+            "token_budget",
+            "relevance_threshold",
+            "policy_ids",
+            "card_policy_hints",
         ],
-        true,
+        false,
     );
     let expected_output = expected_recollection_output_schema();
     let tool_output = ObjectSchema::new(&["policy_ids", "cards"], &["policy_ids", "cards"], false);

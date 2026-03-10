@@ -1,11 +1,13 @@
 use proptest::prelude::*;
 use sharo_core::protocol::{
-    EffectivePolicyBundle, ObjectSchema, PolicyMergeMode, PolicyRule, PrePromptComposeHookInput,
-    ProvenanceRef, RecollectionCard, RecollectionCardKind, RecollectionCardState,
-    RecollectionPayload, SubmitTaskRequest, SubmitTaskResponse, TaskState, TaskStatusRequest,
-    TaskStatusResponse, TaskSummary, expected_pre_prompt_compose_input_schema,
-    expected_recollection_output_schema, input_schema_compatible, output_schema_compatible,
-    validate_pre_prompt_compose_input_value, validate_recollection_payload_value,
+    EffectivePolicyBundle, HookSchemaDescriptor, ObjectSchema, PolicyMergeMode, PolicyRule,
+    PrePromptComposeHookInput, ProvenanceRef, RecollectionCard, RecollectionCardKind,
+    RecollectionCardState, RecollectionLintLimits, RecollectionPayload, SubmitTaskRequest,
+    SubmitTaskResponse, TaskState, TaskStatusRequest, TaskStatusResponse, TaskSummary,
+    expected_pre_prompt_compose_input_schema, expected_recollection_output_schema,
+    input_schema_compatible, object_schema_well_formed, output_schema_compatible,
+    semantic_lint_recollection_payload_with_limits, validate_pre_prompt_compose_input_value,
+    validate_recollection_payload_value,
 };
 
 #[test]
@@ -188,7 +190,142 @@ fn shared_hook_schema_compatibility_checks_work() {
     assert!(!output_schema_compatible(&expected_output, &tool_output));
 }
 
+#[test]
+fn input_schema_compatibility_rejects_tool_allow_additional_when_expected_is_strict() {
+    let expected_input = expected_pre_prompt_compose_input_schema();
+    let permissive_tool_input = ObjectSchema::new(
+        &["session_id", "task_id", "goal"],
+        &[
+            "session_id",
+            "task_id",
+            "goal",
+            "runtime",
+            "top_k",
+            "token_budget",
+            "relevance_threshold",
+            "policy_ids",
+            "card_policy_hints",
+        ],
+        true,
+    );
+    assert!(!input_schema_compatible(
+        &expected_input,
+        &permissive_tool_input
+    ));
+}
+
+#[test]
+fn output_schema_compatibility_rejects_tool_allow_additional_when_expected_is_strict() {
+    let expected_output = expected_recollection_output_schema();
+    let permissive_tool_output =
+        ObjectSchema::new(&["policy_ids", "cards"], &["policy_ids", "cards"], true);
+    assert!(!output_schema_compatible(
+        &expected_output,
+        &permissive_tool_output
+    ));
+}
+
+#[test]
+fn schema_compatibility_rejects_malformed_tool_schema_definition() {
+    let malformed = ObjectSchema::new(&["cards"], &["policy_ids"], false);
+    assert!(!object_schema_well_formed(&malformed));
+    assert!(!input_schema_compatible(
+        &expected_pre_prompt_compose_input_schema(),
+        &malformed
+    ));
+    assert!(!output_schema_compatible(
+        &expected_recollection_output_schema(),
+        &malformed
+    ));
+}
+
+#[test]
+fn recollection_payload_semantic_lint_enforces_limits() {
+    let payload = RecollectionPayload {
+        policy_ids: vec!["hunch.v1".to_string()],
+        cards: vec![RecollectionCard {
+            card_id: "card-1".to_string(),
+            kind: RecollectionCardKind::AssociationCue,
+            state: RecollectionCardState::Candidate,
+            subject: "hazel".to_string(),
+            text: "word ".repeat(500),
+            provenance: vec![ProvenanceRef {
+                source_ref: "note:hazel".to_string(),
+                source_excerpt: None,
+            }],
+            policy_ids: vec!["hunch.v1".to_string()],
+        }],
+    };
+    let limits = RecollectionLintLimits {
+        max_cards: 2,
+        max_payload_bytes: 10_000,
+        max_tokens: 32,
+    };
+    let error =
+        semantic_lint_recollection_payload_with_limits(&payload, &limits).expect_err("must fail");
+    assert!(error.contains("max_tokens_exceeded"));
+}
+
+#[test]
+fn hook_schema_descriptor_roundtrip() {
+    let descriptor = HookSchemaDescriptor {
+        input: expected_pre_prompt_compose_input_schema(),
+        output: expected_recollection_output_schema(),
+    };
+    let encoded = serde_json::to_string(&descriptor).expect("serialize");
+    let decoded: HookSchemaDescriptor = serde_json::from_str(&encoded).expect("deserialize");
+    assert_eq!(decoded, descriptor);
+}
+
+fn object_schema_strategy() -> impl Strategy<Value = ObjectSchema> {
+    let key = "[a-z_]{1,16}";
+    (
+        prop::collection::btree_set(key, 0..8),
+        prop::collection::btree_set(key, 0..8),
+        any::<bool>(),
+    )
+        .prop_map(|(required, allowed, allow_additional)| ObjectSchema {
+            required,
+            allowed,
+            allow_additional,
+        })
+}
+
 proptest! {
+    #[test]
+    fn prop_input_schema_compatibility_is_deterministic_for_same_schemas(
+        expected in object_schema_strategy(),
+        tool in object_schema_strategy(),
+    ) {
+        let a = input_schema_compatible(&expected, &tool);
+        let b = input_schema_compatible(&expected, &tool);
+        prop_assert_eq!(a, b);
+    }
+
+    #[test]
+    fn prop_output_schema_compatibility_is_deterministic_for_same_schemas(
+        expected in object_schema_strategy(),
+        tool in object_schema_strategy(),
+    ) {
+        let a = output_schema_compatible(&expected, &tool);
+        let b = output_schema_compatible(&expected, &tool);
+        prop_assert_eq!(a, b);
+    }
+
+    #[test]
+    fn prop_object_schema_well_formed_rejects_required_not_in_allowed_when_strict(
+        required in prop::collection::btree_set("[a-z_]{1,16}", 1..8),
+        allowed in prop::collection::btree_set("[a-z_]{1,16}", 0..8),
+    ) {
+        prop_assume!(!required.is_subset(&allowed));
+        let schema = ObjectSchema {
+            required,
+            allowed,
+            allow_additional: false,
+        };
+        prop_assert!(!object_schema_well_formed(&schema));
+    }
+
     #[test]
     fn prop_protocol_roundtrip_preserves_task_summary_fields(
         task_id in "[a-z0-9\\-]{1,24}",

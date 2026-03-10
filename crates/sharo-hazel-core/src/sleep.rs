@@ -1,5 +1,6 @@
-use crate::ingest::validate_bulk_submit_batches;
+use crate::ingest::validate_proposal_batches;
 use crate::proposal::ProposalBatch;
+use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SleepBudget {
@@ -11,6 +12,25 @@ pub struct SleepBudget {
 pub struct SleepJobOutput {
     pub run_id: String,
     pub batches: Vec<ProposalBatch>,
+}
+
+pub fn derive_sleep_run_id(batches: &[ProposalBatch]) -> Result<String, String> {
+    let mut rows: Vec<String> = batches
+        .iter()
+        .map(|batch| {
+            serde_json::to_string(batch).map_err(|error| {
+                format!("sleep_output_invalid reason=run_id_serialize_failed error={error}")
+            })
+        })
+        .collect::<Result<_, _>>()?;
+    rows.sort();
+    let mut hasher = Sha256::new();
+    for row in rows {
+        hasher.update(row.as_bytes());
+        hasher.update(b"\n");
+    }
+    let digest = hasher.finalize();
+    Ok(format!("sleep-run-v2-{digest:x}"))
 }
 
 pub fn validate_sleep_budget(budget: &SleepBudget) -> Result<(), String> {
@@ -26,6 +46,13 @@ pub fn validate_sleep_budget(budget: &SleepBudget) -> Result<(), String> {
 pub fn validate_sleep_output(output: &SleepJobOutput, budget: &SleepBudget) -> Result<(), String> {
     if output.run_id.trim().is_empty() {
         return Err("sleep_output_invalid reason=run_id_required".to_string());
+    }
+    let expected_run_id = derive_sleep_run_id(&output.batches)?;
+    if output.run_id != expected_run_id {
+        return Err(format!(
+            "sleep_output_invalid reason=run_id_mismatch actual={} expected={}",
+            output.run_id, expected_run_id
+        ));
     }
     if output.batches.len() > budget.max_batches {
         return Err(format!(
@@ -44,5 +71,5 @@ pub fn validate_sleep_output(output: &SleepJobOutput, budget: &SleepBudget) -> R
             ));
         }
     }
-    validate_bulk_submit_batches(&output.batches)
+    validate_proposal_batches(&output.batches)
 }

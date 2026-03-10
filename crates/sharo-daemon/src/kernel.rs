@@ -1,12 +1,19 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+use std::fs;
+use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader, Read, Write};
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 
+use sha2::{Digest, Sha256};
 use sharo_core::context_resolvers::{
     ComponentProvenance, ComponentResolver, ResolvedComponent, ResolverBundle, StaticTextResolver,
 };
@@ -17,9 +24,12 @@ use sharo_core::model_connector::{
 };
 use sharo_core::model_connectors::{OllamaConnector, OpenAiCompatibleConnector};
 use sharo_core::protocol::{
-    EffectivePolicyBundle, HazelCardPolicyHint, PolicyMergeMode, PolicyRule,
-    PrePromptComposeHookInput, RecollectionCardKind, RecollectionPayload, ToolCallRequest,
-    ToolCallResponse, validate_pre_prompt_compose_input_value, validate_recollection_payload_value,
+    EffectivePolicyBundle, HazelCardPolicyHint, HookSchemaDescriptor, ObjectSchema,
+    PolicyMergeMode, PolicyRule, PrePromptComposeHookInput, RecollectionCardKind,
+    RecollectionLintLimits, RecollectionPayload, ToolCallRequest, ToolCallResponse,
+    expected_pre_prompt_compose_input_schema, expected_recollection_output_schema,
+    input_schema_compatible, object_schema_well_formed, output_schema_compatible,
+    validate_pre_prompt_compose_input_value, validate_recollection_payload_with_limits,
 };
 use sharo_core::reasoning::{
     IdReasoningEngine, ReasoningEnginePort, ReasoningError, ReasoningInput,
@@ -33,6 +43,11 @@ use crate::config::{
 };
 use crate::connector_pool::{BlockingPool, PoolError, PoolPolicy};
 use crate::store::{Store, SubmitPreparation};
+
+const PRE_PROMPT_TOP_K_HARD_MAX: usize = 256;
+const PRE_PROMPT_TOKEN_BUDGET_HARD_MAX: usize = 65_536;
+const PRE_PROMPT_TOOL_MAX_RESPONSE_BYTES: usize = 131_072;
+static PRE_PROMPT_TOOL_COPY_NONCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone)]
 pub enum ConnectorKind {
@@ -63,6 +78,37 @@ pub struct HookBindingRuntimeConfig {
     pub command: String,
     pub args: Vec<String>,
     pub timeout_ms: u64,
+    pub command_fingerprint: BindingCommandFingerprint,
+    pub schema_descriptor: HookSchemaDescriptor,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BindingCommandFingerprint {
+    #[cfg(unix)]
+    pub dev: u64,
+    #[cfg(unix)]
+    pub inode: u64,
+    #[cfg(unix)]
+    pub mode: u32,
+    #[cfg(unix)]
+    pub uid: u32,
+    #[cfg(unix)]
+    pub gid: u32,
+    pub content_sha256: String,
+}
+
+impl BindingCommandFingerprint {
+    #[cfg(unix)]
+    fn from_metadata(metadata: &fs::Metadata, content_sha256: String) -> Self {
+        Self {
+            dev: metadata.dev(),
+            inode: metadata.ino(),
+            mode: metadata.mode(),
+            uid: metadata.uid(),
+            gid: metadata.gid(),
+            content_sha256,
+        }
+    }
 }
 
 impl KernelRuntimeConfig {
@@ -147,6 +193,28 @@ impl KernelRuntimeConfig {
         if config.connector_pool.cooldown_ms == 0 {
             return Err("connector_pool_cooldown_invalid cooldown_ms=0".to_string());
         }
+        if let Some(top_k) = config.reasoning_hooks.pre_prompt_compose.top_k {
+            if top_k == 0 {
+                return Err("pre_prompt_compose_top_k_invalid top_k=0".to_string());
+            }
+            if top_k > PRE_PROMPT_TOP_K_HARD_MAX {
+                return Err(format!(
+                    "pre_prompt_compose_top_k_invalid top_k={} max={}",
+                    top_k, PRE_PROMPT_TOP_K_HARD_MAX
+                ));
+            }
+        }
+        if let Some(token_budget) = config.reasoning_hooks.pre_prompt_compose.token_budget {
+            if token_budget == 0 {
+                return Err("pre_prompt_compose_token_budget_invalid token_budget=0".to_string());
+            }
+            if token_budget > PRE_PROMPT_TOKEN_BUDGET_HARD_MAX {
+                return Err(format!(
+                    "pre_prompt_compose_token_budget_invalid token_budget={} max={}",
+                    token_budget, PRE_PROMPT_TOKEN_BUDGET_HARD_MAX
+                ));
+            }
+        }
         let pre_prompt_hook_binding =
             validate_pre_prompt_compose_hook(&config.reasoning_hooks.pre_prompt_compose)?;
         let hazel_card_policy_hints = build_hazel_card_policy_hints(
@@ -212,13 +280,227 @@ fn validate_pre_prompt_compose_hook(
             binding.id
         ));
     };
-    Ok(Some(HookBindingRuntimeConfig {
+    let runtime_binding = HookBindingRuntimeConfig {
         id: binding.id.clone(),
         tool: binding.tool.clone(),
         command,
         args: binding.args.clone().unwrap_or_default(),
         timeout_ms: binding.timeout_ms.unwrap_or(2_000),
-    }))
+        command_fingerprint: BindingCommandFingerprint {
+            #[cfg(unix)]
+            dev: 0,
+            #[cfg(unix)]
+            inode: 0,
+            #[cfg(unix)]
+            mode: 0,
+            #[cfg(unix)]
+            uid: 0,
+            #[cfg(unix)]
+            gid: 0,
+            content_sha256: String::new(),
+        },
+        schema_descriptor: HookSchemaDescriptor {
+            input: expected_pre_prompt_compose_input_schema(),
+            output: expected_recollection_output_schema(),
+        },
+    };
+    let mut runtime_binding = runtime_binding;
+    runtime_binding.command_fingerprint = validate_binding_command_security(&runtime_binding)?;
+    runtime_binding.schema_descriptor = validate_binding_schema_compatibility(&runtime_binding)?;
+    Ok(Some(runtime_binding))
+}
+
+fn validate_binding_command_security(
+    binding: &HookBindingRuntimeConfig,
+) -> Result<BindingCommandFingerprint, String> {
+    let path = Path::new(&binding.command);
+    if !path.is_absolute() {
+        return Err(format!(
+            "pre_prompt_compose_binding_command_invalid id={} reason=path_not_absolute command={}",
+            binding.id, binding.command
+        ));
+    }
+    let mut cursor = std::path::PathBuf::new();
+    for component in path.components() {
+        cursor.push(component.as_os_str());
+        if cursor == path {
+            break;
+        }
+        let component_metadata = fs::symlink_metadata(&cursor).map_err(|error| {
+            format!(
+                "pre_prompt_compose_binding_command_invalid id={} reason=component_metadata_failed error={error}",
+                binding.id
+            )
+        })?;
+        if component_metadata.file_type().is_symlink() {
+            return Err(format!(
+                "pre_prompt_compose_binding_command_invalid id={} reason=parent_symlink_disallowed command={}",
+                binding.id, binding.command
+            ));
+        }
+        if component_metadata.is_dir() {
+            let mode = component_metadata.mode();
+            if mode & 0o002 != 0 && mode & 0o1000 == 0 {
+                return Err(format!(
+                    "pre_prompt_compose_binding_command_invalid id={} reason=ancestor_world_writable command={}",
+                    binding.id, binding.command
+                ));
+            }
+        }
+    }
+    let symlink_metadata = fs::symlink_metadata(path).map_err(|error| {
+        format!(
+            "pre_prompt_compose_binding_command_invalid id={} reason=symlink_metadata_failed error={error}",
+            binding.id
+        )
+    })?;
+    if symlink_metadata.file_type().is_symlink() {
+        return Err(format!(
+            "pre_prompt_compose_binding_command_invalid id={} reason=symlink_disallowed command={}",
+            binding.id, binding.command
+        ));
+    }
+    let metadata = fs::metadata(path).map_err(|error| {
+        format!(
+            "pre_prompt_compose_binding_command_invalid id={} reason=metadata_failed error={error}",
+            binding.id
+        )
+    })?;
+    if !metadata.is_file() {
+        return Err(format!(
+            "pre_prompt_compose_binding_command_invalid id={} reason=not_file command={}",
+            binding.id, binding.command
+        ));
+    }
+    #[cfg(unix)]
+    {
+        let content_sha256 = hash_file_contents(path).map_err(|error| {
+            format!(
+                "pre_prompt_compose_binding_command_invalid id={} reason=hash_failed error={error}",
+                binding.id
+            )
+        })?;
+        let mode = metadata.mode();
+        if mode & 0o111 == 0 {
+            return Err(format!(
+                "pre_prompt_compose_binding_command_invalid id={} reason=not_executable command={}",
+                binding.id, binding.command
+            ));
+        }
+        if mode & 0o002 != 0 {
+            return Err(format!(
+                "pre_prompt_compose_binding_command_invalid id={} reason=world_writable command={}",
+                binding.id, binding.command
+            ));
+        }
+        Ok(BindingCommandFingerprint::from_metadata(
+            &metadata,
+            content_sha256,
+        ))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = metadata;
+        Err("pre_prompt_compose_binding_command_invalid reason=unsupported_platform".to_string())
+    }
+}
+
+fn hash_file_contents(path: &Path) -> std::io::Result<String> {
+    let mut file = fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0_u8; 16384];
+    loop {
+        let read = file.read(&mut buf)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buf[..read]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn validate_binding_schema_compatibility(
+    binding: &HookBindingRuntimeConfig,
+) -> Result<HookSchemaDescriptor, String> {
+    let request = ToolCallRequest {
+        tool: "hazel.schema".to_string(),
+        input: serde_json::json!({}),
+    };
+    let response = run_stdio_tool_call(binding, &request)?;
+    if !response.ok {
+        let error = response
+            .error
+            .unwrap_or_else(|| "unknown_schema_error".to_string());
+        return Err(format!(
+            "pre_prompt_compose_binding_schema_invalid id={} reason=schema_tool_failed error_hint={}",
+            binding.id,
+            escape_log_field(&stderr_error_hint(&error))
+        ));
+    }
+    let output = response.output.ok_or_else(|| {
+        format!(
+            "pre_prompt_compose_binding_schema_invalid id={} reason=schema_output_missing",
+            binding.id
+        )
+    })?;
+    let descriptor: HookSchemaDescriptor = serde_json::from_value(output).map_err(|error| {
+        format!(
+            "pre_prompt_compose_binding_schema_invalid id={} reason=schema_parse_failed error={error}",
+            binding.id
+        )
+    })?;
+    if !object_schema_well_formed(&descriptor.input) {
+        return Err(format!(
+            "pre_prompt_compose_binding_schema_invalid id={} reason=input_schema_malformed",
+            binding.id
+        ));
+    }
+    if !object_schema_well_formed(&descriptor.output) {
+        return Err(format!(
+            "pre_prompt_compose_binding_schema_invalid id={} reason=output_schema_malformed",
+            binding.id
+        ));
+    }
+    let expected_input = expected_pre_prompt_compose_input_schema();
+    let expected_output = expected_recollection_output_schema();
+    if !input_schema_compatible(&expected_input, &descriptor.input) {
+        return Err(format!(
+            "pre_prompt_compose_binding_schema_invalid id={} reason=input_incompatible",
+            binding.id
+        ));
+    }
+    if !output_schema_compatible(&expected_output, &descriptor.output) {
+        return Err(format!(
+            "pre_prompt_compose_binding_schema_invalid id={} reason=output_incompatible",
+            binding.id
+        ));
+    }
+    Ok(descriptor)
+}
+
+fn validate_payload_against_object_schema(
+    value: &serde_json::Value,
+    schema: &ObjectSchema,
+    error_prefix: &str,
+) -> Result<(), String> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| format!("{error_prefix} reason=not_object"))?;
+    for required in &schema.required {
+        if !object.contains_key(required) {
+            return Err(format!(
+                "{error_prefix} reason=missing_required_field field={required}"
+            ));
+        }
+    }
+    if !schema.allow_additional {
+        for key in object.keys() {
+            if !schema.allowed.contains(key) {
+                return Err(format!("{error_prefix} reason=unknown_field field={key}"));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn parse_policy_rule(raw: &str) -> Result<PolicyRule, String> {
@@ -434,6 +716,34 @@ struct PrePromptComposeMemoryResolver {
 }
 
 impl PrePromptComposeMemoryResolver {
+    fn emit_hook_failure_event(
+        &self,
+        binding_id: &str,
+        task_id: &str,
+        started: Instant,
+        error: &str,
+    ) {
+        let error_hint = stderr_error_hint(error);
+        eprintln!(
+            "hazel_hook event=tool_failed binding={} task_id={} elapsed_ms={} error_hint={}",
+            binding_id,
+            task_id,
+            started.elapsed().as_millis(),
+            escape_log_field(&error_hint)
+        );
+    }
+
+    fn recollection_lint_limits(&self) -> RecollectionLintLimits {
+        let defaults = RecollectionLintLimits::default();
+        let max_cards = self.top_k.unwrap_or(defaults.max_cards).max(1);
+        let max_tokens = self.token_budget.unwrap_or(defaults.max_tokens).max(1);
+        RecollectionLintLimits {
+            max_cards,
+            max_payload_bytes: defaults.max_payload_bytes,
+            max_tokens,
+        }
+    }
+
     fn run_pre_prompt_hook(
         &self,
         scope: &TurnScope,
@@ -462,39 +772,60 @@ impl PrePromptComposeMemoryResolver {
         };
         let input_value = serde_json::to_value(input)
             .map_err(|error| format!("pre_prompt_input_encode_failed error={error}"))?;
-        let input_value =
-            validate_pre_prompt_compose_input_value(&input_value).and_then(|validated| {
-                serde_json::to_value(validated)
-                    .map_err(|error| format!("pre_prompt_input_encode_failed error={error}"))
-            })?;
+        validate_pre_prompt_compose_input_value(&input_value)?;
         let request = ToolCallRequest {
             tool: binding.tool.clone(),
             input: input_value,
         };
-        let response = run_stdio_tool_call(binding, &request)?;
+        validate_payload_against_object_schema(
+            &request.input,
+            &binding.schema_descriptor.input,
+            "pre_prompt_input_schema_invalid",
+        )?;
+        let response = match run_stdio_tool_call(binding, &request) {
+            Ok(response) => response,
+            Err(error) => {
+                self.emit_hook_failure_event(&binding.id, &scope.task_id, started, &error);
+                return Err(error);
+            }
+        };
         if !response.ok {
             let error = response
                 .error
                 .unwrap_or_else(|| "pre_prompt_tool_error_unknown".to_string());
-            eprintln!(
-                "hazel_hook event=tool_failed binding={} task_id={} elapsed_ms={} error={}",
-                binding.id,
-                scope.task_id,
-                started.elapsed().as_millis(),
-                error
-            );
+            self.emit_hook_failure_event(&binding.id, &scope.task_id, started, &error);
+            let error_hint = stderr_error_hint(&error);
             return Err(format!(
-                "pre_prompt_tool_failed binding={} error={error}",
-                binding.id
+                "pre_prompt_tool_failed binding={} error_hint={}",
+                binding.id, error_hint
             ));
         }
         let Some(output) = response.output else {
+            let error = format!("pre_prompt_tool_output_missing binding={}", binding.id);
+            self.emit_hook_failure_event(&binding.id, &scope.task_id, started, &error);
             return Err(format!(
                 "pre_prompt_tool_output_missing binding={}",
                 binding.id
             ));
         };
-        let recollection = validate_recollection_payload_value(&output)?;
+        if let Err(error) = validate_payload_against_object_schema(
+            &output,
+            &binding.schema_descriptor.output,
+            "pre_prompt_output_schema_invalid",
+        ) {
+            self.emit_hook_failure_event(&binding.id, &scope.task_id, started, &error);
+            return Err(error);
+        }
+        let recollection = match validate_recollection_payload_with_limits(
+            &output,
+            &self.recollection_lint_limits(),
+        ) {
+            Ok(recollection) => recollection,
+            Err(error) => {
+                self.emit_hook_failure_event(&binding.id, &scope.task_id, started, &error);
+                return Err(error);
+            }
+        };
         eprintln!(
             "hazel_hook event=tool_succeeded binding={} task_id={} elapsed_ms={} cards={}",
             binding.id,
@@ -534,33 +865,181 @@ fn run_stdio_tool_call(
     binding: &HookBindingRuntimeConfig,
     request: &ToolCallRequest,
 ) -> Result<ToolCallResponse, String> {
-    let mut child = Command::new(&binding.command)
-        .args(&binding.args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| {
+    let mut terminal_error = None;
+    for attempt in 0..2_u8 {
+        let prepared_command = prepare_verified_binding_command(binding)?;
+        let spawn = Command::new(&prepared_command.path)
+            .args(&binding.args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn();
+        match spawn {
+            Ok(child) => {
+                return run_stdio_tool_call_with_child(binding, request, child, prepared_command);
+            }
+            Err(error) if error.raw_os_error() == Some(26) && attempt == 0 => {
+                drop(prepared_command);
+                thread::sleep(Duration::from_millis(10));
+            }
+            Err(error) => {
+                drop(prepared_command);
+                terminal_error = Some(error);
+            }
+        }
+    }
+    let error = terminal_error.unwrap_or_else(|| std::io::Error::other("unknown_spawn_error"));
+    Err(format!(
+        "pre_prompt_tool_spawn_failed binding={} command={} error={error}",
+        binding.id, binding.command
+    ))
+}
+
+fn verify_binding_command_integrity(
+    binding: &HookBindingRuntimeConfig,
+) -> Result<BindingCommandFingerprint, String> {
+    let current = validate_binding_command_security(binding).map_err(|error| {
+        format!(
+            "pre_prompt_tool_binding_command_invalid binding={} error={}",
+            binding.id, error
+        )
+    })?;
+    if current != binding.command_fingerprint {
+        return Err(format!(
+            "pre_prompt_tool_binding_command_invalid binding={} reason=command_identity_mismatch",
+            binding.id
+        ));
+    }
+    Ok(current)
+}
+
+#[derive(Debug)]
+struct PreparedBindingCommand {
+    path: PathBuf,
+}
+
+impl Drop for PreparedBindingCommand {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+fn prepare_verified_binding_command(
+    binding: &HookBindingRuntimeConfig,
+) -> Result<PreparedBindingCommand, String> {
+    let (bytes, content_sha256) = read_file_bytes_and_sha256(Path::new(&binding.command))?;
+    if content_sha256 != binding.command_fingerprint.content_sha256 {
+        return Err(format!(
+            "pre_prompt_tool_binding_command_invalid binding={} reason=command_identity_mismatch",
+            binding.id
+        ));
+    }
+    let _ = verify_binding_command_integrity(binding)?;
+    let copy_path = unique_verified_command_path(binding);
+    let mut copy_file = open_restricted_copy_file(&copy_path).map_err(|error| {
+        format!(
+            "pre_prompt_tool_binding_command_invalid binding={} reason=copy_create_failed error={error}",
+            binding.id
+        )
+    })?;
+    copy_file.write_all(&bytes).map_err(|error| {
+        format!(
+            "pre_prompt_tool_binding_command_invalid binding={} reason=copy_write_failed error={error}",
+            binding.id
+        )
+    })?;
+    copy_file.sync_all().map_err(|error| {
+        format!(
+            "pre_prompt_tool_binding_command_invalid binding={} reason=copy_sync_failed error={error}",
+            binding.id
+        )
+    })?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&copy_path, fs::Permissions::from_mode(0o700)).map_err(|error| {
             format!(
-                "pre_prompt_tool_spawn_failed binding={} command={} error={error}",
-                binding.id, binding.command
+                "pre_prompt_tool_binding_command_invalid binding={} reason=copy_chmod_failed error={error}",
+                binding.id
             )
         })?;
+    }
+    Ok(PreparedBindingCommand { path: copy_path })
+}
 
+fn unique_verified_command_path(binding: &HookBindingRuntimeConfig) -> PathBuf {
+    let nonce = PRE_PROMPT_TOOL_COPY_NONCE.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let safe_binding_id = sanitize_binding_id_for_path(&binding.id);
+    std::env::temp_dir().join(format!(
+        "sharo-hazel-hook-{}-{}-{nonce}.bin",
+        safe_binding_id, pid
+    ))
+}
+
+fn sanitize_binding_id_for_path(id: &str) -> String {
+    let mut sanitized = String::new();
+    for ch in id.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+            sanitized.push(ch);
+        } else {
+            sanitized.push('_');
+        }
+    }
+    if sanitized.is_empty() {
+        return "binding".to_string();
+    }
+    if sanitized.len() > 64 {
+        sanitized.truncate(64);
+    }
+    sanitized
+}
+
+fn read_file_bytes_and_sha256(path: &Path) -> Result<(Vec<u8>, String), String> {
+    let bytes = fs::read(path).map_err(|error| {
+        format!("pre_prompt_tool_binding_command_invalid reason=read_failed error={error}")
+    })?;
+    let digest = Sha256::digest(&bytes);
+    Ok((bytes, format!("{digest:x}")))
+}
+
+fn run_stdio_tool_call_with_child(
+    binding: &HookBindingRuntimeConfig,
+    request: &ToolCallRequest,
+    mut child: std::process::Child,
+    _prepared_command: PreparedBindingCommand,
+) -> Result<ToolCallResponse, String> {
     {
         let Some(mut stdin) = child.stdin.take() else {
+            let _ = child.kill();
+            let _ = child.wait();
             return Err(format!(
                 "pre_prompt_tool_stdin_unavailable binding={}",
                 binding.id
             ));
         };
-        let payload = serde_json::to_string(request)
-            .map_err(|error| format!("pre_prompt_tool_request_encode_failed error={error}"))?;
-        writeln!(stdin, "{payload}")
-            .map_err(|error| format!("pre_prompt_tool_request_write_failed error={error}"))?;
+        let payload = match serde_json::to_string(request) {
+            Ok(payload) => payload,
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "pre_prompt_tool_request_encode_failed error={error}"
+                ));
+            }
+        };
+        if let Err(error) = writeln!(stdin, "{payload}") {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!(
+                "pre_prompt_tool_request_write_failed error={error}"
+            ));
+        }
     }
 
     let Some(stdout) = child.stdout.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
         return Err(format!(
             "pre_prompt_tool_stdout_unavailable binding={}",
             binding.id
@@ -568,7 +1047,8 @@ fn run_stdio_tool_call(
     };
     let (sender, receiver) = mpsc::channel();
     thread::spawn(move || {
-        let mut reader = BufReader::new(stdout);
+        let mut reader =
+            BufReader::new(stdout.take((PRE_PROMPT_TOOL_MAX_RESPONSE_BYTES + 1) as u64));
         let mut line = String::new();
         let read_result = reader.read_line(&mut line);
         let _ = sender.send((read_result, line));
@@ -586,21 +1066,33 @@ fn run_stdio_tool_call(
             ));
         }
     };
-    read_result.map_err(|error| format!("pre_prompt_tool_response_read_failed error={error}"))?;
+    if let Err(error) = read_result {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(format!(
+            "pre_prompt_tool_response_read_failed error={error}"
+        ));
+    }
+    if line.len() > PRE_PROMPT_TOOL_MAX_RESPONSE_BYTES {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(format!(
+            "pre_prompt_tool_response_too_large binding={} max_bytes={}",
+            binding.id, PRE_PROMPT_TOOL_MAX_RESPONSE_BYTES
+        ));
+    }
 
     let status = child
         .wait()
         .map_err(|error| format!("pre_prompt_tool_wait_failed error={error}"))?;
-    let mut stderr = String::new();
-    if let Some(mut stderr_pipe) = child.stderr.take() {
-        let _ = stderr_pipe.read_to_string(&mut stderr);
-    }
     if !status.success() {
+        let error_hint = match status.code() {
+            Some(code) => format!("tool_error;exit_code={code}"),
+            None => "tool_error;terminated_by_signal".to_string(),
+        };
         return Err(format!(
-            "pre_prompt_tool_nonzero_exit binding={} status={} stderr={}",
-            binding.id,
-            status,
-            stderr.trim()
+            "pre_prompt_tool_nonzero_exit binding={} status={} error_hint={}",
+            binding.id, status, error_hint
         ));
     }
     if line.trim().is_empty() {
@@ -615,6 +1107,44 @@ fn run_stdio_tool_call(
             binding.id
         )
     })
+}
+
+fn open_restricted_copy_file(path: &Path) -> std::io::Result<fs::File> {
+    let mut options = OpenOptions::new();
+    options.create_new(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o700);
+    }
+    options.open(path)
+}
+
+fn escape_log_field(value: &str) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "\"<encode_failed>\"".to_string())
+}
+
+fn stderr_error_hint(stderr: &str) -> String {
+    if stderr.is_empty() {
+        return "none".to_string();
+    }
+    let lower = stderr.to_ascii_lowercase();
+    let has_timeout = lower.contains("timeout");
+    let has_auth = lower.contains("auth");
+    let has_permission = lower.contains("permission");
+    let has_json = lower.contains("json");
+    let class = if has_auth {
+        "auth"
+    } else if has_permission {
+        "permission"
+    } else if has_json {
+        "json"
+    } else if has_timeout {
+        "timeout"
+    } else {
+        "tool_error"
+    };
+    format!("{class};len={}", stderr.len())
 }
 
 #[derive(Clone)]
@@ -869,6 +1399,8 @@ mod tests {
     use std::collections::BTreeMap;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
+    #[cfg(unix)]
+    use std::os::unix::fs::symlink;
     use std::path::PathBuf;
     use std::process::Command;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -879,24 +1411,62 @@ mod tests {
         ModelRuntimeConfig, PrePromptComposeHookConfig, ReasoningHooksConfig,
     };
     use crate::store::SubmitPreparation;
-    use sharo_core::protocol::{EffectivePolicyBundle, PolicyMergeMode, PolicyRule};
+    use sharo_core::protocol::{
+        EffectivePolicyBundle, HookSchemaDescriptor, PolicyMergeMode, PolicyRule,
+        expected_pre_prompt_compose_input_schema, expected_recollection_output_schema,
+    };
     use sharo_core::reasoning_context::PolicyConfig;
 
-    fn write_mock_mcp_script(response_line: &str) -> String {
+    fn default_mock_schema_response() -> String {
+        let descriptor = HookSchemaDescriptor {
+            input: expected_pre_prompt_compose_input_schema(),
+            output: expected_recollection_output_schema(),
+        };
+        serde_json::to_string(&serde_json::json!({
+            "ok": true,
+            "output": descriptor,
+            "error": serde_json::Value::Null
+        }))
+        .expect("serialize schema response")
+    }
+
+    fn write_mock_mcp_script_with_schema(
+        recollect_response_line: &str,
+        schema_response_line: &str,
+    ) -> String {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("time")
             .as_nanos();
-        let path = std::env::temp_dir().join(format!("sharo-hazel-mcp-mock-{nanos}.sh"));
+        write_mock_mcp_script_with_schema_at(
+            std::env::temp_dir(),
+            &format!("sharo-hazel-mcp-mock-{nanos}.sh"),
+            recollect_response_line,
+            schema_response_line,
+        )
+    }
+
+    fn write_mock_mcp_script_with_schema_at(
+        directory: PathBuf,
+        file_name: &str,
+        recollect_response_line: &str,
+        schema_response_line: &str,
+    ) -> String {
+        let path = directory.join(file_name);
         let content = format!(
-            "#!/usr/bin/env bash\nread _line\necho '{}'\n",
-            response_line.replace('\'', "'\"'\"'")
+            "#!/usr/bin/env bash\nread _line\nif [[ \"$_line\" == *'\"tool\":\"hazel.schema\"'* ]]; then\n  echo '{}'\nelse\n  echo '{}'\nfi\n",
+            schema_response_line.replace('\'', "'\"'\"'"),
+            recollect_response_line.replace('\'', "'\"'\"'")
         );
         fs::write(&path, content).expect("write mock mcp script");
         let mut permissions = fs::metadata(&path).expect("metadata").permissions();
         permissions.set_mode(0o700);
         fs::set_permissions(&path, permissions).expect("chmod script");
         path.to_string_lossy().to_string()
+    }
+
+    fn write_mock_mcp_script(response_line: &str) -> String {
+        write_mock_mcp_script_with_schema(response_line, &default_mock_schema_response())
     }
 
     fn ensure_real_hazel_mcp_binary() -> String {
@@ -1123,6 +1693,204 @@ mod tests {
         let err = KernelRuntimeConfig::from_daemon_config(&cfg)
             .expect_err("unknown strict policy id should fail");
         assert!(err.contains("pre_prompt_compose_policy_missing"));
+    }
+
+    #[test]
+    fn pre_prompt_compose_rejects_relative_binding_command() {
+        let cfg = DaemonConfigFile {
+            reasoning_hooks: ReasoningHooksConfig {
+                pre_prompt_compose: PrePromptComposeHookConfig {
+                    composition: Some("single".to_string()),
+                    bindings: Some(vec![HookBindingConfig {
+                        id: "hazel".to_string(),
+                        tool: "hazel.recollect".to_string(),
+                        command: Some("hazel-mcp".to_string()),
+                        args: Some(vec![]),
+                        timeout_ms: Some(500),
+                    }]),
+                    default_policy_ids: None,
+                    strict_unknown_policy_ids: Some(true),
+                    top_k: None,
+                    token_budget: None,
+                    relevance_threshold: None,
+                },
+            },
+            ..DaemonConfigFile::default()
+        };
+        let err = KernelRuntimeConfig::from_daemon_config(&cfg)
+            .expect_err("relative command paths must be rejected");
+        assert!(err.contains("path_not_absolute"));
+    }
+
+    #[test]
+    fn pre_prompt_compose_rejects_world_writable_binding_command() {
+        let script_path = write_mock_mcp_script(
+            r#"{"ok":true,"output":{"policy_ids":["hunch.v1"],"cards":[{"card_id":"card-1","kind":"association_cue","state":"candidate","subject":"memory-system","text":"Use prior architecture context","provenance":[{"source_ref":"note:hazel"}],"policy_ids":["hunch.v1"]}]}}"#,
+        );
+        let mut permissions = fs::metadata(&script_path).expect("metadata").permissions();
+        permissions.set_mode(0o777);
+        fs::set_permissions(&script_path, permissions).expect("chmod script world writable");
+        let cfg = DaemonConfigFile {
+            reasoning_hooks: ReasoningHooksConfig {
+                pre_prompt_compose: PrePromptComposeHookConfig {
+                    composition: Some("single".to_string()),
+                    bindings: Some(vec![HookBindingConfig {
+                        id: "hazel".to_string(),
+                        tool: "hazel.recollect".to_string(),
+                        command: Some(script_path),
+                        args: Some(vec![]),
+                        timeout_ms: Some(500),
+                    }]),
+                    default_policy_ids: None,
+                    strict_unknown_policy_ids: Some(true),
+                    top_k: None,
+                    token_budget: None,
+                    relevance_threshold: None,
+                },
+            },
+            ..DaemonConfigFile::default()
+        };
+        let err = KernelRuntimeConfig::from_daemon_config(&cfg)
+            .expect_err("world-writable commands must be rejected");
+        assert!(err.contains("world_writable"));
+    }
+
+    #[test]
+    fn pre_prompt_compose_rejects_world_writable_parent_directory() {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let parent = std::env::temp_dir().join(format!("sharo-hazel-mcp-parent-{nanos}"));
+        fs::create_dir_all(&parent).expect("create parent dir");
+        let mut parent_permissions = fs::metadata(&parent).expect("metadata").permissions();
+        parent_permissions.set_mode(0o777);
+        fs::set_permissions(&parent, parent_permissions).expect("chmod parent world writable");
+        let script_path = write_mock_mcp_script_with_schema_at(
+            parent.clone(),
+            "mock.sh",
+            r#"{"ok":true,"output":{"policy_ids":["hunch.v1"],"cards":[{"card_id":"card-1","kind":"association_cue","state":"candidate","subject":"memory-system","text":"Use prior architecture context","provenance":[{"source_ref":"note:hazel"}],"policy_ids":["hunch.v1"]}]}}"#,
+            &default_mock_schema_response(),
+        );
+        let cfg = DaemonConfigFile {
+            reasoning_hooks: ReasoningHooksConfig {
+                pre_prompt_compose: PrePromptComposeHookConfig {
+                    composition: Some("single".to_string()),
+                    bindings: Some(vec![HookBindingConfig {
+                        id: "hazel".to_string(),
+                        tool: "hazel.recollect".to_string(),
+                        command: Some(script_path),
+                        args: Some(vec![]),
+                        timeout_ms: Some(500),
+                    }]),
+                    default_policy_ids: None,
+                    strict_unknown_policy_ids: Some(true),
+                    top_k: None,
+                    token_budget: None,
+                    relevance_threshold: None,
+                },
+            },
+            ..DaemonConfigFile::default()
+        };
+        let err = KernelRuntimeConfig::from_daemon_config(&cfg)
+            .expect_err("world-writable parent must be rejected");
+        assert!(err.contains("ancestor_world_writable"));
+        let mut restore = fs::metadata(&parent).expect("metadata").permissions();
+        restore.set_mode(0o700);
+        fs::set_permissions(&parent, restore).expect("restore parent permissions");
+        fs::remove_file(parent.join("mock.sh")).expect("remove mock script");
+        fs::remove_dir(&parent).expect("remove parent dir");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn pre_prompt_compose_rejects_symlinked_parent_component() {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("sharo-hazel-mcp-symlink-{nanos}"));
+        let real_parent = root.join("real");
+        let link_parent = root.join("link");
+        fs::create_dir_all(&real_parent).expect("create real parent");
+        symlink(&real_parent, &link_parent).expect("create symlinked parent");
+        let script_path = write_mock_mcp_script_with_schema_at(
+            real_parent.clone(),
+            "mock.sh",
+            r#"{"ok":true,"output":{"policy_ids":["hunch.v1"],"cards":[{"card_id":"card-1","kind":"association_cue","state":"candidate","subject":"memory-system","text":"Use prior architecture context","provenance":[{"source_ref":"note:hazel"}],"policy_ids":["hunch.v1"]}]}}"#,
+            &default_mock_schema_response(),
+        );
+        let symlink_script_path = link_parent.join("mock.sh");
+        assert!(PathBuf::from(&script_path).exists());
+        let cfg = DaemonConfigFile {
+            reasoning_hooks: ReasoningHooksConfig {
+                pre_prompt_compose: PrePromptComposeHookConfig {
+                    composition: Some("single".to_string()),
+                    bindings: Some(vec![HookBindingConfig {
+                        id: "hazel".to_string(),
+                        tool: "hazel.recollect".to_string(),
+                        command: Some(symlink_script_path.to_string_lossy().to_string()),
+                        args: Some(vec![]),
+                        timeout_ms: Some(500),
+                    }]),
+                    default_policy_ids: None,
+                    strict_unknown_policy_ids: Some(true),
+                    top_k: None,
+                    token_budget: None,
+                    relevance_threshold: None,
+                },
+            },
+            ..DaemonConfigFile::default()
+        };
+        let err = KernelRuntimeConfig::from_daemon_config(&cfg)
+            .expect_err("symlinked parent path component must be rejected");
+        assert!(err.contains("parent_symlink_disallowed"));
+        fs::remove_file(real_parent.join("mock.sh")).expect("remove mock script");
+        fs::remove_file(&link_parent).expect("remove symlink");
+        fs::remove_dir(&real_parent).expect("remove real parent");
+        fs::remove_dir(&root).expect("remove root");
+    }
+
+    #[test]
+    fn pre_prompt_compose_rejects_top_k_above_hard_limit() {
+        let cfg = DaemonConfigFile {
+            reasoning_hooks: ReasoningHooksConfig {
+                pre_prompt_compose: PrePromptComposeHookConfig {
+                    composition: Some("single".to_string()),
+                    bindings: None,
+                    default_policy_ids: None,
+                    strict_unknown_policy_ids: Some(true),
+                    top_k: Some(super::PRE_PROMPT_TOP_K_HARD_MAX + 1),
+                    token_budget: None,
+                    relevance_threshold: None,
+                },
+            },
+            ..DaemonConfigFile::default()
+        };
+        let err = KernelRuntimeConfig::from_daemon_config(&cfg)
+            .expect_err("top_k above hard max must fail");
+        assert!(err.contains("pre_prompt_compose_top_k_invalid"));
+    }
+
+    #[test]
+    fn pre_prompt_compose_rejects_token_budget_above_hard_limit() {
+        let cfg = DaemonConfigFile {
+            reasoning_hooks: ReasoningHooksConfig {
+                pre_prompt_compose: PrePromptComposeHookConfig {
+                    composition: Some("single".to_string()),
+                    bindings: None,
+                    default_policy_ids: None,
+                    strict_unknown_policy_ids: Some(true),
+                    top_k: None,
+                    token_budget: Some(super::PRE_PROMPT_TOKEN_BUDGET_HARD_MAX + 1),
+                    relevance_threshold: None,
+                },
+            },
+            ..DaemonConfigFile::default()
+        };
+        let err = KernelRuntimeConfig::from_daemon_config(&cfg)
+            .expect_err("token_budget above hard max must fail");
+        assert!(err.contains("pre_prompt_compose_token_budget_invalid"));
     }
 
     #[test]
@@ -1451,6 +2219,54 @@ mod tests {
     }
 
     #[test]
+    fn pre_prompt_compose_rejects_schema_handshake_incompatible_output() {
+        let incompatible_schema = serde_json::to_string(&serde_json::json!({
+            "ok": true,
+            "output": {
+                "input": {
+                    "required": ["session_id", "task_id", "goal", "runtime"],
+                    "allowed": ["session_id", "task_id", "goal", "runtime"],
+                    "allow_additional": false
+                },
+                "output": {
+                    "required": ["policy_ids", "cards"],
+                    "allowed": ["policy_ids", "cards", "extra_field"],
+                    "allow_additional": false
+                }
+            },
+            "error": serde_json::Value::Null
+        }))
+        .expect("serialize incompatible schema response");
+        let script_path = write_mock_mcp_script_with_schema(
+            r#"{"ok":true,"output":{"policy_ids":["hunch.v1"],"cards":[{"card_id":"card-1","kind":"association_cue","state":"candidate","subject":"memory-system","text":"Use prior architecture context","provenance":[{"source_ref":"note:hazel"}],"policy_ids":["hunch.v1"]}]}}"#,
+            &incompatible_schema,
+        );
+        let cfg = DaemonConfigFile {
+            reasoning_hooks: ReasoningHooksConfig {
+                pre_prompt_compose: PrePromptComposeHookConfig {
+                    composition: Some("single".to_string()),
+                    bindings: Some(vec![HookBindingConfig {
+                        id: "hazel".to_string(),
+                        tool: "hazel.recollect".to_string(),
+                        command: Some(script_path),
+                        args: Some(vec![]),
+                        timeout_ms: Some(500),
+                    }]),
+                    default_policy_ids: None,
+                    strict_unknown_policy_ids: Some(true),
+                    top_k: None,
+                    token_budget: None,
+                    relevance_threshold: None,
+                },
+            },
+            ..DaemonConfigFile::default()
+        };
+        let err = KernelRuntimeConfig::from_daemon_config(&cfg)
+            .expect_err("incompatible schema should fail startup validation");
+        assert!(err.contains("pre_prompt_compose_binding_schema_invalid"));
+    }
+
+    #[test]
     fn pre_prompt_compose_rejects_semantic_lint_output() {
         let script_path = write_mock_mcp_script(
             r#"{"ok":true,"output":{"policy_ids":["hunch.v1"],"cards":[{"card_id":"card-1","kind":"association_cue","state":"candidate","subject":"x","text":"x","provenance":[],"policy_ids":["hunch.v1"]}]}}"#,
@@ -1501,6 +2317,231 @@ mod tests {
     }
 
     #[test]
+    fn pre_prompt_compose_rejects_recollections_exceeding_top_k_limit() {
+        let script_path = write_mock_mcp_script(
+            r#"{"ok":true,"output":{"policy_ids":["hunch.v1"],"cards":[{"card_id":"card-1","kind":"association_cue","state":"candidate","subject":"x","text":"x","provenance":[{"source_ref":"a"}],"policy_ids":["hunch.v1"]},{"card_id":"card-2","kind":"association_cue","state":"candidate","subject":"y","text":"y","provenance":[{"source_ref":"b"}],"policy_ids":["hunch.v1"]}]}}"#,
+        );
+        let cfg = DaemonConfigFile {
+            reasoning_hooks: ReasoningHooksConfig {
+                pre_prompt_compose: PrePromptComposeHookConfig {
+                    composition: Some("single".to_string()),
+                    bindings: Some(vec![HookBindingConfig {
+                        id: "hazel".to_string(),
+                        tool: "hazel.recollect".to_string(),
+                        command: Some(script_path),
+                        args: Some(vec![]),
+                        timeout_ms: Some(500),
+                    }]),
+                    default_policy_ids: None,
+                    strict_unknown_policy_ids: Some(true),
+                    top_k: Some(1),
+                    token_budget: None,
+                    relevance_threshold: None,
+                },
+            },
+            ..DaemonConfigFile::default()
+        };
+        let runtime = KernelRuntimeConfig::from_daemon_config(&cfg).expect("runtime config");
+        let kernel = super::DaemonKernel::new(&runtime);
+        let error = kernel
+            .reason_submit(
+                &SubmitPreparation {
+                    task_id_hint: "task-000001".to_string(),
+                    task_id_sequence_hint: 1,
+                    session_id_hint: "session-000001".to_string(),
+                    turn_id_hint: 1,
+                },
+                &sharo_core::protocol::SubmitTaskOpRequest {
+                    session_id: Some("session-000001".to_string()),
+                    goal: "explain memory".to_string(),
+                    idempotency_key: None,
+                },
+            )
+            .expect_err("top_k overflow should fail semantic lint");
+        match error {
+            sharo_core::reasoning::ReasoningError::ResolveFailure { message } => {
+                assert!(message.contains("max_cards_exceeded"));
+            }
+            other => panic!("unexpected error kind: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pre_prompt_compose_rejects_tool_response_exceeding_transport_limit() {
+        let huge_line = "x".repeat(super::PRE_PROMPT_TOOL_MAX_RESPONSE_BYTES + 64);
+        let script_path = write_mock_mcp_script(&huge_line);
+        let cfg = DaemonConfigFile {
+            reasoning_hooks: ReasoningHooksConfig {
+                pre_prompt_compose: PrePromptComposeHookConfig {
+                    composition: Some("single".to_string()),
+                    bindings: Some(vec![HookBindingConfig {
+                        id: "hazel".to_string(),
+                        tool: "hazel.recollect".to_string(),
+                        command: Some(script_path),
+                        args: Some(vec![]),
+                        timeout_ms: Some(500),
+                    }]),
+                    default_policy_ids: None,
+                    strict_unknown_policy_ids: Some(true),
+                    top_k: None,
+                    token_budget: None,
+                    relevance_threshold: None,
+                },
+            },
+            ..DaemonConfigFile::default()
+        };
+        let runtime = KernelRuntimeConfig::from_daemon_config(&cfg).expect("runtime config");
+        let kernel = super::DaemonKernel::new(&runtime);
+        let error = kernel
+            .reason_submit(
+                &SubmitPreparation {
+                    task_id_hint: "task-000001".to_string(),
+                    task_id_sequence_hint: 1,
+                    session_id_hint: "session-000001".to_string(),
+                    turn_id_hint: 1,
+                },
+                &sharo_core::protocol::SubmitTaskOpRequest {
+                    session_id: Some("session-000001".to_string()),
+                    goal: "explain memory".to_string(),
+                    idempotency_key: None,
+                },
+            )
+            .expect_err("oversized tool response should fail");
+        match error {
+            sharo_core::reasoning::ReasoningError::ResolveFailure { message } => {
+                assert!(message.contains("response_too_large"));
+            }
+            other => panic!("unexpected error kind: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pre_prompt_compose_rejects_binding_command_identity_drift_at_runtime() {
+        let script_path = write_mock_mcp_script(
+            r#"{"ok":true,"output":{"policy_ids":["hunch.v1"],"cards":[{"card_id":"card-1","kind":"association_cue","state":"candidate","subject":"memory-system","text":"Use prior architecture context","provenance":[{"source_ref":"note:hazel"}],"policy_ids":["hunch.v1"]}]}}"#,
+        );
+        let cfg = DaemonConfigFile {
+            reasoning_hooks: ReasoningHooksConfig {
+                pre_prompt_compose: PrePromptComposeHookConfig {
+                    composition: Some("single".to_string()),
+                    bindings: Some(vec![HookBindingConfig {
+                        id: "hazel".to_string(),
+                        tool: "hazel.recollect".to_string(),
+                        command: Some(script_path.clone()),
+                        args: Some(vec![]),
+                        timeout_ms: Some(500),
+                    }]),
+                    default_policy_ids: None,
+                    strict_unknown_policy_ids: Some(true),
+                    top_k: None,
+                    token_budget: None,
+                    relevance_threshold: None,
+                },
+            },
+            ..DaemonConfigFile::default()
+        };
+        let runtime = KernelRuntimeConfig::from_daemon_config(&cfg).expect("runtime config");
+        let kernel = super::DaemonKernel::new(&runtime);
+
+        let replacement_path = PathBuf::from(&script_path).with_file_name("replacement-mock.sh");
+        let replacement = write_mock_mcp_script_with_schema_at(
+            replacement_path
+                .parent()
+                .expect("replacement parent")
+                .to_path_buf(),
+            replacement_path
+                .file_name()
+                .expect("replacement filename")
+                .to_string_lossy()
+                .as_ref(),
+            r#"{"ok":true,"output":{"policy_ids":["hunch.v1"],"cards":[{"card_id":"card-2","kind":"association_cue","state":"candidate","subject":"memory-system","text":"Replacement script output","provenance":[{"source_ref":"note:hazel"}],"policy_ids":["hunch.v1"]}]}}"#,
+            &default_mock_schema_response(),
+        );
+        fs::rename(&replacement, &script_path).expect("replace validated script");
+
+        let error = kernel
+            .reason_submit(
+                &SubmitPreparation {
+                    task_id_hint: "task-000001".to_string(),
+                    task_id_sequence_hint: 1,
+                    session_id_hint: "session-000001".to_string(),
+                    turn_id_hint: 1,
+                },
+                &sharo_core::protocol::SubmitTaskOpRequest {
+                    session_id: Some("session-000001".to_string()),
+                    goal: "explain memory".to_string(),
+                    idempotency_key: None,
+                },
+            )
+            .expect_err("runtime command identity drift should fail");
+        match error {
+            sharo_core::reasoning::ReasoningError::ResolveFailure { message } => {
+                assert!(message.contains("command_identity_mismatch"));
+            }
+            other => panic!("unexpected error kind: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pre_prompt_compose_rejects_in_place_binding_command_content_mutation() {
+        let script_path = write_mock_mcp_script(
+            r#"{"ok":true,"output":{"policy_ids":["hunch.v1"],"cards":[{"card_id":"card-1","kind":"association_cue","state":"candidate","subject":"memory-system","text":"Use prior architecture context","provenance":[{"source_ref":"note:hazel"}],"policy_ids":["hunch.v1"]}]}}"#,
+        );
+        let cfg = DaemonConfigFile {
+            reasoning_hooks: ReasoningHooksConfig {
+                pre_prompt_compose: PrePromptComposeHookConfig {
+                    composition: Some("single".to_string()),
+                    bindings: Some(vec![HookBindingConfig {
+                        id: "hazel".to_string(),
+                        tool: "hazel.recollect".to_string(),
+                        command: Some(script_path.clone()),
+                        args: Some(vec![]),
+                        timeout_ms: Some(500),
+                    }]),
+                    default_policy_ids: None,
+                    strict_unknown_policy_ids: Some(true),
+                    top_k: None,
+                    token_budget: None,
+                    relevance_threshold: None,
+                },
+            },
+            ..DaemonConfigFile::default()
+        };
+        let runtime = KernelRuntimeConfig::from_daemon_config(&cfg).expect("runtime config");
+        let kernel = super::DaemonKernel::new(&runtime);
+
+        let replacement_content = format!(
+            "#!/usr/bin/env bash\nread _line\nif [[ \"$_line\" == *'\"tool\":\"hazel.schema\"'* ]]; then\n  echo '{}'\nelse\n  echo '{}'\nfi\n",
+            default_mock_schema_response().replace('\'', "'\"'\"'"),
+            r#"{"ok":true,"output":{"policy_ids":["hunch.v1"],"cards":[{"card_id":"card-x","kind":"association_cue","state":"candidate","subject":"memory-system","text":"Mutated in-place output","provenance":[{"source_ref":"note:hazel"}],"policy_ids":["hunch.v1"]}]}}"#
+                .replace('\'', "'\"'\"'")
+        );
+        fs::write(&script_path, replacement_content).expect("mutate script content in-place");
+
+        let error = kernel
+            .reason_submit(
+                &SubmitPreparation {
+                    task_id_hint: "task-000001".to_string(),
+                    task_id_sequence_hint: 1,
+                    session_id_hint: "session-000001".to_string(),
+                    turn_id_hint: 1,
+                },
+                &sharo_core::protocol::SubmitTaskOpRequest {
+                    session_id: Some("session-000001".to_string()),
+                    goal: "explain memory".to_string(),
+                    idempotency_key: None,
+                },
+            )
+            .expect_err("in-place command content mutation should fail");
+        match error {
+            sharo_core::reasoning::ReasoningError::ResolveFailure { message } => {
+                assert!(message.contains("command_identity_mismatch"));
+            }
+            other => panic!("unexpected error kind: {other:?}"),
+        }
+    }
+
+    #[test]
     fn pre_prompt_memory_block_omits_policy_section_without_bundle() {
         let memory = super::compose_pre_prompt_memory_block(Some("plain memory"), None, &[], None);
         assert_eq!(memory, "plain memory");
@@ -1517,5 +2558,102 @@ mod tests {
         assert!(memory.contains("HAZEL_POLICY_CONTROL:"));
         assert!(memory.contains("POLICY_IDS: hunch.v1"));
         assert!(memory.contains("RULE: label guesses explicitly"));
+    }
+
+    #[test]
+    fn pre_prompt_compose_rejects_world_writable_ancestor_directory() {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let ancestor = std::env::temp_dir().join(format!("sharo-hazel-mcp-ancestor-{nanos}"));
+        let nested = ancestor.join("safe");
+        fs::create_dir_all(&nested).expect("create nested parent dirs");
+        let mut ancestor_permissions = fs::metadata(&ancestor).expect("metadata").permissions();
+        ancestor_permissions.set_mode(0o777);
+        fs::set_permissions(&ancestor, ancestor_permissions)
+            .expect("chmod ancestor world writable");
+        let script_path = write_mock_mcp_script_with_schema_at(
+            nested,
+            "mock.sh",
+            r#"{"ok":true,"output":{"policy_ids":["hunch.v1"],"cards":[{"card_id":"card-1","kind":"association_cue","state":"candidate","subject":"memory-system","text":"Use prior architecture context","provenance":[{"source_ref":"note:hazel"}],"policy_ids":["hunch.v1"]}]}}"#,
+            &default_mock_schema_response(),
+        );
+        let cfg = DaemonConfigFile {
+            reasoning_hooks: ReasoningHooksConfig {
+                pre_prompt_compose: PrePromptComposeHookConfig {
+                    composition: Some("single".to_string()),
+                    bindings: Some(vec![HookBindingConfig {
+                        id: "hazel".to_string(),
+                        tool: "hazel.recollect".to_string(),
+                        command: Some(script_path),
+                        args: Some(vec![]),
+                        timeout_ms: Some(500),
+                    }]),
+                    default_policy_ids: None,
+                    strict_unknown_policy_ids: Some(true),
+                    top_k: None,
+                    token_budget: None,
+                    relevance_threshold: None,
+                },
+            },
+            ..DaemonConfigFile::default()
+        };
+        let err = KernelRuntimeConfig::from_daemon_config(&cfg)
+            .expect_err("world-writable ancestor directories must be rejected");
+        assert!(err.contains("ancestor_world_writable"));
+    }
+
+    #[test]
+    fn sanitize_binding_id_for_path_replaces_disallowed_characters() {
+        let sanitized = super::sanitize_binding_id_for_path("../hazel alpha.beta\tgamma");
+        assert_eq!(sanitized, "___hazel_alpha_beta_gamma");
+        assert!(
+            sanitized
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+        );
+    }
+
+    #[test]
+    fn unique_verified_command_path_uses_sanitized_binding_id() {
+        let script_path =
+            write_mock_mcp_script(r#"{"ok":true,"output":{"policy_ids":["hunch.v1"],"cards":[]}}"#);
+        let cfg = DaemonConfigFile {
+            reasoning_hooks: ReasoningHooksConfig {
+                pre_prompt_compose: PrePromptComposeHookConfig {
+                    composition: Some("single".to_string()),
+                    bindings: Some(vec![HookBindingConfig {
+                        id: "../hazel alpha.beta".to_string(),
+                        tool: "hazel.recollect".to_string(),
+                        command: Some(script_path),
+                        args: Some(vec![]),
+                        timeout_ms: Some(500),
+                    }]),
+                    default_policy_ids: None,
+                    strict_unknown_policy_ids: Some(true),
+                    top_k: None,
+                    token_budget: None,
+                    relevance_threshold: None,
+                },
+            },
+            ..DaemonConfigFile::default()
+        };
+        let runtime = KernelRuntimeConfig::from_daemon_config(&cfg).expect("runtime config");
+        let binding = runtime
+            .pre_prompt_hook_binding
+            .as_ref()
+            .expect("hook binding");
+        let path = super::unique_verified_command_path(binding);
+        let file_name = path
+            .file_name()
+            .expect("file name")
+            .to_string_lossy()
+            .to_string();
+        assert!(file_name.starts_with("sharo-hazel-hook-___hazel_alpha_beta-"));
+        assert!(!file_name.contains('/'));
+        assert!(!file_name.contains('\\'));
+        assert!(!file_name.contains(' '));
+        assert!(!file_name.contains(".."));
     }
 }

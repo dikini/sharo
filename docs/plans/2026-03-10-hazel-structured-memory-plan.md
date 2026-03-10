@@ -467,3 +467,97 @@ Re-run: `scripts/doc-lint.sh --changed --strict-new`
 - Postconditions met
 - Unit, invariant, and integration checks defined for future implementation
 - CHANGELOG.md updated
+
+---
+
+### Task 6: Add adversarial fuzz/property coverage for MCP wire framing and schema contracts
+
+**Files:**
+
+- Modify:
+  - `crates/sharo-core/tests/protocol_tests.rs`
+  - `crates/sharo-hazel-mcp/src/main.rs`
+  - `crates/sharo-hazel-mcp/tests/schema_contracts.rs`
+- Future-create targets (decision in implementation phase):
+  - `crates/sharo-hazel-mcp/fuzz/Cargo.toml`
+  - `crates/sharo-hazel-mcp/fuzz/fuzz_targets/wire_request_frame.rs`
+  - `crates/sharo-core/tests/protocol_property_tests.rs` (if property suite split is needed)
+- Test:
+  - protocol/schema property checks in `sharo-core`
+  - fuzz targets for `sharo-hazel-mcp` wire input handling
+
+**Preconditions**
+
+- Strict schema compatibility and MCP size-bounded input handling are implemented.
+
+**Invariants**
+
+- Adversarial wire input must never bypass schema validation or semantic lint.
+- Oversized, malformed, and boundary-framed input must fail closed without unbounded allocation.
+- Schema compatibility helpers must remain deterministic for the same inputs.
+
+**Postconditions**
+
+- Property-based tests cover schema compatibility invariants and malformed schema descriptors.
+- Fuzzing targets cover MCP wire framing/parsing edge cases (oversized line, missing newline, invalid UTF-8, repeated boundary inputs).
+- CI or documented local verification path exists for repeatable fuzz regression runs.
+
+**Tests (must exist before implementation)**
+
+Unit:
+- `line_content_len_excludes_trailing_newline`
+- `line_content_len_keeps_non_terminated_length`
+
+Invariant:
+- `schema_compatibility_rejects_malformed_tool_schema_definition`
+- `hook_runtime_never_injects_unvalidated_mcp_payload`
+
+Integration:
+- `pre_prompt_compose_accepts_structurally_compatible_hazel_binding`
+
+Property-based:
+- `prop_input_schema_compatibility_is_deterministic_for_same_schemas`
+- `prop_output_schema_compatibility_is_deterministic_for_same_schemas`
+- `prop_object_schema_well_formed_rejects_required_not_in_allowed_when_strict`
+
+Fuzz:
+- `wire_request_frame` target for `sharo-hazel-mcp` stdio request loop and size-boundary behavior
+
+**Red Phase (required before code changes)**
+
+Command: `cargo test -p sharo-core prop_input_schema_compatibility_is_deterministic_for_same_schemas`
+Expected: fails until property tests are implemented
+
+Command: `cargo fuzz run wire_request_frame`
+Expected: target missing/fails until fuzz harness is implemented
+
+**Implementation Steps**
+
+1. Add property tests in `sharo-core` for schema helper determinism and well-formedness invariants.
+2. Add `sharo-hazel-mcp` fuzz harness for wire input framing/parsing and oversize handling.
+3. Add regression corpus seeds for boundary payload sizes and malformed frame patterns.
+4. Document a bounded fuzz execution recipe for local/CI smoke runs.
+
+**Green Phase (required)**
+
+Command: `cargo test -p sharo-core`
+Expected: protocol property tests pass consistently
+
+Command: `cargo test -p sharo-hazel-mcp`
+Expected: MCP unit/integration tests pass with no regressions
+
+Command: `cargo fuzz run wire_request_frame -- -max_total_time=30`
+Expected: fuzz target executes without crashes for bounded smoke window
+
+**Refactor Phase (optional but controlled)**
+
+Allowed scope: `crates/sharo-core/tests/**`, `crates/sharo-hazel-mcp/**`
+Re-run: `cargo test -p sharo-core && cargo test -p sharo-hazel-mcp`
+
+**Completion Evidence**
+
+- Preconditions satisfied
+- Invariants preserved
+- Postconditions met
+- Property/fuzz coverage added and runnable
+- CHANGELOG.md updated

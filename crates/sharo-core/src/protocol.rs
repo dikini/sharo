@@ -124,7 +124,8 @@ pub struct ToolCallResponse {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ObjectSchema {
     pub required: BTreeSet<String>,
     pub allowed: BTreeSet<String>,
@@ -139,6 +140,13 @@ impl ObjectSchema {
             allow_additional,
         }
     }
+}
+
+pub fn object_schema_well_formed(schema: &ObjectSchema) -> bool {
+    if schema.allow_additional {
+        return true;
+    }
+    schema.allowed.is_superset(&schema.required)
 }
 
 pub fn expected_pre_prompt_compose_input_schema() -> ObjectSchema {
@@ -174,7 +182,13 @@ pub fn expected_recollection_output_schema() -> ObjectSchema {
 }
 
 pub fn input_schema_compatible(expected: &ObjectSchema, tool: &ObjectSchema) -> bool {
+    if !object_schema_well_formed(expected) || !object_schema_well_formed(tool) {
+        return false;
+    }
     if !expected.required.is_superset(&tool.required) {
+        return false;
+    }
+    if !expected.allow_additional && tool.allow_additional {
         return false;
     }
     if !tool.allow_additional && !tool.allowed.is_superset(&expected.allowed) {
@@ -183,8 +197,77 @@ pub fn input_schema_compatible(expected: &ObjectSchema, tool: &ObjectSchema) -> 
     true
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HookSchemaDescriptor {
+    pub input: ObjectSchema,
+    pub output: ObjectSchema,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RecollectionLintLimits {
+    pub max_cards: usize,
+    pub max_payload_bytes: usize,
+    pub max_tokens: usize,
+}
+
+impl Default for RecollectionLintLimits {
+    fn default() -> Self {
+        Self {
+            max_cards: 32,
+            max_payload_bytes: 65_536,
+            max_tokens: 4096,
+        }
+    }
+}
+
+pub fn estimate_policy_id_tokens(policy_ids: &[String]) -> usize {
+    policy_ids
+        .iter()
+        .flat_map(|value| value.split_whitespace())
+        .count()
+}
+
+pub fn estimate_recollection_card_tokens(card: &RecollectionCard) -> usize {
+    card.subject.split_whitespace().count()
+        + card.text.split_whitespace().count()
+        + card
+            .policy_ids
+            .iter()
+            .flat_map(|value| value.split_whitespace())
+            .count()
+        + card
+            .provenance
+            .iter()
+            .map(|provenance| {
+                provenance.source_ref.split_whitespace().count()
+                    + provenance
+                        .source_excerpt
+                        .as_deref()
+                        .map_or(0, |value| value.split_whitespace().count())
+            })
+            .sum::<usize>()
+}
+
+pub fn estimate_recollection_tokens(payload: &RecollectionPayload) -> usize {
+    let policy_tokens = estimate_policy_id_tokens(&payload.policy_ids);
+    let card_tokens = payload
+        .cards
+        .iter()
+        .map(estimate_recollection_card_tokens)
+        .sum::<usize>();
+    policy_tokens + card_tokens
+}
+
 pub fn output_schema_compatible(expected: &ObjectSchema, tool: &ObjectSchema) -> bool {
+    if !object_schema_well_formed(expected) || !object_schema_well_formed(tool) {
+        return false;
+    }
     if !tool.required.is_superset(&expected.required) {
+        return false;
+    }
+    if !expected.allow_additional && tool.allow_additional {
         return false;
     }
     if !expected.allow_additional && !expected.allowed.is_superset(&tool.allowed) {
@@ -201,15 +284,54 @@ pub fn validate_pre_prompt_compose_input_value(
 }
 
 pub fn validate_recollection_payload_value(value: &Value) -> Result<RecollectionPayload, String> {
+    validate_recollection_payload_with_limits(value, &RecollectionLintLimits::default())
+}
+
+pub fn validate_recollection_payload_with_limits(
+    value: &Value,
+    limits: &RecollectionLintLimits,
+) -> Result<RecollectionPayload, String> {
     let payload: RecollectionPayload = serde_json::from_value(value.clone())
         .map_err(|error| format!("pre_prompt_output_schema_invalid error={error}"))?;
-    semantic_lint_recollection_payload(&payload)?;
+    semantic_lint_recollection_payload_with_limits(&payload, limits)?;
     Ok(payload)
 }
 
 pub fn semantic_lint_recollection_payload(payload: &RecollectionPayload) -> Result<(), String> {
+    semantic_lint_recollection_payload_with_limits(payload, &RecollectionLintLimits::default())
+}
+
+pub fn semantic_lint_recollection_payload_with_limits(
+    payload: &RecollectionPayload,
+    limits: &RecollectionLintLimits,
+) -> Result<(), String> {
     if payload.cards.is_empty() {
         return Err("pre_prompt_output_semantic_invalid reason=cards_empty".to_string());
+    }
+    if payload.cards.len() > limits.max_cards {
+        return Err(format!(
+            "pre_prompt_output_semantic_invalid reason=max_cards_exceeded actual={} max={}",
+            payload.cards.len(),
+            limits.max_cards
+        ));
+    }
+    let payload_bytes = serde_json::to_vec(payload)
+        .map_err(|error| {
+            format!("pre_prompt_output_semantic_invalid reason=encode_failed error={error}")
+        })?
+        .len();
+    if payload_bytes > limits.max_payload_bytes {
+        return Err(format!(
+            "pre_prompt_output_semantic_invalid reason=max_payload_bytes_exceeded actual={} max={}",
+            payload_bytes, limits.max_payload_bytes
+        ));
+    }
+    let estimated_tokens = estimate_recollection_tokens(payload);
+    if estimated_tokens > limits.max_tokens {
+        return Err(format!(
+            "pre_prompt_output_semantic_invalid reason=max_tokens_exceeded actual={} max={}",
+            estimated_tokens, limits.max_tokens
+        ));
     }
     for card in &payload.cards {
         if card.provenance.is_empty() {

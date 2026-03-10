@@ -16,6 +16,7 @@ sharo-core = { path = "../sharo-core" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "net", "io-util"] }
 toml = "0.8"
 crossbeam-channel = "0.5"
+sha2 = "0.10"
 
 [dev-dependencies]
 loom = "0.7"

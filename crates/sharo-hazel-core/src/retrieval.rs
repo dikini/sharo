@@ -1,6 +1,7 @@
 use sharo_core::protocol::{
     HazelCardPolicyHint, PrePromptComposeHookInput, ProvenanceRef, RecollectionCard,
-    RecollectionCardKind, RecollectionCardState, RecollectionPayload,
+    RecollectionCardKind, RecollectionCardState, RecollectionPayload, estimate_policy_id_tokens,
+    estimate_recollection_card_tokens,
 };
 
 use crate::domain::{Assertion, AssertionState};
@@ -44,7 +45,9 @@ impl Default for HazelMemoryCore {
 impl HazelMemoryCore {
     pub fn recollect(&self, input: &PrePromptComposeHookInput) -> RecollectionPayload {
         let top_k = input.top_k.unwrap_or(3).max(1);
+        let token_budget = input.token_budget.unwrap_or(usize::MAX).max(1);
         let mut cards = Vec::new();
+        let mut used_tokens = estimate_policy_id_tokens(&input.policy_ids);
         let hints = if input.card_policy_hints.is_empty() {
             vec![HazelCardPolicyHint {
                 kind: RecollectionCardKind::AssociationCue,
@@ -56,10 +59,17 @@ impl HazelMemoryCore {
         };
 
         for hint in hints {
-            let max_for_hint = hint.max_cards.unwrap_or(top_k).max(1);
+            if cards.len() >= top_k {
+                break;
+            }
+            let max_for_hint = hint
+                .max_cards
+                .unwrap_or(top_k)
+                .max(1)
+                .min(top_k.saturating_sub(cards.len()));
             let mut added = 0usize;
             for assertion in &self.assertions {
-                if added >= max_for_hint {
+                if added >= max_for_hint || cards.len() >= top_k {
                     break;
                 }
                 if !is_relevant(
@@ -69,24 +79,36 @@ impl HazelMemoryCore {
                 ) {
                     continue;
                 }
-                cards.push(assertion_to_card(assertion, &hint, &input.goal));
+                let card = assertion_to_card(assertion, &hint, &input.goal);
+                let card_tokens = estimate_recollection_card_tokens(&card);
+                if used_tokens.saturating_add(card_tokens) > token_budget {
+                    continue;
+                }
+                used_tokens = used_tokens.saturating_add(card_tokens);
+                cards.push(card);
                 added += 1;
             }
         }
 
         if cards.is_empty() {
-            cards.push(RecollectionCard {
+            let fallback = RecollectionCard {
                 card_id: format!("hazel-fallback-{}", input.task_id),
                 kind: RecollectionCardKind::SupportingContext,
                 state: RecollectionCardState::Candidate,
                 subject: "hazel".to_string(),
-                text: format!("No high-relevance cards found for goal: {}", input.goal),
+                // Keep fallback constant-sized so long goals cannot explode token usage.
+                text: "No high-relevance cards found.".to_string(),
                 provenance: vec![ProvenanceRef {
                     source_ref: "hazel:retrieval-fallback".to_string(),
                     source_excerpt: None,
                 }],
                 policy_ids: input.policy_ids.clone(),
-            });
+            };
+            if used_tokens.saturating_add(estimate_recollection_card_tokens(&fallback))
+                <= token_budget
+            {
+                cards.push(fallback);
+            }
         }
 
         RecollectionPayload {
