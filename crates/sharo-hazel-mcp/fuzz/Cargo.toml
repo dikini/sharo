@@ -3,6 +3,7 @@ name = "sharo-hazel-mcp-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
+license = "MIT"
 
 [package.metadata]
 cargo-fuzz = true
@@ -10,8 +11,8 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 serde_json = "1"
-sharo-core = { path = "../../sharo-core" }
-sharo-hazel-mcp = { path = ".." }
+sharo-core = { path = "../../sharo-core", version = "0.1.0" }
+sharo-hazel-mcp = { path = "..", version = "0.1.0" }
 
 [[bin]]
 name = "wire_request_frame"
