@@ -280,5 +280,5 @@ Property-based (optional):
 
 ## References
 
-- [deterministic-workflow-hardening.md](/home/dikini/Projects/sharo/docs/specs/deterministic-workflow-hardening.md)
+- [deterministic-workflow-hardening.md](docs/specs/deterministic-workflow-hardening.md)
 - Rust skills: `test-proptest-properties`, `async-no-lock-await`, `err-result-over-panic`, `lint-workspace-lints`
