@@ -16,6 +16,7 @@ The format is based on Common Changelog:
 - Fixed RustSec advisory failure in CI dependency audit by updating `quinn-proto` to `0.11.14` in `Cargo.lock` (resolves `RUSTSEC-2026-0037`).
 - Added `sccache` to `policy-checks` CI as `RUSTC_WRAPPER` with GitHub Actions cache backend enabled, plus end-of-job cache stats output.
 - Fixed `policy-checks` docs lint/terminology gates to evaluate only docs changed in the push/PR commit range instead of linting the entire repository.
+- Cleaned dependency license policy allowlist by removing unmatched LGPL entries from `deny.toml` to eliminate non-actionable `license-not-encountered` warnings.
 - Fixed shell-quality CI failures by formatting repository shell scripts with the project `shfmt` policy.
 - Fixed `policy-checks` CI environment to install `ripgrep` so task-registry and shell-quality checks do not fail due to missing `rg`.
 - Closed remaining Hazel hook/runtime hardening gaps:
