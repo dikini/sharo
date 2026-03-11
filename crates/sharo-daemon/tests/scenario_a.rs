@@ -1169,6 +1169,115 @@ fn duplicate_submit_during_inflight_reasoning_does_not_double_execute_provider()
 }
 
 #[test]
+fn parallel_same_session_submits_produce_distinct_trace_scopes() {
+    let socket = unique_path("sharo-scenario-parallel-same-session", ".sock");
+    let store = unique_path("sharo-scenario-parallel-same-session", ".json");
+    let config = write_deterministic_config("sharo-scenario-parallel-same-session");
+
+    let mut daemon = Command::new(daemon_bin())
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+            "--config-path",
+            config.to_str().expect("config path"),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let session_id = match send_request(
+        &socket,
+        &DaemonRequest::RegisterSession(RegisterSessionRequest {
+            session_label: "scenario-parallel-same-session".to_string(),
+        }),
+    ) {
+        DaemonResponse::RegisterSession(r) => r.session_id,
+        other => panic!("unexpected response: {other:?}"),
+    };
+
+    let socket_a = socket.clone();
+    let session_a = session_id.clone();
+    let submit_a = thread::spawn(move || {
+        send_request(
+            &socket_a,
+            &DaemonRequest::SubmitTask(SubmitTaskOpRequest {
+                session_id: Some(session_a),
+                goal: "parallel same-session submit a".to_string(),
+                idempotency_key: Some("idem-parallel-same-session-a".to_string()),
+            }),
+        )
+    });
+
+    let socket_b = socket.clone();
+    let session_b = session_id.clone();
+    let submit_b = thread::spawn(move || {
+        send_request(
+            &socket_b,
+            &DaemonRequest::SubmitTask(SubmitTaskOpRequest {
+                session_id: Some(session_b),
+                goal: "parallel same-session submit b".to_string(),
+                idempotency_key: Some("idem-parallel-same-session-b".to_string()),
+            }),
+        )
+    });
+
+    let task_a = match submit_a.join().expect("submit a join") {
+        DaemonResponse::SubmitTask(r) => {
+            assert_eq!(r.task_state, "succeeded");
+            r.task_id
+        }
+        other => panic!("unexpected submit response: {other:?}"),
+    };
+    let task_b = match submit_b.join().expect("submit b join") {
+        DaemonResponse::SubmitTask(r) => {
+            assert_eq!(r.task_state, "succeeded");
+            r.task_id
+        }
+        other => panic!("unexpected submit response: {other:?}"),
+    };
+
+    assert_ne!(task_a, task_b, "parallel same-session submits must not share task ids");
+
+    let trace_a = match send_request(
+        &socket,
+        &DaemonRequest::GetTrace(GetTraceRequest {
+            task_id: task_a.clone(),
+        }),
+    ) {
+        DaemonResponse::GetTrace(r) => r.trace,
+        other => panic!("unexpected response: {other:?}"),
+    };
+    let trace_b = match send_request(
+        &socket,
+        &DaemonRequest::GetTrace(GetTraceRequest {
+            task_id: task_b.clone(),
+        }),
+    ) {
+        DaemonResponse::GetTrace(r) => r.trace,
+        other => panic!("unexpected response: {other:?}"),
+    };
+
+    assert_eq!(trace_a.task_id, task_a);
+    assert_eq!(trace_b.task_id, task_b);
+    assert_eq!(trace_a.session_id, session_id);
+    assert_eq!(trace_b.session_id, session_id);
+    assert_ne!(
+        trace_a.trace_id, trace_b.trace_id,
+        "parallel same-session submits must not share trace scopes"
+    );
+
+    daemon.kill().expect("kill daemon");
+    let _ = daemon.wait();
+    let _ = fs::remove_file(socket);
+    let _ = fs::remove_file(store);
+    let _ = fs::remove_file(config);
+}
+
+#[test]
 fn scenario_a_success_survives_restart_with_same_trace_and_preview() {
     let socket = unique_path("sharo-scenario-a-restart", ".sock");
     let store = unique_path("sharo-scenario-a-restart", ".json");

@@ -19,6 +19,7 @@ The format is based on Common Changelog:
 - Cleaned dependency license policy allowlist by removing unmatched LGPL entries from `deny.toml` to eliminate non-actionable `license-not-encountered` warnings.
 - Closed provider error classification task set (`TASK-PROVIDER-ERROR-SPEC-001`, `TASK-PROVIDER-ERROR-PLAN-001`) after verifying retry-correct connector status mapping and reasoning-level retryable-failure behavior coverage.
 - Closed store transactional persistence task set (`TASK-STORE-TRANSACTIONAL-SPEC-001`, `TASK-STORE-TRANSACTIONAL-PLAN-001`) after verifying rollback-on-save-failure and idempotent retry behavior coverage.
+- Closed submit identity reservation task set (`TASK-SUBMIT-IDENTITY-SPEC-001`, `TASK-SUBMIT-IDENTITY-PLAN-001`) and added missing spec-aligned coverage for same-session concurrent reservation uniqueness and distinct parallel trace scopes.
 - Fixed shell-quality CI failures by formatting repository shell scripts with the project `shfmt` policy.
 - Fixed `policy-checks` CI environment to install `ripgrep` so task-registry and shell-quality checks do not fail due to missing `rg`.
 - Closed remaining Hazel hook/runtime hardening gaps:

@@ -1123,8 +1123,11 @@ mod tests {
         take_durability_warnings_for_test, with_directory_sync_failure_for_test,
     };
     use sharo_core::protocol::{SubmitTaskOpRequest, TaskSummary, TraceSummary};
+    use std::collections::HashSet;
     use std::fs;
     use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
+    use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn unique_store_path(prefix: &str) -> PathBuf {
@@ -1389,6 +1392,42 @@ mod tests {
         assert_ne!(first.task_id_hint, second.task_id_hint);
         assert_ne!(first.turn_id_hint, second.turn_id_hint);
 
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn concurrent_same_session_submits_never_share_turn_or_task_hints() {
+        let path = unique_store_path("sharo-concurrent-submit-hints");
+        let store = Arc::new(Mutex::new(Store::open(&path).expect("open store")));
+        let mut workers = Vec::new();
+
+        for idx in 0..8 {
+            let store = Arc::clone(&store);
+            workers.push(thread::spawn(move || {
+                let mut store = store.lock().expect("lock store");
+                let request = SubmitTaskOpRequest {
+                    session_id: Some("session-000001".to_string()),
+                    goal: format!("goal-{idx}"),
+                    idempotency_key: None,
+                };
+                let preparation = match store.prepare_submit(&request).expect("prepare submit") {
+                    super::SubmitPreparationOutcome::Ready(preparation) => preparation,
+                    super::SubmitPreparationOutcome::Replay(_) => panic!("unexpected replay"),
+                };
+                (preparation.task_id_hint, preparation.turn_id_hint)
+            }));
+        }
+
+        let mut task_hints = HashSet::new();
+        let mut turn_hints = HashSet::new();
+        for worker in workers {
+            let (task_hint, turn_hint) = worker.join().expect("join worker");
+            assert!(task_hints.insert(task_hint), "duplicate task hint observed");
+            assert!(turn_hints.insert(turn_hint), "duplicate turn hint observed");
+        }
+
+        assert_eq!(task_hints.len(), 8);
+        assert_eq!(turn_hints.len(), 8);
         let _ = fs::remove_file(path);
     }
 
