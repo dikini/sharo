@@ -13,6 +13,7 @@ The format is based on Common Changelog:
   - adding explicit crate licenses across workspace/fuzz manifests
   - pinning path dependencies with explicit `version = "0.1.0"` to satisfy `cargo-deny` wildcard policy
   - allowing transitive SPDX licenses required by current TLS stack (`ISC`, `BSD-3-Clause`, `CDLA-Permissive-2.0`) in `deny.toml`
+- Fixed RustSec advisory failure in CI dependency audit by updating `quinn-proto` to `0.11.14` in `Cargo.lock` (resolves `RUSTSEC-2026-0037`).
 - Fixed shell-quality CI failures by formatting repository shell scripts with the project `shfmt` policy.
 - Fixed `policy-checks` CI environment to install `ripgrep` so task-registry and shell-quality checks do not fail due to missing `rg`.
 - Closed remaining Hazel hook/runtime hardening gaps:
