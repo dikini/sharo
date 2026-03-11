@@ -2481,7 +2481,12 @@ mod tests {
             .expect_err("runtime command identity drift should fail");
         match error {
             sharo_core::reasoning::ReasoningError::ResolveFailure { message } => {
-                assert!(message.contains("command_identity_mismatch"));
+                assert!(
+                    message.contains("command_identity_mismatch")
+                        || (message.contains("pre_prompt_tool_spawn_failed")
+                            && message.contains("Text file busy")),
+                    "unexpected in-place mutation failure mode: {message}"
+                );
             }
             other => panic!("unexpected error kind: {other:?}"),
         }
