@@ -3,6 +3,9 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::mcp::{McpServerSummary, RuntimeStatusSummary};
+use crate::skills::{SkillCatalogEntry, SkillDocument};
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RecollectionCardKind {
@@ -388,6 +391,23 @@ pub struct RegisterSessionResponse {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionSummary {
+    pub session_id: String,
+    pub session_label: String,
+    pub session_status: String,
+    pub activity_sequence: u64,
+    pub latest_task_id: Option<String>,
+    pub latest_task_state: Option<String>,
+    pub latest_result_preview: Option<String>,
+    pub has_pending_approval: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListSessionsResponse {
+    pub sessions: Vec<SessionSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SubmitTaskOpRequest {
     pub session_id: Option<String>,
     pub goal: String,
@@ -420,6 +440,17 @@ pub struct TaskSummary {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GetTaskResponse {
     pub task: TaskSummary,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GetSessionTasksRequest {
+    pub session_id: String,
+    pub task_limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GetSessionTasksResponse {
+    pub tasks: Vec<TaskSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -480,6 +511,80 @@ pub struct ApprovalSummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GetSessionViewRequest {
+    pub session_id: String,
+    pub task_limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionView {
+    pub session_id: String,
+    pub session_label: String,
+    pub tasks: Vec<TaskSummary>,
+    pub pending_approvals: Vec<ApprovalSummary>,
+    pub latest_result_preview: Option<String>,
+    pub active_blocking_task_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GetSessionViewResponse {
+    pub session: SessionView,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListSkillsRequest {
+    pub session_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListSkillsResponse {
+    pub skills: Vec<SkillCatalogEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GetSkillRequest {
+    pub skill_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GetSkillResponse {
+    pub skill: SkillDocument,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetSessionSkillsRequest {
+    pub session_id: String,
+    pub active_skill_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetSessionSkillsResponse {
+    pub session_id: String,
+    pub active_skill_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListMcpServersResponse {
+    pub servers: Vec<McpServerSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UpdateMcpServerStateRequest {
+    pub server_id: String,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UpdateMcpServerStateResponse {
+    pub server: McpServerSummary,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GetRuntimeStatusResponse {
+    pub status: RuntimeStatusSummary,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResolveApprovalRequest {
     pub approval_id: String,
     pub decision: String,
@@ -497,8 +602,17 @@ pub enum DaemonRequest {
     Submit(SubmitTaskRequest),
     Status(TaskStatusRequest),
     RegisterSession(RegisterSessionRequest),
+    ListSessions,
     SubmitTask(SubmitTaskOpRequest),
     GetTask(GetTaskRequest),
+    GetSessionTasks(GetSessionTasksRequest),
+    GetSessionView(GetSessionViewRequest),
+    ListSkills(ListSkillsRequest),
+    GetSkill(GetSkillRequest),
+    SetSessionSkills(SetSessionSkillsRequest),
+    ListMcpServers,
+    UpdateMcpServerState(UpdateMcpServerStateRequest),
+    GetRuntimeStatus,
     GetTrace(GetTraceRequest),
     GetArtifacts(GetArtifactsRequest),
     ListPendingApprovals,
@@ -510,8 +624,17 @@ pub enum DaemonResponse {
     Submit(SubmitTaskResponse),
     Status(TaskStatusResponse),
     RegisterSession(RegisterSessionResponse),
+    ListSessions(ListSessionsResponse),
     SubmitTask(SubmitTaskOpResponse),
     GetTask(GetTaskResponse),
+    GetSessionTasks(GetSessionTasksResponse),
+    GetSessionView(GetSessionViewResponse),
+    ListSkills(ListSkillsResponse),
+    GetSkill(GetSkillResponse),
+    SetSessionSkills(SetSessionSkillsResponse),
+    ListMcpServers(ListMcpServersResponse),
+    UpdateMcpServerState(UpdateMcpServerStateResponse),
+    GetRuntimeStatus(GetRuntimeStatusResponse),
     GetTrace(GetTraceResponse),
     GetArtifacts(GetArtifactsResponse),
     ListPendingApprovals(ListPendingApprovalsResponse),

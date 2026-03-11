@@ -1,0 +1,23 @@
+[package]
+name = "sharo-tui-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license = "MIT"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+sharo-tui = { path = "..", version = "0.1.0" }
+
+[[bin]]
+name = "slash_command_parser"
+path = "fuzz_targets/slash_command_parser.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]

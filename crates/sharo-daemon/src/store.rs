@@ -16,7 +16,8 @@ compile_error!("sharo-daemon store persistence currently supports unix targets o
 use serde::{Deserialize, Serialize};
 use sharo_core::protocol::{
     ApprovalSummary, ArtifactSummary, ListPendingApprovalsResponse, ResolveApprovalResponse,
-    SubmitTaskOpRequest, SubmitTaskOpResponse, TaskSummary, TraceEventSummary, TraceSummary,
+    SessionSummary, SubmitTaskOpRequest, SubmitTaskOpResponse, TaskSummary, TraceEventSummary,
+    TraceSummary,
 };
 use sharo_core::reasoning_context::FitLoopRecord;
 use sharo_core::runtime_types::{BindingRecord, BindingVisibility};
@@ -25,12 +26,16 @@ use sharo_core::runtime_types::{BindingRecord, BindingVisibility};
 struct SessionRecord {
     session_id: String,
     session_label: String,
+    #[serde(default)]
+    last_activity_sequence: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 struct PersistedState {
     sessions: BTreeMap<String, SessionRecord>,
+    active_skills_by_session: BTreeMap<String, Vec<String>>,
+    mcp_enabled_by_server: BTreeMap<String, bool>,
     tasks: BTreeMap<String, TaskSummary>,
     traces: BTreeMap<String, TraceSummary>,
     artifacts: BTreeMap<String, Vec<ArtifactSummary>>,
@@ -46,6 +51,7 @@ struct PersistedState {
     next_approval_id: u64,
     next_conflict_id: u64,
     next_binding_id: u64,
+    next_activity_sequence: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,6 +71,8 @@ impl Default for PersistedState {
     fn default() -> Self {
         Self {
             sessions: BTreeMap::new(),
+            active_skills_by_session: BTreeMap::new(),
+            mcp_enabled_by_server: BTreeMap::new(),
             tasks: BTreeMap::new(),
             traces: BTreeMap::new(),
             artifacts: BTreeMap::new(),
@@ -80,6 +88,7 @@ impl Default for PersistedState {
             next_approval_id: 1,
             next_conflict_id: 1,
             next_binding_id: 1,
+            next_activity_sequence: 1,
         }
     }
 }
@@ -129,6 +138,7 @@ impl Store {
 
         let idempotency_key = request.idempotency_key.as_deref();
         self.commit_mutation(|state| {
+            ensure_session_record(state, &session_id_hint);
             let task_id_sequence_hint = state.next_task_id;
             state.next_task_id += 1;
             let turn_id_hint = reserve_next_turn_hint(state, &session_id_hint);
@@ -324,12 +334,14 @@ impl Store {
         self.commit_mutation(|state| {
             let session_id = format!("session-{:06}", state.next_session_id);
             state.next_session_id += 1;
+            let activity_sequence = next_activity_sequence(state);
 
             state.sessions.insert(
                 session_id.clone(),
                 SessionRecord {
                     session_id: session_id.clone(),
                     session_label: session_label.to_string(),
+                    last_activity_sequence: activity_sequence,
                 },
             );
 
@@ -644,6 +656,7 @@ impl Store {
             state.traces.insert(task_id.clone(), trace);
             state.artifacts.insert(task_id.clone(), artifacts);
             state.bindings.insert(task_id.clone(), task_bindings);
+            bump_session_activity(state, &session_id);
             if let Some(idempotency_key) = namespaced_idempotency_key.clone() {
                 state.in_flight_idempotency_keys.remove(&idempotency_key);
                 state
@@ -761,6 +774,7 @@ impl Store {
             state.traces.insert(task_id.clone(), trace);
             state.artifacts.insert(task_id.clone(), artifacts);
             state.bindings.insert(task_id.clone(), Vec::new());
+            bump_session_activity(state, &session_id);
             if let Some(idempotency_key) = namespaced_idempotency_key.clone() {
                 state.in_flight_idempotency_keys.remove(&idempotency_key);
                 state
@@ -778,6 +792,172 @@ impl Store {
 
     pub fn get_task(&self, task_id: &str) -> Option<TaskSummary> {
         self.state.tasks.get(task_id).cloned()
+    }
+
+    pub fn has_session(&self, session_id: &str) -> bool {
+        self.state.sessions.contains_key(session_id)
+    }
+
+    pub fn session_label(&self, session_id: &str) -> Option<String> {
+        self.state
+            .sessions
+            .get(session_id)
+            .map(|session| session.session_label.clone())
+    }
+
+    pub fn list_sessions(&self) -> Vec<SessionSummary> {
+        let mut sessions = self
+            .state
+            .sessions
+            .values()
+            .map(|session| {
+                let session_tasks = self.list_session_tasks(&session.session_id);
+                let latest_task = session_tasks.last();
+                let has_pending_approval = self
+                    .state
+                    .approvals
+                    .values()
+                    .filter(|approval| approval.state == "pending")
+                    .any(|approval| {
+                        self.state
+                            .tasks
+                            .get(&approval.task_id)
+                            .is_some_and(|task| task.session_id == session.session_id)
+                    });
+                SessionSummary {
+                    session_id: session.session_id.clone(),
+                    session_label: session.session_label.clone(),
+                    session_status: latest_task
+                        .map(|task| task.task_state.clone())
+                        .unwrap_or_else(|| "idle".to_string()),
+                    activity_sequence: session.last_activity_sequence,
+                    latest_task_id: latest_task.map(|task| task.task_id.clone()),
+                    latest_task_state: latest_task.map(|task| task.task_state.clone()),
+                    latest_result_preview: latest_task.and_then(|task| task.result_preview.clone()),
+                    has_pending_approval,
+                }
+            })
+            .collect::<Vec<_>>();
+        sessions.sort_by_key(|session| {
+            (
+                std::cmp::Reverse(
+                    session.activity_sequence.max(
+                        session
+                            .latest_task_id
+                            .as_deref()
+                            .map(parse_id_sequence)
+                            .unwrap_or_else(|| parse_id_sequence(&session.session_id)),
+                    ),
+                ),
+                session.session_id.clone(),
+            )
+        });
+        sessions
+    }
+
+    pub fn list_session_tasks(&self, session_id: &str) -> Vec<TaskSummary> {
+        let mut tasks = self
+            .state
+            .tasks
+            .values()
+            .filter(|task| task.session_id == session_id)
+            .cloned()
+            .collect::<Vec<_>>();
+        tasks.sort_by_key(|task| parse_id_sequence(&task.task_id));
+        tasks
+    }
+
+    pub fn list_session_active_skills(&self, session_id: &str) -> Option<Vec<String>> {
+        self.has_session(session_id).then(|| {
+            self.state
+                .active_skills_by_session
+                .get(session_id)
+                .cloned()
+                .unwrap_or_default()
+        })
+    }
+
+    pub fn set_session_active_skills(
+        &mut self,
+        session_id: &str,
+        skills: Vec<String>,
+    ) -> Result<Vec<String>, String> {
+        if !self.has_session(session_id) {
+            return Err(format!("session_not_found session_id={session_id}"));
+        }
+        self.commit_mutation(|state| {
+            let normalized = skills
+                .into_iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
+            state
+                .active_skills_by_session
+                .insert(session_id.to_string(), normalized.clone());
+            bump_session_activity(state, session_id);
+            Ok(normalized)
+        })
+    }
+
+    pub fn list_mcp_enabled_overrides(&self) -> BTreeMap<String, bool> {
+        self.state.mcp_enabled_by_server.clone()
+    }
+
+    pub fn set_mcp_enabled_override(
+        &mut self,
+        server_id: &str,
+        enabled: bool,
+    ) -> Result<bool, String> {
+        self.commit_mutation(|state| {
+            state
+                .mcp_enabled_by_server
+                .insert(server_id.to_string(), enabled);
+            Ok(enabled)
+        })
+    }
+
+    pub fn prune_mcp_enabled_overrides(
+        &mut self,
+        valid_server_ids: &std::collections::BTreeSet<String>,
+    ) -> Result<usize, String> {
+        if self
+            .state
+            .mcp_enabled_by_server
+            .keys()
+            .all(|server_id| valid_server_ids.contains(server_id))
+        {
+            return Ok(0);
+        }
+        self.commit_mutation(|state| {
+            let before = state.mcp_enabled_by_server.len();
+            state
+                .mcp_enabled_by_server
+                .retain(|server_id, _| valid_server_ids.contains(server_id));
+            Ok(before.saturating_sub(state.mcp_enabled_by_server.len()))
+        })
+    }
+
+    pub fn list_pending_approvals_for_session(&self, session_id: &str) -> Vec<ApprovalSummary> {
+        let mut approvals = self
+            .state
+            .approvals
+            .values()
+            .filter(|approval| approval.state == "pending")
+            .filter(|approval| {
+                self.state
+                    .tasks
+                    .get(&approval.task_id)
+                    .is_some_and(|task| task.session_id == session_id)
+            })
+            .map(|approval| ApprovalSummary {
+                approval_id: approval.approval_id.clone(),
+                task_id: approval.task_id.clone(),
+                state: approval.state.clone(),
+                reason: approval.reason.clone(),
+            })
+            .collect::<Vec<_>>();
+        approvals.sort_by_key(|approval| parse_id_sequence(&approval.task_id));
+        approvals
     }
 
     fn owns_in_flight_idempotency(
@@ -906,6 +1086,11 @@ impl Store {
                 });
             }
 
+            if let Some(task) = state.tasks.get(&task_id) {
+                let session_id = task.session_id.clone();
+                bump_session_activity(state, &session_id);
+            }
+
             Ok(ResolveApprovalResponse {
                 approval_id: response_approval_id,
                 task_id,
@@ -917,6 +1102,42 @@ impl Store {
 
 fn namespaced_idempotency_key(session_id: &str, key: &str) -> String {
     format!("{session_id}:{key}")
+}
+
+fn next_activity_sequence(state: &mut PersistedState) -> u64 {
+    let sequence = state.next_activity_sequence;
+    state.next_activity_sequence += 1;
+    sequence
+}
+
+fn ensure_session_record(state: &mut PersistedState, session_id: &str) {
+    if state.sessions.contains_key(session_id) {
+        return;
+    }
+    let activity_sequence = next_activity_sequence(state);
+    state.sessions.insert(
+        session_id.to_string(),
+        SessionRecord {
+            session_id: session_id.to_string(),
+            session_label: session_id.to_string(),
+            last_activity_sequence: activity_sequence,
+        },
+    );
+}
+
+fn bump_session_activity(state: &mut PersistedState, session_id: &str) {
+    let sequence = next_activity_sequence(state);
+    if let Some(session) = state.sessions.get_mut(session_id) {
+        session.last_activity_sequence = sequence;
+    }
+}
+
+fn parse_id_sequence(value: &str) -> u64 {
+    value
+        .rsplit('-')
+        .next()
+        .and_then(|suffix| suffix.parse::<u64>().ok())
+        .unwrap_or(0)
 }
 
 fn next_turn_id_for_session(state: &PersistedState, session_id: &str) -> u64 {
@@ -1123,7 +1344,7 @@ mod tests {
         take_durability_warnings_for_test, with_directory_sync_failure_for_test,
     };
     use sharo_core::protocol::{SubmitTaskOpRequest, TaskSummary, TraceSummary};
-    use std::collections::HashSet;
+    use std::collections::{BTreeSet, HashSet};
     use std::fs;
     use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
@@ -1196,6 +1417,83 @@ mod tests {
 
         assert_save_failed(&error);
         assert_eq!(store.state, before);
+    }
+
+    #[test]
+    fn session_active_skills_do_not_leak_across_sessions() {
+        let path = unique_store_path("sharo-store-session-skills");
+        let mut store = Store::open(&path).expect("open store");
+        let session_a = store.register_session("alpha").expect("register session a");
+        let session_b = store.register_session("beta").expect("register session b");
+
+        let active_a = store
+            .set_session_active_skills(
+                &session_a,
+                vec![
+                    "brainstorming".to_string(),
+                    "writing/docs/strict-plan".to_string(),
+                ],
+            )
+            .expect("set session a skills");
+        let active_b = store
+            .set_session_active_skills(&session_b, vec!["brainstorming".to_string()])
+            .expect("set session b skills");
+
+        assert_eq!(
+            store
+                .list_session_active_skills(&session_a)
+                .expect("session a skills"),
+            active_a
+        );
+        assert_eq!(
+            store
+                .list_session_active_skills(&session_b)
+                .expect("session b skills"),
+            active_b
+        );
+        assert_ne!(active_a, active_b);
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn set_session_active_skills_rejects_unknown_session() {
+        let path = unique_store_path("sharo-store-session-skills-missing");
+        let mut store = Store::open(&path).expect("open store");
+
+        let error = store
+            .set_session_active_skills("session-missing", vec!["brainstorming".to_string()])
+            .expect_err("unknown session should fail");
+
+        assert!(error.contains("session_not_found"));
+        assert!(!store.has_session("session-missing"));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn prune_mcp_enabled_overrides_removes_stale_server_entries() {
+        let path = unique_store_path("sharo-store-mcp-overrides");
+        let mut store = Store::open(&path).expect("open store");
+        store
+            .set_mcp_enabled_override("hazel", false)
+            .expect("set hazel");
+        store
+            .set_mcp_enabled_override("docs", true)
+            .expect("set docs");
+
+        let removed = store
+            .prune_mcp_enabled_overrides(&BTreeSet::from(["hazel".to_string()]))
+            .expect("prune overrides");
+
+        assert_eq!(removed, 1);
+        assert_eq!(store.list_mcp_enabled_overrides().len(), 1);
+        assert_eq!(
+            store.list_mcp_enabled_overrides().get("hazel"),
+            Some(&false)
+        );
+
+        let _ = fs::remove_file(path);
     }
 
     #[test]

@@ -1263,7 +1263,10 @@ fn parallel_same_session_submits_produce_distinct_trace_scopes() {
         other => panic!("unexpected submit response: {other:?}"),
     };
 
-    assert_ne!(task_a, task_b, "parallel same-session submits must not share task ids");
+    assert_ne!(
+        task_a, task_b,
+        "parallel same-session submits must not share task ids"
+    );
 
     let trace_a = match send_request(
         &socket,

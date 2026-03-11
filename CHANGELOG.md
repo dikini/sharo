@@ -9,6 +9,25 @@ The format is based on Common Changelog:
 
 ### Fixed
 
+- Removed generated fuzz `corpus/` files from tracked branch history for the chat-first TUI worktree and ignored local fuzz `corpus/` output in per-crate fuzz `.gitignore` files.
+- Fixed Task 8 TUI consistency gaps by:
+  - making failed session switches leave the active session id and cached chat/artifact views unchanged
+  - making failed session and settings refresh paths leave cached UI state unchanged instead of partially mutating visible control-plane data
+  - rendering MCP status in the settings screen from daemon-provided runtime status instead of re-deriving it from `enabled`
+- Fixed chat-first TUI session-creation resilience and fuzz-worktree hygiene by:
+  - making successful daemon-side session registration fall back to a synthesized local session summary when the follow-up session-list refresh fails
+  - ignoring per-fuzz-crate `target/` build output so local fuzz runs do not leave accidental-add artifacts in the worktree
+- Hardened the chat-first TUI interaction slice by:
+  - escaping daemon/model/session text before rendering it to the terminal so control sequences and multiline payloads cannot inject terminal state
+  - making chat submission materialize a session automatically when no active session is selected, matching the session-first TUI contract
+  - replacing a vacuous transcript-isolation property test with an invariant that actually checks active-session transcript selection
+- Tightened slash-command operator behavior by:
+  - refreshing cached runtime status after MCP enable/disable commands so shell connectivity and warning state do not drift behind daemon truth
+  - replacing Rust `Debug` formatting in `/mcp` output with stable operator-facing status labels
+  - sanitizing dispatch-path errors before they are returned to the chat UI so backend or user-derived identifiers cannot inject terminal control sequences through slash-command failures
+- Hardened the chat-first TUI MCP control-plane slice by:
+  - rejecting HTTP MCP endpoints that embed credentials, query strings, fragments, invalid schemes, or cleartext remote hosts
+  - pruning stale persisted MCP enable/disable overrides for removed servers during daemon startup so runtime state does not drift indefinitely across config changes
 - Fixed GitHub Actions Node runtime deprecation warnings by upgrading `actions/checkout` to `v6` and opting workflows into Node 24 execution via `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` (covers `mozilla-actions/sccache-action@v0.0.9` until a Node-24-native release is available).
 - Fixed `policy-checks` dependency-security gate failures by:
   - adding explicit crate licenses across workspace/fuzz manifests
@@ -64,6 +83,34 @@ The format is based on Common Changelog:
 - Fixed workflow actionlint reference to an existing tag (`rhysd/actionlint@v1.7.11`), because the repository does not publish a floating `v1` tag.
 
 ### Added
+
+- Added exact-inspection and settings surfaces to `sharo-tui`:
+  - new settings rendering for model profile, warnings, session-scoped skills, and MCP server status
+  - new trace/artifacts rendering backed by exact daemon record ids and summaries
+  - integration coverage for settings visibility and route/final-result artifact inspection
+- Added slash-command support to `sharo-tui` for session, approval, skill, MCP, and model operator flows, with explicit parser/dispatch coverage and a dedicated slash-parser fuzz target.
+- Added chat-first TUI design and implementation planning artifacts for a new `sharo-tui` surface with screen switching, slash-command UX, inline approvals, Agent Skills-based skill discovery, MCP config/status management, TOML configuration boundaries, and explicit property/fuzz verification requirements.
+- Added bounded session-view/session-task retrieval contracts and implicit-session materialization requirements to the chat-first TUI docs, plus a new `sharo-core` fuzz target for session-oriented daemon request parsing.
+- Added initial Agent Skills support for the chat-first TUI control plane:
+  - daemon-side bounded recursive discovery from project, user, and configured roots
+  - lenient `SKILL.md` metadata parsing with heading/paragraph fallback and project-over-user precedence
+  - protocol surfaces for listing skills, fetching a full skill on demand, and persisting session-scoped active skill ids
+  - store-backed session activation state with integration/property coverage and expanded daemon request fuzzing for skills/session control-plane payloads
+- Added initial MCP registry/control-plane support for the chat-first TUI:
+  - typed protocol surfaces for listing configured MCP servers, toggling per-server enabled state, and retrieving compact runtime-status summaries
+  - daemon-side MCP config validation with transport-specific shape checks, unique server-id enforcement, bounded registry size, and clear startup failures for invalid definitions
+  - store-backed persisted MCP enable/disable overrides kept separate from TOML-defined server definitions
+  - registry/unit/property coverage and daemon IPC integration tests for configured status rendering, runtime summaries, persistence across restart, and invalid-config rejection
+- Added the initial `sharo-tui` crate for the chat-first operator surface:
+  - explicit `Screen`/`AppState` shell model with `Chat` as the default screen and separate active-session tracking
+  - Unix-socket daemon client bootstrap against `GetRuntimeStatus`
+  - `--once` shell rendering path for smokeable daemon-backed startup without introducing premature transcript state
+  - crate-level unit coverage for default screen and state separation plus an integration smoke test that starts the daemon and renders the chat-first shell
+- Added chat/session/approval flow scaffolding to `sharo-tui`:
+  - derived chat rendering from daemon-backed `SessionView`
+  - session creation, refresh, and fast active-session switching against daemon control-plane APIs
+  - inline approval callouts in chat and approval-resolution refresh behavior
+  - chat-flow integration coverage plus a property-based session-switch contamination check
 
 - Added Hazel structured memory architecture artifacts:
   - `docs/specs/hazel-structured-memory.md`

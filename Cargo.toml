@@ -3,6 +3,7 @@ members = [
   "crates/sharo-core",
   "crates/sharo-cli",
   "crates/sharo-daemon",
+  "crates/sharo-tui",
   "crates/sharo-hazel-core",
   "crates/sharo-hazel-mcp",
 ]

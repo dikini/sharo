@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 #[cfg(unix)]
@@ -7,8 +8,10 @@ use clap::{Parser, Subcommand};
 use sharo_core::client::{RuntimeClient, StubClient};
 use sharo_core::kernel::KernelApprovalInput;
 use sharo_core::protocol::{
-    DaemonRequest, DaemonResponse, GetArtifactsResponse, GetTaskResponse, GetTraceResponse,
-    RegisterSessionResponse, SubmitTaskOpResponse, TaskStatusRequest,
+    DaemonRequest, DaemonResponse, GetArtifactsResponse, GetRuntimeStatusResponse,
+    GetSessionTasksResponse, GetSessionViewResponse, GetTaskResponse, GetTraceResponse,
+    ListMcpServersResponse, RegisterSessionResponse, SubmitTaskOpResponse, TaskStatusRequest,
+    UpdateMcpServerStateResponse,
 };
 use sharo_core::reasoning::ReasoningError;
 use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -17,10 +20,15 @@ use tokio::task::JoinSet;
 
 mod config;
 mod connector_pool;
+mod control_plane;
 mod kernel;
+mod mcp_registry;
+mod skills;
 mod store;
 use config::{default_daemon_config_path, load_daemon_config};
 use kernel::{DaemonKernel, DaemonKernelRuntime, KernelRuntimeConfig};
+use mcp_registry::McpRegistry;
+use skills::load_skill_catalog;
 use store::{Store, SubmitPreparationOutcome, SubmitReplay};
 
 const DEFAULT_SOCKET_PATH: &str = "/tmp/sharo-daemon.sock";
@@ -31,6 +39,9 @@ struct AppState {
     client: StubClient,
     store: Mutex<Store>,
     daemon_kernel: DaemonKernel,
+    skills_catalog: skills::SkillCatalog,
+    mcp_registry: McpRegistry,
+    model_config: config::ModelRuntimeConfig,
 }
 
 #[derive(Debug, Parser)]
@@ -73,6 +84,9 @@ fn handle_request(request: DaemonRequest, state: &AppState) -> DaemonResponse {
                 Err(message) => DaemonResponse::Error { message },
             }
         }
+        DaemonRequest::ListSessions => DaemonResponse::ListSessions(control_plane::list_sessions(
+            &lock_unpoisoned(&state.store),
+        )),
         DaemonRequest::SubmitTask(payload) => match handle_submit_task(state, payload) {
             Ok(response) => DaemonResponse::SubmitTask(response),
             Err(message) => DaemonResponse::Error { message },
@@ -84,6 +98,106 @@ fn handle_request(request: DaemonRequest, state: &AppState) -> DaemonResponse {
                     message: format!("task_not_found task_id={}", payload.task_id),
                 },
             }
+        }
+        DaemonRequest::GetSessionTasks(payload) => match control_plane::get_session_tasks(
+            &lock_unpoisoned(&state.store),
+            &payload.session_id,
+            payload.task_limit,
+        ) {
+            Some(GetSessionTasksResponse { tasks }) => {
+                DaemonResponse::GetSessionTasks(GetSessionTasksResponse { tasks })
+            }
+            None => DaemonResponse::Error {
+                message: format!("session_not_found session_id={}", payload.session_id),
+            },
+        },
+        DaemonRequest::GetSessionView(payload) => match control_plane::get_session_view(
+            &lock_unpoisoned(&state.store),
+            &payload.session_id,
+            payload.task_limit,
+        ) {
+            Some(GetSessionViewResponse { session }) => {
+                DaemonResponse::GetSessionView(GetSessionViewResponse { session })
+            }
+            None => DaemonResponse::Error {
+                message: format!("session_not_found session_id={}", payload.session_id),
+            },
+        },
+        DaemonRequest::ListSkills(payload) => {
+            let active_skills = if let Some(session_id) = payload.session_id.as_deref() {
+                match lock_unpoisoned(&state.store).list_session_active_skills(session_id) {
+                    Some(active_skills) => active_skills,
+                    None => {
+                        return DaemonResponse::Error {
+                            message: format!("session_not_found session_id={session_id}"),
+                        };
+                    }
+                }
+            } else {
+                Vec::new()
+            };
+            DaemonResponse::ListSkills(sharo_core::protocol::ListSkillsResponse {
+                skills: state.skills_catalog.list(&active_skills),
+            })
+        }
+        DaemonRequest::GetSkill(payload) => match state.skills_catalog.get(&payload.skill_id) {
+            Ok(Some(skill)) => {
+                DaemonResponse::GetSkill(sharo_core::protocol::GetSkillResponse { skill })
+            }
+            Ok(None) => DaemonResponse::Error {
+                message: format!("skill_not_found skill_id={}", payload.skill_id),
+            },
+            Err(message) => DaemonResponse::Error { message },
+        },
+        DaemonRequest::SetSessionSkills(payload) => {
+            let active_skill_ids = match state
+                .skills_catalog
+                .validate_skill_ids(&payload.active_skill_ids)
+            {
+                Ok(skill_ids) => skill_ids,
+                Err(message) => return DaemonResponse::Error { message },
+            };
+            match lock_unpoisoned(&state.store)
+                .set_session_active_skills(&payload.session_id, active_skill_ids)
+            {
+                Ok(active_skill_ids) => DaemonResponse::SetSessionSkills(
+                    sharo_core::protocol::SetSessionSkillsResponse {
+                        session_id: payload.session_id,
+                        active_skill_ids,
+                    },
+                ),
+                Err(message) => DaemonResponse::Error { message },
+            }
+        }
+        DaemonRequest::ListMcpServers => {
+            let store = lock_unpoisoned(&state.store);
+            let servers = state.mcp_registry.list_servers(&mcp_overrides(&store));
+            DaemonResponse::ListMcpServers(ListMcpServersResponse { servers })
+        }
+        DaemonRequest::UpdateMcpServerState(payload) => {
+            if !state.mcp_registry.contains_server(&payload.server_id) {
+                return DaemonResponse::Error {
+                    message: format!("mcp_server_not_found server_id={}", payload.server_id),
+                };
+            }
+            let mut store = lock_unpoisoned(&state.store);
+            match store.set_mcp_enabled_override(&payload.server_id, payload.enabled) {
+                Ok(enabled) => {
+                    let server = state
+                        .mcp_registry
+                        .get_server(&payload.server_id, Some(enabled))
+                        .expect("validated mcp server must exist");
+                    DaemonResponse::UpdateMcpServerState(UpdateMcpServerStateResponse { server })
+                }
+                Err(message) => DaemonResponse::Error { message },
+            }
+        }
+        DaemonRequest::GetRuntimeStatus => {
+            let store = lock_unpoisoned(&state.store);
+            let status = state
+                .mcp_registry
+                .runtime_status(&mcp_overrides(&store), &state.model_config);
+            DaemonResponse::GetRuntimeStatus(GetRuntimeStatusResponse { status })
         }
         DaemonRequest::GetTrace(payload) => {
             match lock_unpoisoned(&state.store).get_trace(&payload.task_id) {
@@ -113,6 +227,10 @@ fn handle_request(request: DaemonRequest, state: &AppState) -> DaemonResponse {
             }
         }
     }
+}
+
+fn mcp_overrides(store: &Store) -> BTreeMap<String, bool> {
+    store.list_mcp_enabled_overrides()
 }
 
 fn handle_submit_task(
@@ -322,7 +440,7 @@ async fn main() {
                 std::process::exit(1);
             }
 
-            let store = match Store::open(&store_path) {
+            let mut store = match Store::open(&store_path) {
                 Ok(store) => store,
                 Err(message) => {
                     eprintln!("daemon_error=store_open_failed message={}", message);
@@ -344,10 +462,31 @@ async fn main() {
                     std::process::exit(1);
                 }
             };
+            let skills_catalog = match load_skill_catalog(&daemon_config.skills) {
+                Ok(catalog) => catalog,
+                Err(message) => {
+                    eprintln!("daemon_error=skills_load_failed message={}", message);
+                    std::process::exit(1);
+                }
+            };
+            let mcp_registry = match McpRegistry::from_config(&daemon_config.mcp) {
+                Ok(registry) => registry,
+                Err(message) => {
+                    eprintln!("daemon_error=mcp_config_invalid message={}", message);
+                    std::process::exit(1);
+                }
+            };
+            if let Err(message) = store.prune_mcp_enabled_overrides(&mcp_registry.server_ids()) {
+                eprintln!("daemon_error=store_open_failed message={}", message);
+                std::process::exit(1);
+            }
             let state = Arc::new(AppState {
                 client: StubClient,
                 store: Mutex::new(store),
                 daemon_kernel: DaemonKernel::new(&kernel_config),
+                skills_catalog,
+                mcp_registry,
+                model_config: daemon_config.model.clone(),
             });
             let mut handlers = JoinSet::new();
             let mut shutdown_requested = false;
