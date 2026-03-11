@@ -46,7 +46,7 @@ The MVP is not expected to provide broad autonomy, rich UX, or many capabilities
 
 ### Out of Scope
 
-- full TUI
+- full TUI implementation
 - full Knot-native UI
 - broad MCP support
 - plugin hot reload
@@ -1004,6 +1004,36 @@ The MVP surface must carry minimal harness hooks from the start:
 
 TUI and Knot-facing UI are explicitly deferred, but this MVP surface must not require any private backdoor outside the daemon protocol.
 
+### Post-MVP Operator Surface Direction
+
+The first post-MVP interactive surface is a peer client, not a runtime replacement.
+
+- `sharo-cli` remains the scripting-friendly and exact-control surface
+- `sharo-tui` is the first interactive peer surface over the daemon protocol
+- the TUI is chat-first, but supports explicit screen switching for sessions, approvals, trace/artifacts, and settings
+- slash commands are first-class operator actions and do not bypass policy or approval semantics
+- approval requirements for the active conversation must be surfaced inline in the chat UI
+- multiple active sessions may exist and the operator must be able to switch the active UI session quickly
+
+The TUI must continue to consume daemon-backed exact state. Chat transcript rendering is a derived operator view over canonical session, task, trace, artifact, and approval records.
+
+The first control-plane retrieval surfaces for chat-first UX must remain bounded and exact-state-backed:
+
+- session-task and session-view retrieval return bounded recent-task windows rather than unbounded full-session history
+- accepted task submission session ids become durable session records even when the caller uses an implicit or previously unregistered session flow
+- bounded transcript/session summaries remain derived retrieval views and must not become canonical runtime state
+
+### Post-MVP Extension and Configuration Direction
+
+The first TUI slice must preserve explicit taxonomy boundaries:
+
+- skills are instruction assets and follow the Agent Skills discovery and progressive-disclosure model
+- MCP servers are configuration and lifecycle-managed integration endpoints
+- runtime approvals and task state remain canonical daemon records
+- future manifest-backed capabilities remain a separate execution authority layer
+
+The first TUI slice may introduce TOML-configurable discovery and runtime defaults for model profiles, skill roots and discovery policy, and MCP server definitions. Session-scoped active skills, MCP enable/disable overrides, active tasks, approvals, and derived transcript views remain runtime state rather than global configuration.
+
 ## 19. Security Model Spec
 
 The MVP security model is intentionally narrow but real.
@@ -1174,10 +1204,12 @@ New verification:
 
 Focus:
 
-- TUI
+- chat-first `sharo-tui` peer surface
 - Knot bridge
 - richer artifact views
 - better trace and approval UX
+- slash-command operator flows
+- session switching and active-conversation approval surfacing
 - observability-facing capabilities beyond the MVP retrieval hooks
 - recurring cleanup and doc-gardening workflows
 
@@ -1190,6 +1222,9 @@ New verification:
 - client resync scenarios
 - visibility consistency checks
 - artifact and trace inspection UX coverage
+- slash-command parsing and dispatch coverage
+- multi-session switching coverage
+- inline approval surfacing coverage
 - recurring cleanup artifact and drift-marker coverage
 
 ### Milestone 5: Controlled Power Expansion
@@ -1197,7 +1232,7 @@ New verification:
 Focus:
 
 - broader capability catalog
-- stronger MCP integration
+- stronger MCP integration beyond configuration and status surfaces
 - scheduler maturity
 - bounded delegated work
 

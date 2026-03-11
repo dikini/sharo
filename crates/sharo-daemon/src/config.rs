@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+use sharo_core::mcp::McpTransportKind;
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct DaemonConfigFile {
@@ -10,6 +11,10 @@ pub struct DaemonConfigFile {
     pub model: ModelRuntimeConfig,
     #[serde(default)]
     pub connector_pool: ConnectorPoolConfig,
+    #[serde(default)]
+    pub skills: SkillsConfig,
+    #[serde(default)]
+    pub mcp: McpConfig,
     #[serde(default)]
     pub reasoning_policy: ReasoningPolicyConfig,
     #[serde(default)]
@@ -41,6 +46,37 @@ pub struct ModelRuntimeConfig {
     pub timeout_ms: Option<u64>,
     pub max_retries: Option<u32>,
     pub profile_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct SkillsConfig {
+    pub project_root: Option<String>,
+    pub user_root: Option<String>,
+    #[serde(default)]
+    pub roots: Vec<String>,
+    pub max_depth: Option<usize>,
+    pub enable_project_skills: Option<bool>,
+    pub enable_user_skills: Option<bool>,
+    pub trust_project_skills: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct McpConfig {
+    #[serde(default)]
+    pub servers: Vec<McpServerConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct McpServerConfig {
+    pub server_id: String,
+    pub display_name: Option<String>,
+    pub transport: McpTransportKind,
+    pub command: Option<String>,
+    pub args: Option<Vec<String>>,
+    pub endpoint: Option<String>,
+    pub startup_timeout_ms: Option<u64>,
+    pub trust_class: Option<String>,
+    pub enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -170,7 +206,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::{
-        DaemonConfigFile, HookBindingConfig, daemon_config_path_from_home,
+        DaemonConfigFile, HookBindingConfig, McpTransportKind, daemon_config_path_from_home,
         default_daemon_config_path, load_daemon_config,
     };
 
@@ -344,6 +380,69 @@ max_cards = 3
             vec!["hunch.v1".to_string()]
         );
         assert_eq!(parsed.hazel_manifest.cards[0].max_cards, Some(3));
+    }
+
+    #[test]
+    fn parse_skills_config_from_toml() {
+        let raw = r#"
+[skills]
+project_root = "/repo/.agents/skills"
+user_root = "/home/example/.agents/skills"
+roots = ["/opt/team-skills"]
+max_depth = 5
+enable_project_skills = true
+enable_user_skills = false
+trust_project_skills = true
+"#;
+        let parsed: DaemonConfigFile = toml::from_str(raw).expect("parse");
+        assert_eq!(
+            parsed.skills.project_root.as_deref(),
+            Some("/repo/.agents/skills")
+        );
+        assert_eq!(
+            parsed.skills.user_root.as_deref(),
+            Some("/home/example/.agents/skills")
+        );
+        assert_eq!(parsed.skills.roots, vec!["/opt/team-skills".to_string()]);
+        assert_eq!(parsed.skills.max_depth, Some(5));
+        assert_eq!(parsed.skills.enable_project_skills, Some(true));
+        assert_eq!(parsed.skills.enable_user_skills, Some(false));
+        assert_eq!(parsed.skills.trust_project_skills, Some(true));
+    }
+
+    #[test]
+    fn parse_mcp_config_from_toml() {
+        let raw = r#"
+[[mcp.servers]]
+server_id = "hazel"
+display_name = "Hazel"
+transport = "stdio"
+command = "/usr/bin/hazel-mcp"
+args = ["--stdio"]
+startup_timeout_ms = 250
+trust_class = "operator"
+enabled = true
+
+[[mcp.servers]]
+server_id = "docs"
+transport = "http"
+endpoint = "http://127.0.0.1:8080/mcp"
+enabled = false
+"#;
+        let parsed: DaemonConfigFile = toml::from_str(raw).expect("parse");
+        assert_eq!(parsed.mcp.servers.len(), 2);
+        assert_eq!(parsed.mcp.servers[0].server_id, "hazel");
+        assert_eq!(parsed.mcp.servers[0].transport, McpTransportKind::Stdio);
+        assert_eq!(
+            parsed.mcp.servers[0].command.as_deref(),
+            Some("/usr/bin/hazel-mcp")
+        );
+        assert_eq!(parsed.mcp.servers[1].transport, McpTransportKind::Http);
+        assert_eq!(
+            parsed.mcp.servers[1].endpoint.as_deref(),
+            Some("http://127.0.0.1:8080/mcp")
+        );
+        assert_eq!(parsed.mcp.servers[1].enabled, Some(false));
     }
 
     #[test]
