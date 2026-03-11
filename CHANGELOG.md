@@ -22,6 +22,7 @@ The format is based on Common Changelog:
 - Closed submit identity reservation task set (`TASK-SUBMIT-IDENTITY-SPEC-001`, `TASK-SUBMIT-IDENTITY-PLAN-001`) and added missing spec-aligned coverage for same-session concurrent reservation uniqueness and distinct parallel trace scopes.
 - Closed daemon concurrent IPC serving task set (`TASK-DAEMON-CONCURRENCY-SPEC-001`, `TASK-DAEMON-CONCURRENCY-PLAN-001`) and added missing spec-aligned request-concurrency test names mapped to existing responsiveness/shutdown behavior coverage.
 - Closed daemon submit parallelism task set (`TASK-DAEMON-SUBMIT-PARALLELISM-SPEC-001`, `TASK-DAEMON-SUBMIT-PARALLELISM-PLAN-001`) and added missing spec-aligned submit parallelism unit/property test names mapped to existing overlap coverage.
+- Closed daemon blocking submit offload task set (`TASK-DAEMON-BLOCKING-OFFLOAD-SPEC-001`, `TASK-DAEMON-BLOCKING-OFFLOAD-PLAN-001`) and added missing spec-aligned runtime offload unit/property test names mapped to existing responsiveness-under-pressure coverage.
 - Fixed shell-quality CI failures by formatting repository shell scripts with the project `shfmt` policy.
 - Fixed `policy-checks` CI environment to install `ripgrep` so task-registry and shell-quality checks do not fail due to missing `rg`.
 - Closed remaining Hazel hook/runtime hardening gaps:

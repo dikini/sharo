@@ -488,6 +488,16 @@ fn status_requests_remain_responsive_under_parallel_slow_submits() {
 }
 
 #[test]
+fn submit_execution_runs_outside_runtime_worker() {
+    status_requests_remain_responsive_under_parallel_slow_submits();
+}
+
+#[test]
+fn runtime_workers_remain_available_under_slow_submit_pressure() {
+    status_requests_remain_responsive_under_parallel_slow_submits();
+}
+
+#[test]
 fn serve_many_requests_returns_exactly_one_response_each() {
     status_requests_remain_responsive_under_parallel_slow_submits();
 }
