@@ -18,6 +18,7 @@ The format is based on Common Changelog:
 - Fixed `policy-checks` docs lint/terminology gates to evaluate only docs changed in the push/PR commit range instead of linting the entire repository.
 - Cleaned dependency license policy allowlist by removing unmatched LGPL entries from `deny.toml` to eliminate non-actionable `license-not-encountered` warnings.
 - Closed provider error classification task set (`TASK-PROVIDER-ERROR-SPEC-001`, `TASK-PROVIDER-ERROR-PLAN-001`) after verifying retry-correct connector status mapping and reasoning-level retryable-failure behavior coverage.
+- Closed store transactional persistence task set (`TASK-STORE-TRANSACTIONAL-SPEC-001`, `TASK-STORE-TRANSACTIONAL-PLAN-001`) after verifying rollback-on-save-failure and idempotent retry behavior coverage.
 - Fixed shell-quality CI failures by formatting repository shell scripts with the project `shfmt` policy.
 - Fixed `policy-checks` CI environment to install `ripgrep` so task-registry and shell-quality checks do not fail due to missing `rg`.
 - Closed remaining Hazel hook/runtime hardening gaps:
