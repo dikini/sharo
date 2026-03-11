@@ -45,7 +45,10 @@ This keeps task state deterministic and reduces stale registry entries.
 - Run Rust hygiene checks (strict): `scripts/check-rust-hygiene.sh --strict --check all`
 - Run MVP matrix map quality gate: `scripts/check-mvp-matrix-map.sh`
 - Run merge-result gate checks: `scripts/check-merge-result.sh`
+- Run merge-compatibility gate alias: `scripts/check-merge-compat.sh`
 - Run daemon invariant checks: `scripts/check-daemon-invariants.sh`
+- Run deterministic conflict-policy checks: `scripts/check-conflict-determinism.sh`
+- Run durability warning-signal checks: `scripts/check-durability-signals.sh`
 - Canonical task runner entrypoint: `just verify`
 - Initialize top-level starter files from templates: `scripts/init-repo.sh --apply`
 - Just wrapper for starter template initialization: `just init-repo`

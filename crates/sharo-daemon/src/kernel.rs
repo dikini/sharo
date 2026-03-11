@@ -1546,6 +1546,11 @@ mod tests {
     }
 
     #[test]
+    fn authenticated_loopback_http_base_url_remains_allowed_for_local_tests() {
+        authenticated_provider_allows_loopback_http_base_url();
+    }
+
+    #[test]
     fn authenticated_provider_allows_loopback_ip_literal_http_base_url() {
         let cfg = DaemonConfigFile {
             model: ModelRuntimeConfig {

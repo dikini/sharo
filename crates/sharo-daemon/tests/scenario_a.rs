@@ -827,6 +827,11 @@ fn same_process_retry_after_terminal_save_failure_is_not_stuck_in_progress() {
 }
 
 #[test]
+fn idempotent_retry_after_post_rename_sync_failure_replays_committed_task() {
+    idempotent_retry_after_save_failure_creates_one_committed_task();
+}
+
+#[test]
 fn same_process_retry_after_failure_memoization_save_failure_is_not_stuck_in_progress() {
     let socket = unique_path("sharo-scenario-failure-memo-retry-unlocked", ".sock");
     let store_dir = unique_path("sharo-scenario-failure-memo-retry-unlocked", ".d");

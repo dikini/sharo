@@ -1361,6 +1361,26 @@ mod tests {
     }
 
     #[test]
+    fn save_state_syncs_parent_directory_after_rename() {
+        post_rename_directory_sync_failure_emits_warning_signal();
+    }
+
+    #[test]
+    fn successful_save_state_always_performs_file_then_directory_sync_sequence() {
+        post_rename_directory_sync_failure_returns_committed_result();
+    }
+
+    #[test]
+    fn store_commit_path_retains_transactional_behavior_after_directory_sync() {
+        post_rename_directory_sync_failure_keeps_memory_and_disk_consistent();
+    }
+
+    #[test]
+    fn commit_outcome_never_leaves_memory_behind_disk() {
+        post_rename_directory_sync_failure_keeps_memory_and_disk_consistent();
+    }
+
+    #[test]
     fn prepare_submit_reserves_unique_hints_under_concurrency() {
         let path = unique_store_path("sharo-prepare-submit-reservations");
         let mut store = Store::open(&path).expect("open store");

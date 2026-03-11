@@ -75,12 +75,15 @@ scripts/check-workflows.sh --warn-missing
 scripts/check-shell-quality.sh --changed --warn-missing
 scripts/check-tasks-registry.sh
 scripts/check-tasks-sync.sh --changed
+scripts/check-conflict-determinism.sh
 scripts/check-rust-policy.sh
 if [[ "$mode" == "all" ]]; then
   scripts/check-rust-tests.sh --all
 else
   scripts/check-rust-tests.sh --changed
 fi
+scripts/check-daemon-invariants.sh
+scripts/check-durability-signals.sh
 scripts/check-sync-manifest.sh --changed
 scripts/check-mvp-matrix-map.sh
 scripts/check-knot-diff.sh --mapping docs/tasks/knot-diff-mapping.csv

@@ -32,12 +32,10 @@ fn main() {
         let oversized = content_len > MAX_REQUEST_BYTES;
         let terminated = line_bytes.last() == Some(&b'\n');
         if oversized {
-            if !terminated {
-                if drain_until_newline(&mut reader).is_err() {
-                    let response = response_error("request_stream_drain_failed".to_string());
-                    let _ = write_response(&mut stdout, &response);
-                    break;
-                }
+            if !terminated && drain_until_newline(&mut reader).is_err() {
+                let response = response_error("request_stream_drain_failed".to_string());
+                let _ = write_response(&mut stdout, &response);
+                break;
             }
             let response =
                 response_error(format!("request_too_large max_bytes={MAX_REQUEST_BYTES}"));

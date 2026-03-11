@@ -197,6 +197,11 @@ fn openai_compatible_connector_rejects_authenticated_cleartext_remote_base_url()
 }
 
 #[test]
+fn authenticated_http_base_url_is_rejected() {
+    openai_compatible_connector_rejects_authenticated_cleartext_remote_base_url();
+}
+
+#[test]
 fn authenticated_loopback_ip_literals_remain_allowed() {
     let mut ipv4_profile = test_profile();
     ipv4_profile.provider_id = "openai".to_string();
@@ -228,6 +233,34 @@ fn authenticated_noncanonical_loopback_ipv4_literals_remain_allowed() {
                 "non-canonical IPv4 loopback literal {loopback} should remain allowed: {error:?}"
             )
         });
+    }
+}
+
+#[test]
+fn authenticated_non_https_non_loopback_urls_are_never_accepted() {
+    for remote in [
+        "http://example.com",
+        "http://api.openai.com",
+        "http://192.0.2.1",
+        "http://10.0.0.42",
+    ] {
+        let mut profile = test_profile();
+        profile.provider_id = "openai".to_string();
+        profile.model_id = "gpt-5-mini".to_string();
+        profile.base_url = Some(remote.to_string());
+        profile.auth_env_key = Some("SHARO_TEST_OPENAI_KEY".to_string());
+
+        let error = validate_base_url_security(&profile)
+            .expect_err("authenticated non-https non-loopback URL should be rejected");
+        match error {
+            sharo_core::model_connector::ConnectorError::InvalidRequest(message) => {
+                assert!(
+                    message.contains("insecure"),
+                    "unexpected rejection message for {remote}: {message}"
+                );
+            }
+            other => panic!("unexpected error for {remote}: {other:?}"),
+        }
     }
 }
 

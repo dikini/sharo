@@ -15,6 +15,31 @@ Template-Profile: tdd-strict-v1
 
 Task-Registry-Refs: TASK-WORKFLOW-TOOLING-SPEC-001, TASK-WORKFLOW-TOOLING-PLAN-001
 
+## Instruction Priority
+
+1. Follow repository policy and task-registry contracts.
+2. Keep rollout deterministic and reproducible locally and in CI.
+3. Prefer narrow, additive gate wiring over broad refactors.
+
+## Output Contract
+
+- Required outputs are policy scripts, CI wiring, and tests that prove gate behavior.
+- All added gates must be invocable from deterministic local command surfaces.
+- Changes must preserve existing `scripts/check-fast-feedback.sh` reliability.
+
+## Model Compatibility Notes
+
+- This spec uses plain-language deterministic gate contracts compatible with GPT-5 class coding agents.
+- Tool and script names are canonical and must remain stable across automated edits.
+
+## Evidence / Verification Contract
+
+- Provide command evidence for:
+  - `scripts/check-fast-feedback.sh`
+  - `scripts/check-tests.sh --workspace`
+  - dependency security and workflow gate checks where touched
+- Task closure requires `docs/tasks/tasks.csv` and `CHANGELOG.md` updates.
+
 ## Purpose
 
 Define an incremental tooling rollout that improves deterministic delivery and guardrail coverage across local development and CI for six priority additions: `cargo-nextest`, merge-result CI gating, `cargo-deny`, `cargo-audit`, task runner standardization, `proptest`, and `loom`.
@@ -255,5 +280,5 @@ Property-based (optional):
 
 ## References
 
-- [deterministic-workflow-hardening.md](/home/dikini/Projects/sharo/.worktrees/workflow-tools-rollout/docs/specs/deterministic-workflow-hardening.md)
+- [deterministic-workflow-hardening.md](/home/dikini/Projects/sharo/docs/specs/deterministic-workflow-hardening.md)
 - Rust skills: `test-proptest-properties`, `async-no-lock-await`, `err-result-over-panic`, `lint-workspace-lints`

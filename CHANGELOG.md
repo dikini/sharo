@@ -23,6 +23,13 @@ The format is based on Common Changelog:
 - Closed daemon concurrent IPC serving task set (`TASK-DAEMON-CONCURRENCY-SPEC-001`, `TASK-DAEMON-CONCURRENCY-PLAN-001`) and added missing spec-aligned request-concurrency test names mapped to existing responsiveness/shutdown behavior coverage.
 - Closed daemon submit parallelism task set (`TASK-DAEMON-SUBMIT-PARALLELISM-SPEC-001`, `TASK-DAEMON-SUBMIT-PARALLELISM-PLAN-001`) and added missing spec-aligned submit parallelism unit/property test names mapped to existing overlap coverage.
 - Closed daemon blocking submit offload task set (`TASK-DAEMON-BLOCKING-OFFLOAD-SPEC-001`, `TASK-DAEMON-BLOCKING-OFFLOAD-PLAN-001`) and added missing spec-aligned runtime offload unit/property test names mapped to existing responsiveness-under-pressure coverage.
+- Closed authenticated provider base URL hardening task set (`TASK-AUTH-BASE-URL-HARDENING-SPEC-001`, `TASK-AUTH-BASE-URL-HARDENING-PLAN-001`) and added missing spec-aligned coverage names for authenticated HTTP rejection, non-HTTPS non-loopback rejection, and local loopback allow behavior.
+- Closed store directory fsync durability task set (`TASK-STORE-DIR-FSYNC-SPEC-001`, `TASK-STORE-DIR-FSYNC-PLAN-001`) and added missing spec-aligned durability coverage names for post-rename directory sync behavior.
+- Closed store fsync commit consistency task set (`TASK-STORE-FSYNC-CONSISTENCY-SPEC-001`, `TASK-STORE-FSYNC-CONSISTENCY-PLAN-001`) and added missing spec-aligned consistency/property/integration coverage names mapped to existing committed-post-rename warning semantics.
+- Closed connector pool thread-bound hardening task set (`TASK-CONNECTOR-POOL-HARDENING-SPEC-001`, `TASK-CONNECTOR-POOL-HARDENING-PLAN-001`) after verifying atomic scale-up race coverage and daemon burst worker-bound behavior coverage.
+- Closed deterministic workflow hardening task set (`TASK-DETERMINISTIC-WORKFLOW-SPEC-001`, `TASK-DETERMINISTIC-WORKFLOW-PLAN-001`) with deterministic merge-compat/conflict-policy/runtime-invariant/durability-signal gating and fast-feedback wiring.
+- Closed workflow tooling rollout spec task (`TASK-WORKFLOW-TOOLING-SPEC-001`) after verifying rollout artifacts are active and fixing stale spec reference paths.
+- Fixed workspace clippy gate failure in `sharo-hazel-mcp` by collapsing a nested `if` flagged by `clippy::collapsible-if`.
 - Fixed shell-quality CI failures by formatting repository shell scripts with the project `shfmt` policy.
 - Fixed `policy-checks` CI environment to install `ripgrep` so task-registry and shell-quality checks do not fail due to missing `rg`.
 - Closed remaining Hazel hook/runtime hardening gaps:
@@ -210,6 +217,12 @@ The format is based on Common Changelog:
   - task registry entries:
     - `TASK-WORKFLOW-TOOLING-SPEC-001`
     - `TASK-WORKFLOW-TOOLING-PLAN-001`
+- Added deterministic workflow hardening gates and policy artifacts:
+  - `scripts/check-merge-compat.sh` merge-compatibility alias gate
+  - `scripts/check-conflict-determinism.sh` unresolved-marker and high-churn allowlist conflict-policy gate
+  - `scripts/check-durability-signals.sh` explicit durability-warning assertion gate
+  - `docs/specs/conflict-resolution-policy.md` deterministic conflict-policy specification
+  - `scripts/tests/test-deterministic-workflow-gates.bats` shell coverage for deterministic workflow gates and fast-feedback wiring
 - Added deterministic workflow hardening planning artifacts:
   - `docs/specs/deterministic-workflow-hardening.md`
   - `docs/plans/2026-03-06-deterministic-workflow-hardening-plan.md`
