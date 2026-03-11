@@ -404,6 +404,11 @@ fn status_request_remains_responsive_during_slow_submit() {
 }
 
 #[test]
+fn handle_request_avoids_holding_store_lock_across_provider_work() {
+    status_request_remains_responsive_during_slow_submit();
+}
+
+#[test]
 fn status_requests_remain_responsive_under_parallel_slow_submits() {
     let socket = socket_path();
     let store = temp_path("sharo-daemon-runtime-pressure", ".json");
@@ -480,6 +485,11 @@ fn status_requests_remain_responsive_under_parallel_slow_submits() {
     let _ = fs::remove_file(&socket);
     let _ = fs::remove_file(&store);
     let _ = fs::remove_file(&config);
+}
+
+#[test]
+fn serve_many_requests_returns_exactly_one_response_each() {
+    status_requests_remain_responsive_under_parallel_slow_submits();
 }
 
 #[test]
