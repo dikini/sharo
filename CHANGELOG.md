@@ -31,6 +31,7 @@ The format is based on Common Changelog:
 - Closed workflow tooling rollout spec task (`TASK-WORKFLOW-TOOLING-SPEC-001`) after verifying rollout artifacts are active and fixing stale spec reference paths.
 - Fixed workspace clippy gate failure in `sharo-hazel-mcp` by collapsing a nested `if` flagged by `clippy::collapsible-if`.
 - Fixed `policy-checks` docs lint failure by replacing a non-portable absolute local reference in `docs/specs/workflow-tooling-rollout.md` with a repository-relative link.
+- Fixed `policy-checks` docs terminology range gate to lint only Markdown docs (`*.md` and `AGENTS.md`), preventing out-of-scope failures on `docs/tasks/tasks.csv`.
 - Fixed shell-quality CI failures by formatting repository shell scripts with the project `shfmt` policy.
 - Fixed `policy-checks` CI environment to install `ripgrep` so task-registry and shell-quality checks do not fail due to missing `rg`.
 - Closed remaining Hazel hook/runtime hardening gaps:

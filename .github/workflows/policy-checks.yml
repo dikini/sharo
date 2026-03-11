@@ -113,7 +113,12 @@ jobs:
         run: |
           set -euo pipefail
           range="${{ steps.range.outputs.range }}"
-          mapfile -t docs_files < <(git diff --name-only "$range" -- docs AGENTS.md | sed '/^$/d' | sort -u)
+          mapfile -t docs_files < <(
+            git diff --name-only "$range" -- docs AGENTS.md \
+              | sed '/^$/d' \
+              | rg '(^AGENTS\.md$|\.md$)' \
+              | sort -u
+          )
           if [[ "${#docs_files[@]}" -eq 0 ]]; then
             echo "doc-terms: no docs changed in range"
             exit 0
