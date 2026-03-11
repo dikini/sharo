@@ -21,6 +21,7 @@ The format is based on Common Changelog:
 - Closed store transactional persistence task set (`TASK-STORE-TRANSACTIONAL-SPEC-001`, `TASK-STORE-TRANSACTIONAL-PLAN-001`) after verifying rollback-on-save-failure and idempotent retry behavior coverage.
 - Closed submit identity reservation task set (`TASK-SUBMIT-IDENTITY-SPEC-001`, `TASK-SUBMIT-IDENTITY-PLAN-001`) and added missing spec-aligned coverage for same-session concurrent reservation uniqueness and distinct parallel trace scopes.
 - Closed daemon concurrent IPC serving task set (`TASK-DAEMON-CONCURRENCY-SPEC-001`, `TASK-DAEMON-CONCURRENCY-PLAN-001`) and added missing spec-aligned request-concurrency test names mapped to existing responsiveness/shutdown behavior coverage.
+- Closed daemon submit parallelism task set (`TASK-DAEMON-SUBMIT-PARALLELISM-SPEC-001`, `TASK-DAEMON-SUBMIT-PARALLELISM-PLAN-001`) and added missing spec-aligned submit parallelism unit/property test names mapped to existing overlap coverage.
 - Fixed shell-quality CI failures by formatting repository shell scripts with the project `shfmt` policy.
 - Fixed `policy-checks` CI environment to install `ripgrep` so task-registry and shell-quality checks do not fail due to missing `rg`.
 - Closed remaining Hazel hook/runtime hardening gaps:

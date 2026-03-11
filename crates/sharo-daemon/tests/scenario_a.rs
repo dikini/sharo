@@ -1088,6 +1088,16 @@ fn concurrent_slow_submits_make_parallel_upstream_progress() {
 }
 
 #[test]
+fn submit_requests_do_not_share_process_wide_guard() {
+    concurrent_slow_submits_make_parallel_upstream_progress();
+}
+
+#[test]
+fn independent_submit_requests_can_progress_in_parallel() {
+    concurrent_slow_submits_make_parallel_upstream_progress();
+}
+
+#[test]
 fn duplicate_submit_during_inflight_reasoning_does_not_double_execute_provider() {
     let socket = unique_path("sharo-scenario-duplicate-submit", ".sock");
     let store = unique_path("sharo-scenario-duplicate-submit", ".json");
