@@ -9,6 +9,7 @@ The format is based on Common Changelog:
 
 ### Fixed
 
+- Fixed GitHub Actions Node runtime deprecation warnings by upgrading `actions/checkout` to `v6` and opting workflows into Node 24 execution via `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` (covers `mozilla-actions/sccache-action@v0.0.9` until a Node-24-native release is available).
 - Fixed `policy-checks` dependency-security gate failures by:
   - adding explicit crate licenses across workspace/fuzz manifests
   - pinning path dependencies with explicit `version = "0.1.0"` to satisfy `cargo-deny` wildcard policy
