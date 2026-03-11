@@ -33,6 +33,7 @@ The format is based on Common Changelog:
 - Fixed `policy-checks` docs lint failure by replacing a non-portable absolute local reference in `docs/specs/workflow-tooling-rollout.md` with a repository-relative link.
 - Fixed `policy-checks` docs terminology range gate to lint only Markdown docs (`*.md` and `AGENTS.md`), preventing out-of-scope failures on `docs/tasks/tasks.csv`.
 - Fixed flaky daemon kernel test `pre_prompt_compose_rejects_in_place_binding_command_content_mutation` to accept equivalent fail-closed spawn behavior (`pre_prompt_tool_spawn_failed` with `Text file busy`) alongside `command_identity_mismatch`.
+- Fixed flaky connector-pool cooldown test `scale_up_respects_threshold_and_cooldown` by increasing test cooldown to remove timing-sensitive extra scale-up under CI scheduler variance.
 - Fixed shell-quality CI failures by formatting repository shell scripts with the project `shfmt` policy.
 - Fixed `policy-checks` CI environment to install `ripgrep` so task-registry and shell-quality checks do not fail due to missing `rg`.
 - Closed remaining Hazel hook/runtime hardening gaps:

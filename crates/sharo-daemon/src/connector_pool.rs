@@ -373,7 +373,7 @@ mod tests {
             queue_capacity: 32,
             scale_up_queue_threshold: 1,
             scale_down_idle_ms: 5_000,
-            cooldown_ms: 1,
+            cooldown_ms: 5_000,
         });
         assert_eq!(pool.current_worker_count(), 1);
 
