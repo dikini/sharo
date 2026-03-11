@@ -1166,6 +1166,14 @@ fn duplicate_submit_during_inflight_reasoning_does_not_double_execute_provider()
         }
     }
 
+    // CI can deliver submit responses before the provider call is observed.
+    let wait_deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while std::time::Instant::now() < wait_deadline {
+        if observed_requests.load(Ordering::SeqCst) >= 1 {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
     assert_eq!(
         observed_requests.load(Ordering::SeqCst),
         1,
