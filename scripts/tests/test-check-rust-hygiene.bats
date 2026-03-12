@@ -38,11 +38,23 @@ setup() {
   run rg 'scripts/check-rust-hygiene\.sh --strict --check all --baseline-ref origin/main' "$ROOT/.github/workflows/rust-hygiene.yml"
   [ "$status" -eq 0 ]
 
-  run rg 'uses: taiki-e/install-action@v2' "$ROOT/.github/workflows/rust-hygiene.yml"
+  run rg 'Install cargo hygiene tools' "$ROOT/.github/workflows/rust-hygiene.yml"
   [ "$status" -eq 0 ]
 
-  run rg 'tool: cargo-udeps@0\.1\.60,cargo-msrv@0\.19\.2,cargo-semver-checks@0\.47\.0' "$ROOT/.github/workflows/rust-hygiene.yml"
+  run rg 'https://github.com/\$\{repo\}/releases/download/v\$\{version\}/\$\{asset\}' "$ROOT/.github/workflows/rust-hygiene.yml"
   [ "$status" -eq 0 ]
+
+  run rg 'cargo-udeps-v\$\{CARGO_UDEPS_VERSION\}-x86_64-unknown-linux-gnu\.tar\.gz' "$ROOT/.github/workflows/rust-hygiene.yml"
+  [ "$status" -eq 0 ]
+
+  run rg 'cargo-msrv-x86_64-unknown-linux-gnu-v\$\{CARGO_MSRV_VERSION\}\.tgz' "$ROOT/.github/workflows/rust-hygiene.yml"
+  [ "$status" -eq 0 ]
+
+  run rg 'cargo-semver-checks-x86_64-unknown-linux-gnu\.tar\.gz' "$ROOT/.github/workflows/rust-hygiene.yml"
+  [ "$status" -eq 0 ]
+
+  run rg 'taiki-e/install-action@v2' "$ROOT/.github/workflows/rust-hygiene.yml"
+  [ "$status" -ne 0 ]
 
   run rg 'cargo install --locked cargo-udeps cargo-msrv cargo-semver-checks' "$ROOT/.github/workflows/rust-hygiene.yml"
   [ "$status" -ne 0 ]
