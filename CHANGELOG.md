@@ -20,6 +20,7 @@ The format is based on Common Changelog:
 - Fixed `policy-checks` dependency-security failures for the new TUI dependency path by:
   - allowing the transitive `Zlib` SPDX license required by `ratatui` in `deny.toml`
   - ignoring `RUSTSEC-2024-0436` for transitive `paste` until an upstream `ratatui` replacement path exists
+- Fixed flaky CI-parity daemon scenario coverage by accepting equivalent fail-closed terminal save errors when the store directory is removed mid-write during `same_process_retry_after_terminal_save_failure_is_not_stuck_in_progress`.
 - Removed generated fuzz `corpus/` files from tracked branch history for the chat-first TUI worktree and ignored local fuzz `corpus/` output in per-crate fuzz `.gitignore` files.
 - Fixed Task 8 TUI consistency gaps by:
   - making failed session switches leave the active session id and cached chat/artifact views unchanged

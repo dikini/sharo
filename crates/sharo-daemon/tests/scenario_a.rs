@@ -793,7 +793,9 @@ fn same_process_retry_after_terminal_save_failure_is_not_stuck_in_progress() {
     match submit_thread.join().expect("submit thread join") {
         DaemonResponse::Error { message } => {
             assert!(
-                message.contains("store_parent_missing") || message.contains("store_open_failed"),
+                message.contains("store_parent_missing")
+                    || message.contains("store_open_failed")
+                    || message.contains("store_chmod_failed"),
                 "unexpected terminal save failure: {message}",
             );
         }
