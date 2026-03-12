@@ -37,4 +37,13 @@ setup() {
 @test "rust hygiene workflow runs strict mode" {
   run rg 'scripts/check-rust-hygiene\.sh --strict --check all --baseline-ref origin/main' "$ROOT/.github/workflows/rust-hygiene.yml"
   [ "$status" -eq 0 ]
+
+  run rg 'uses: taiki-e/install-action@v2' "$ROOT/.github/workflows/rust-hygiene.yml"
+  [ "$status" -eq 0 ]
+
+  run rg 'tool: cargo-udeps@0\.1\.60,cargo-msrv@0\.19\.2,cargo-semver-checks@0\.47\.0' "$ROOT/.github/workflows/rust-hygiene.yml"
+  [ "$status" -eq 0 ]
+
+  run rg 'cargo install --locked cargo-udeps cargo-msrv cargo-semver-checks' "$ROOT/.github/workflows/rust-hygiene.yml"
+  [ "$status" -ne 0 ]
 }

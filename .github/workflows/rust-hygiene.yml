@@ -21,7 +21,10 @@ jobs:
         run: rustup toolchain install nightly --profile minimal
 
       - name: Install cargo hygiene tools
-        run: cargo install --locked cargo-udeps cargo-msrv cargo-semver-checks
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-udeps@0.1.60,cargo-msrv@0.19.2,cargo-semver-checks@0.47.0
+          fallback: none
 
       - name: Run strict rust hygiene checks
         run: scripts/check-rust-hygiene.sh --strict --check all --baseline-ref origin/main
