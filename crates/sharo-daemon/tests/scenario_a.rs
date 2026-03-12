@@ -327,30 +327,57 @@ fn start_observed_request_server(
             }
             match listener.accept() {
                 Ok((mut stream, _)) => {
-                    observed_for_thread.fetch_add(1, Ordering::SeqCst);
                     idle_deadline = Some(std::time::Instant::now() + idle_window);
+                    let observed_for_worker = Arc::clone(&observed_for_thread);
                     workers.push(thread::spawn(move || {
+                        stream
+                            .set_read_timeout(Some(idle_window))
+                            .expect("set observed response read timeout");
                         let cloned = stream.try_clone().expect("clone observed response stream");
                         let mut reader = BufReader::new(cloned);
                         let mut line = String::new();
                         loop {
-                            line.clear();
-                            let bytes = reader.read_line(&mut line).expect("read observed request");
-                            if bytes == 0 || line == "\r\n" {
-                                break;
+                            let mut saw_request = false;
+                            loop {
+                                line.clear();
+                                let bytes = match reader.read_line(&mut line) {
+                                    Ok(bytes) => bytes,
+                                    Err(error)
+                                        if matches!(
+                                            error.kind(),
+                                            std::io::ErrorKind::WouldBlock
+                                                | std::io::ErrorKind::TimedOut
+                                        ) =>
+                                    {
+                                        return;
+                                    }
+                                    Err(error) => panic!("read observed request: {error}"),
+                                };
+                                if bytes == 0 {
+                                    return;
+                                }
+                                if line == "\r\n" {
+                                    break;
+                                }
+                                saw_request = true;
                             }
-                        }
+                            if !saw_request {
+                                return;
+                            }
+                            observed_for_worker.fetch_add(1, Ordering::SeqCst);
 
-                        thread::sleep(delay);
-                        let body = "{\"id\":\"resp-observed\",\"output_text\":\"observed submit complete\"}";
-                        write!(
-                            stream,
-                            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-                            body.len(),
-                            body
-                        )
-                        .expect("write observed response");
-                        stream.flush().expect("flush observed response");
+                            thread::sleep(delay);
+                            let body =
+                                "{\"id\":\"resp-observed\",\"output_text\":\"observed submit complete\"}";
+                            write!(
+                                stream,
+                                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: keep-alive\r\n\r\n{}",
+                                body.len(),
+                                body
+                            )
+                            .expect("write observed response");
+                            stream.flush().expect("flush observed response");
+                        }
                     }));
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
@@ -396,31 +423,57 @@ fn start_observed_status_server(
             }
             match listener.accept() {
                 Ok((mut stream, _)) => {
-                    observed_for_thread.fetch_add(1, Ordering::SeqCst);
                     idle_deadline = Some(std::time::Instant::now() + idle_window);
+                    let observed_for_worker = Arc::clone(&observed_for_thread);
                     let status_line = status_line.clone();
                     workers.push(thread::spawn(move || {
+                        stream
+                            .set_read_timeout(Some(idle_window))
+                            .expect("set observed status read timeout");
                         let cloned = stream.try_clone().expect("clone observed status stream");
                         let mut reader = BufReader::new(cloned);
                         let mut line = String::new();
                         loop {
-                            line.clear();
-                            let bytes = reader.read_line(&mut line).expect("read observed status request");
-                            if bytes == 0 || line == "\r\n" {
-                                break;
+                            let mut saw_request = false;
+                            loop {
+                                line.clear();
+                                let bytes = match reader.read_line(&mut line) {
+                                    Ok(bytes) => bytes,
+                                    Err(error)
+                                        if matches!(
+                                            error.kind(),
+                                            std::io::ErrorKind::WouldBlock
+                                                | std::io::ErrorKind::TimedOut
+                                        ) =>
+                                    {
+                                        return;
+                                    }
+                                    Err(error) => panic!("read observed status request: {error}"),
+                                };
+                                if bytes == 0 {
+                                    return;
+                                }
+                                if line == "\r\n" {
+                                    break;
+                                }
+                                saw_request = true;
                             }
-                        }
+                            if !saw_request {
+                                return;
+                            }
+                            observed_for_worker.fetch_add(1, Ordering::SeqCst);
 
-                        thread::sleep(delay);
-                        let body = "{\"error\":\"simulated\"}";
-                        write!(
-                            stream,
-                            "HTTP/1.1 {status_line}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-                            body.len(),
-                            body
-                        )
-                        .expect("write observed status response");
-                        stream.flush().expect("flush observed status response");
+                            thread::sleep(delay);
+                            let body = "{\"error\":\"simulated\"}";
+                            write!(
+                                stream,
+                                "HTTP/1.1 {status_line}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: keep-alive\r\n\r\n{}",
+                                body.len(),
+                                body
+                            )
+                            .expect("write observed status response");
+                            stream.flush().expect("flush observed status response");
+                        }
                     }));
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
@@ -440,10 +493,8 @@ fn start_observed_status_server(
 
 #[test]
 fn observed_request_server_waits_for_first_late_connection() {
-    let (base_url, observed_requests, server_thread) = start_observed_request_server(
-        Duration::from_millis(10),
-        Duration::from_millis(50),
-    );
+    let (base_url, observed_requests, server_thread) =
+        start_observed_request_server(Duration::from_millis(10), Duration::from_millis(50));
     let address = base_url
         .strip_prefix("http://")
         .expect("base url host:port")
