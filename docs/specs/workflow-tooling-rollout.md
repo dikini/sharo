@@ -200,11 +200,12 @@ Property-based (optional):
 
 **Preconditions**
 
-- Deterministic seed policy and CI runtime bounds are defined.
+- Property-test runtime bounds and regression-replay guidance are defined.
 
 **Invariants**
 
-- Property tests remain bounded and deterministic in CI.
+- Property tests remain bounded in CI.
+- Regression discoveries from generative testing can be replayed with captured seeds or minimized failing inputs.
 
 **Postconditions**
 
@@ -280,5 +281,5 @@ Property-based (optional):
 
 ## References
 
-- [deterministic-workflow-hardening.md](docs/specs/deterministic-workflow-hardening.md)
+- [deterministic-workflow-hardening.md](deterministic-workflow-hardening.md)
 - Rust skills: `test-proptest-properties`, `async-no-lock-await`, `err-result-over-panic`, `lint-workspace-lints`

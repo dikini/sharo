@@ -20,6 +20,9 @@ Options:
   --full      Run deeper fuzzing profile (required unless --smoke is set).
   --changed   Fuzz only targets for fuzz-enabled crates touched in working tree.
   --all       Fuzz all discovered targets across all fuzz-enabled crates.
+
+Environment:
+  SHARO_FUZZ_SEED  Optional explicit seed for deterministic reproduction.
 USAGE
 }
 
@@ -117,11 +120,18 @@ for crate_dir in "${fuzz_crates[@]}"; do
     continue
   fi
   for target in "${targets[@]}"; do
-    echo "check-fuzz: crate=$crate_dir target=$target profile=$profile runs=$runs max_total_time=$max_total_time max_len=$max_len"
+    seed_args=()
+    if [[ -n "${SHARO_FUZZ_SEED:-}" ]]; then
+      seed_args+=("-seed=${SHARO_FUZZ_SEED}")
+      seed_label=" explicit_seed=${SHARO_FUZZ_SEED}"
+    else
+      seed_label=" seed=random"
+    fi
+    echo "check-fuzz: crate=$crate_dir target=$target profile=$profile runs=$runs max_total_time=$max_total_time max_len=$max_len$seed_label"
     (
       cd "$crate_dir"
       cargo fuzz run "$target" -- \
-        -seed=1 \
+        "${seed_args[@]}" \
         -runs="$runs" \
         -max_total_time="$max_total_time" \
         -max_len="$max_len"

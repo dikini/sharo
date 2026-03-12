@@ -20,6 +20,41 @@ Task-Registry-Refs: TASK-WORKFLOW-TOOLING-PLAN-001, TASK-WORKFLOW-TOOLING-SPEC-0
 
 ---
 
+## Instruction Priority
+
+1. System and developer workflow constraints.
+2. This plan's rollout order and verification gates.
+3. Existing workflow scripts, tests, and CI jobs referenced by each task.
+
+## Output Contract
+
+- Keep workflow-tooling rollout behavior aligned with the canonical spec.
+- Preserve bounded generative testing while using deterministic replay only for captured regressions.
+- Maintain script-first and CI-first verification entrypoints documented in this plan.
+
+## Model Compatibility Notes
+
+- This plan governs workflow scripts, CI configuration, and bounded test coverage rather than Rust runtime behavior.
+- Generative testing guidance should prefer exploratory runs by default and explicit deterministic replay for known failures.
+
+## Execution Mode
+
+- Execute tasks in the documented order unless a review finding requires a narrower corrective patch.
+- Re-run the named red/green commands for the touched task before completion claims.
+
+## Task Update Contract
+
+- Update `CHANGELOG.md` for task-completion work.
+- Keep `docs/tasks/tasks.csv` synchronized whenever this plan or its owned scripts change.
+- Record seed-policy or replay-policy changes in the relevant workflow docs when generative testing behavior changes.
+
+## Completion Gate
+
+- `scripts/doc-lint.sh --changed --strict-new`
+- `scripts/check-tasks-sync.sh --changed`
+- Task-scoped shell or Rust verification listed in the touched task
+- Any higher-level fast-feedback or pre-push gate required by repository policy
+
 ### Task 1: Add `cargo-nextest` test path
 
 **Files:**
@@ -293,11 +328,12 @@ Re-run: `scripts/check-fast-feedback.sh`
 
 **Preconditions**
 
-- Property-test runtime budget and seed policy are documented.
+- Property-test runtime budget and regression-replay guidance are documented.
 
 **Invariants**
 
-- Property tests are deterministic in CI via fixed seed and bounded case count.
+- Property tests are bounded in CI via explicit case-count/runtime limits.
+- Failing generative runs can be replayed deterministically via captured seeds or minimized inputs.
 - Existing example-based tests remain unchanged unless redundancy is intentional.
 
 **Postconditions**
@@ -326,7 +362,7 @@ Expected: fails because proptest case is missing.
 **Implementation Steps**
 
 1. Add failing property tests in core and daemon test modules.
-2. Add proptest dependency and deterministic config (case cap + seed policy).
+2. Add proptest dependency and bounded config (case cap plus explicit failure replay guidance).
 3. Wire property tests into CI in a bounded profile.
 
 **Green Phase (required)**

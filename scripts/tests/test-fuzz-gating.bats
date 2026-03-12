@@ -49,4 +49,10 @@ setup() {
 
   run rg -- '--full --all' "$ROOT/scripts/check-fuzz.sh"
   [ "$status" -eq 0 ]
+
+  run rg 'SHARO_FUZZ_SEED' "$ROOT/scripts/check-fuzz.sh"
+  [ "$status" -eq 0 ]
+
+  run rg -- '-seed=1' "$ROOT/scripts/check-fuzz.sh"
+  [ "$status" -ne 0 ]
 }

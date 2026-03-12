@@ -55,6 +55,11 @@ The format is based on Common Changelog:
   - syncing the extracted backbone template workflow/tooling to the same CI-smoke and nightly-fuzz split
 - Added the `nightly-fuzz` workflow badge to the top-level `README.md`.
 
+### Changed
+
+- Changed generative-test workflow policy to prefer bounded exploratory runs by default and deterministic replay only for captured fuzzing or property-test regressions.
+- Changed `scripts/check-fuzz.sh` to remove the fixed default libFuzzer seed and to accept optional deterministic reproduction through `SHARO_FUZZ_SEED`.
+
 ### Fixed
 
 - Fixed `policy-checks` docs lint failures in the Docker runtime docs by replacing workstation-specific absolute Markdown links with repository-relative links that resolve correctly in GitHub Actions checkouts.
