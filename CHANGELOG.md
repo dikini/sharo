@@ -14,12 +14,19 @@ The format is based on Common Changelog:
   - persisting durable Hazel preview, validation, submission, proposal-batch, and sleep-job records in the daemon store
   - adding `sharo` CLI Hazel operator commands and a `sharo-tui` Hazel screen with slash-command access to status, cards, jobs, preview, submission, and job cancellation
   - updating the Hazel inspection spec/design/plan and closing `TASK-HAZEL-INSPECTION-SPEC-001`, `TASK-HAZEL-INSPECTION-DESIGN-001`, and `TASK-HAZEL-INSPECTION-PLAN-001`
+- Added daemon-first container packaging by:
+  - introducing a multi-stage root `Dockerfile` that builds on `rust:1.94-slim`, verifies the workspace in a dedicated `test` stage, and ships a `debian:trixie-slim` runtime image
+  - shipping `sharo`, `sharo-daemon`, `sharo-tui`, and `sharo-hazel-mcp` in the runtime image
+  - adding `scripts/docker-build.sh`, `scripts/docker-smoke.sh`, `just docker-build`, and `just docker-smoke` plus operator docs for local container workflows
+  - documenting the canonical Dockerfile, the runtime process, and a dedicated devops runbook for build, smoke, release, and troubleshooting procedures
 
 ### Fixed
 
 - Fixed `policy-checks` dependency-security failures for the new TUI dependency path by:
   - allowing the transitive `Zlib` SPDX license required by `ratatui` in `deny.toml`
   - ignoring `RUSTSEC-2024-0436` for transitive `paste` until an upstream `ratatui` replacement path exists
+- Fixed containerized test-stage parity by making the daemon shutdown-drain SIGINT test use `/bin/sh`'s built-in `kill` instead of assuming an external `kill` binary is installed in the builder image.
+- Fixed local container workflow hygiene by ignoring common Docker and BuildKit cache/state artifacts in the repository `.gitignore`.
 - Fixed flaky CI-parity daemon scenario coverage by accepting equivalent fail-closed terminal save errors when the store directory is removed mid-write during `same_process_retry_after_terminal_save_failure_is_not_stuck_in_progress`.
 - Fixed flaky daemon scenario mock-provider listeners by giving observed test servers a bounded startup wait before they switch into duplicate-request idle-window tracking, which keeps duplicate-submit coverage stable on slower CI runners.
 - Removed generated fuzz `corpus/` files from tracked branch history for the chat-first TUI worktree and ignored local fuzz `corpus/` output in per-crate fuzz `.gitignore` files.

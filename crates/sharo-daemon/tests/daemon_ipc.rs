@@ -2158,8 +2158,8 @@ fn ctrl_c_waits_for_inflight_request_completion() {
     });
 
     thread::sleep(Duration::from_millis(80));
-    let signal_status = Command::new("kill")
-        .args(["-INT", &child.id().to_string()])
+    let signal_status = Command::new("/bin/sh")
+        .args(["-c", &format!("kill -INT {}", child.id())])
         .status()
         .expect("send SIGINT");
     assert!(signal_status.success(), "failed to send SIGINT");

@@ -35,3 +35,9 @@ rust-hygiene:
 
 openai-live-smoke:
     scripts/openai-live-smoke.sh
+
+docker-build:
+    scripts/docker-build.sh
+
+docker-smoke:
+    scripts/docker-smoke.sh

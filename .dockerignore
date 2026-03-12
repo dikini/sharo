@@ -1,0 +1,10 @@
+.git
+.githooks
+.github
+.local
+.tools
+.worktrees
+target
+docs
+scripts
+

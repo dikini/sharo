@@ -2,3 +2,6 @@
 /.tools
 /.worktrees
 /.local
+/.buildx-cache
+/.docker-buildx
+/docker-data
