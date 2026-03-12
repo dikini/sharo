@@ -214,6 +214,7 @@ impl DaemonClient {
     }
 }
 
+#[derive(Clone)]
 pub struct App {
     client: DaemonClient,
     state: AppState,
@@ -318,7 +319,9 @@ impl App {
             .client
             .list_sessions()
             .map(|response| response.sessions)
-            .unwrap_or_else(|_| synthesize_created_session(self.state.sessions(), &session_id, session_label));
+            .unwrap_or_else(|_| {
+                synthesize_created_session(self.state.sessions(), &session_id, session_label)
+            });
         self.state.set_sessions(sessions);
         self.apply_session_presentation(Some(session_id.clone()), presentation);
         Ok(session_id)
@@ -383,6 +386,14 @@ impl App {
             .unwrap_or_else(|| "no active session\n".to_string())
     }
 
+    pub fn render_sessions(&self) -> String {
+        sessions::render_sessions(self.state.sessions(), self.state.active_session_id())
+    }
+
+    pub fn render_approvals(&self) -> String {
+        approvals::render_approvals(self.state.approvals())
+    }
+
     pub fn render_settings(&self) -> String {
         let runtime = self.runtime_status.as_ref();
         let model_profile_id = runtime.and_then(|status| status.status.model_profile_id.as_deref());
@@ -403,6 +414,46 @@ impl App {
             self.selected_trace.as_ref(),
             &self.selected_artifacts,
         )
+    }
+
+    pub fn refresh_dynamic_state(&mut self) -> Result<(), String> {
+        self.refresh_sessions()?;
+        self.refresh_approvals()?;
+        self.refresh_settings_data()?;
+        Ok(())
+    }
+
+    pub fn apply_worker_snapshot(&mut self, snapshot: App) {
+        self.state
+            .set_daemon_connected(snapshot.state.daemon_connected());
+        self.state
+            .set_daemon_warning(snapshot.state.daemon_warning().map(ToOwned::to_owned));
+        self.state.set_sessions(snapshot.state.sessions().to_vec());
+        self.state
+            .set_active_session_id(snapshot.state.active_session_id().map(ToOwned::to_owned));
+        self.state
+            .set_current_session_view(snapshot.state.current_session_view().cloned());
+        self.state
+            .set_approvals(snapshot.state.approvals().to_vec());
+        self.runtime_status = snapshot.runtime_status;
+        self.active_skills = snapshot.active_skills;
+        self.mcp_servers = snapshot.mcp_servers;
+        self.selected_task_id = snapshot.selected_task_id;
+        self.selected_trace = snapshot.selected_trace;
+        self.selected_artifacts = snapshot.selected_artifacts;
+    }
+
+    pub fn apply_local_session_focus(&mut self, session_id: Option<&str>) {
+        if self.state.active_session_id() == session_id {
+            return;
+        }
+        self.state
+            .set_active_session_id(session_id.map(ToOwned::to_owned));
+        self.state.set_current_session_view(None);
+        self.active_skills.clear();
+        self.selected_task_id = None;
+        self.selected_trace = None;
+        self.selected_artifacts.clear();
     }
 
     fn refresh_approvals(&mut self) -> Result<(), String> {
@@ -634,10 +685,8 @@ impl App {
     fn render_active_screen(&self) -> String {
         match self.state.active_screen() {
             Screen::Chat => self.render_chat(),
-            Screen::Sessions => {
-                sessions::render_sessions(self.state.sessions(), self.state.active_session_id())
-            }
-            Screen::Approvals => approvals::render_approvals(self.state.approvals()),
+            Screen::Sessions => self.render_sessions(),
+            Screen::Approvals => self.render_approvals(),
             Screen::TraceArtifacts => self.render_trace_artifacts(),
             Screen::Settings => self.render_settings(),
         }

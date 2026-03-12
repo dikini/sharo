@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use clap::Parser;
 use sharo_tui::app::{App, DaemonClient};
 use sharo_tui::state::Screen;
+use sharo_tui::tui_loop;
 
 const DEFAULT_SOCKET_PATH: &str = "/tmp/sharo-daemon.sock";
 
@@ -34,5 +35,8 @@ fn main() {
         return;
     }
 
-    print!("{rendered}");
+    if let Err(message) = tui_loop::run(app) {
+        eprintln!("tui_error={message}");
+        std::process::exit(1);
+    }
 }
