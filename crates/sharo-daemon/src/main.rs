@@ -8,10 +8,14 @@ use clap::{Parser, Subcommand};
 use sharo_core::client::{RuntimeClient, StubClient};
 use sharo_core::kernel::KernelApprovalInput;
 use sharo_core::protocol::{
-    DaemonRequest, DaemonResponse, GetArtifactsResponse, GetRuntimeStatusResponse,
-    GetSessionTasksResponse, GetSessionViewResponse, GetTaskResponse, GetTraceResponse,
-    ListMcpServersResponse, RegisterSessionResponse, SubmitTaskOpResponse, TaskStatusRequest,
-    UpdateMcpServerStateResponse,
+    CancelHazelSleepJobResponse, DaemonRequest, DaemonResponse, EnqueueHazelSleepJobResponse,
+    GetArtifactsResponse, GetHazelCardResponse,
+    GetHazelProposalBatchResponse, GetHazelSleepJobResponse, GetHazelStatusResponse,
+    GetRuntimeStatusResponse, GetSessionTasksResponse, GetSessionViewResponse, GetTaskResponse,
+    GetTraceResponse, HazelRetrievalPreviewResponse, ListHazelCardsResponse,
+    ListHazelProposalBatchesResponse, ListHazelSleepJobsResponse, ListMcpServersResponse,
+    RegisterSessionResponse, SubmitHazelProposalBatchResponse, SubmitTaskOpResponse,
+    TaskStatusRequest, UpdateMcpServerStateResponse, ValidateHazelProposalBatchResponse,
 };
 use sharo_core::reasoning::ReasoningError;
 use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -21,6 +25,7 @@ use tokio::task::JoinSet;
 mod config;
 mod connector_pool;
 mod control_plane;
+mod hazel_control_plane;
 mod kernel;
 mod mcp_registry;
 mod skills;
@@ -198,6 +203,121 @@ fn handle_request(request: DaemonRequest, state: &AppState) -> DaemonResponse {
                 .mcp_registry
                 .runtime_status(&mcp_overrides(&store), &state.model_config);
             DaemonResponse::GetRuntimeStatus(GetRuntimeStatusResponse { status })
+        }
+        DaemonRequest::GetHazelStatus => {
+            DaemonResponse::GetHazelStatus(GetHazelStatusResponse {
+                status: hazel_control_plane::get_hazel_status(&lock_unpoisoned(&state.store)).status,
+            })
+        }
+        DaemonRequest::ListHazelCards(payload) => {
+            DaemonResponse::ListHazelCards(ListHazelCardsResponse {
+                cards: hazel_control_plane::list_hazel_cards(payload.limit).cards,
+            })
+        }
+        DaemonRequest::GetHazelCard(payload) => {
+            match hazel_control_plane::get_hazel_card(&payload.card_id) {
+                Some(card) => DaemonResponse::GetHazelCard(GetHazelCardResponse { card }),
+                None => DaemonResponse::Error {
+                    message: format!("hazel_card_not_found card_id={}", payload.card_id),
+                },
+            }
+        }
+        DaemonRequest::ListHazelProposalBatches(payload) => {
+            DaemonResponse::ListHazelProposalBatches(ListHazelProposalBatchesResponse {
+                batches: hazel_control_plane::list_hazel_proposal_batches(
+                    &lock_unpoisoned(&state.store),
+                    payload.limit,
+                )
+                .batches,
+            })
+        }
+        DaemonRequest::GetHazelProposalBatch(payload) => {
+            match hazel_control_plane::get_hazel_proposal_batch(
+                &lock_unpoisoned(&state.store),
+                &payload.batch_id,
+            ) {
+                Some(batch) => {
+                    DaemonResponse::GetHazelProposalBatch(GetHazelProposalBatchResponse { batch })
+                }
+                None => DaemonResponse::Error {
+                    message: format!("hazel_proposal_batch_not_found batch_id={}", payload.batch_id),
+                },
+            }
+        }
+        DaemonRequest::ListHazelSleepJobs(payload) => {
+            DaemonResponse::ListHazelSleepJobs(ListHazelSleepJobsResponse {
+                jobs: hazel_control_plane::list_hazel_sleep_jobs(
+                    &lock_unpoisoned(&state.store),
+                    payload.limit,
+                )
+                .jobs,
+            })
+        }
+        DaemonRequest::GetHazelSleepJob(payload) => {
+            match hazel_control_plane::get_hazel_sleep_job(
+                &lock_unpoisoned(&state.store),
+                &payload.job_id,
+            ) {
+                Some(job) => DaemonResponse::GetHazelSleepJob(GetHazelSleepJobResponse { job }),
+                None => DaemonResponse::Error {
+                    message: format!("hazel_sleep_job_not_found job_id={}", payload.job_id),
+                },
+            }
+        }
+        DaemonRequest::HazelPreview(payload) => {
+            match hazel_control_plane::preview_hazel_retrieval(
+                &mut lock_unpoisoned(&state.store),
+                payload,
+            ) {
+                Ok(response) => {
+                    DaemonResponse::HazelPreview(HazelRetrievalPreviewResponse { ..response })
+                }
+                Err(message) => DaemonResponse::Error { message },
+            }
+        }
+        DaemonRequest::ValidateHazelProposalBatch(payload) => {
+            match hazel_control_plane::validate_hazel_proposal_batch_action(
+                &mut lock_unpoisoned(&state.store),
+                payload,
+            ) {
+                Ok(response) => DaemonResponse::ValidateHazelProposalBatch(
+                    ValidateHazelProposalBatchResponse { ..response },
+                ),
+                Err(message) => DaemonResponse::Error { message },
+            }
+        }
+        DaemonRequest::SubmitHazelProposalBatch(payload) => {
+            match hazel_control_plane::submit_hazel_proposal_batch_action(
+                &mut lock_unpoisoned(&state.store),
+                payload,
+            ) {
+                Ok(response) => DaemonResponse::SubmitHazelProposalBatch(
+                    SubmitHazelProposalBatchResponse { ..response },
+                ),
+                Err(message) => DaemonResponse::Error { message },
+            }
+        }
+        DaemonRequest::EnqueueHazelSleepJob(payload) => {
+            match hazel_control_plane::enqueue_hazel_sleep_job_action(
+                &mut lock_unpoisoned(&state.store),
+                payload,
+            ) {
+                Ok(response) => DaemonResponse::EnqueueHazelSleepJob(
+                    EnqueueHazelSleepJobResponse { ..response },
+                ),
+                Err(message) => DaemonResponse::Error { message },
+            }
+        }
+        DaemonRequest::CancelHazelSleepJob(payload) => {
+            match hazel_control_plane::cancel_hazel_sleep_job_action(
+                &mut lock_unpoisoned(&state.store),
+                &payload.job_id,
+            ) {
+                Ok(response) => DaemonResponse::CancelHazelSleepJob(
+                    CancelHazelSleepJobResponse { ..response },
+                ),
+                Err(message) => DaemonResponse::Error { message },
+            }
         }
         DaemonRequest::GetTrace(payload) => {
             match lock_unpoisoned(&state.store).get_trace(&payload.task_id) {

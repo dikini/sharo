@@ -14,10 +14,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 compile_error!("sharo-daemon store persistence currently supports unix targets only");
 
 use serde::{Deserialize, Serialize};
+use sharo_hazel_core::proposal::ProposalBatch;
 use sharo_core::protocol::{
-    ApprovalSummary, ArtifactSummary, ListPendingApprovalsResponse, ResolveApprovalResponse,
-    SessionSummary, SubmitTaskOpRequest, SubmitTaskOpResponse, TaskSummary, TraceEventSummary,
-    TraceSummary,
+    ApprovalSummary, ArtifactSummary, HazelSleepJobState, ListPendingApprovalsResponse,
+    RecollectionPayload, ResolveApprovalResponse, SessionSummary, SubmitTaskOpRequest,
+    SubmitTaskOpResponse, TaskSummary, TraceEventSummary, TraceSummary,
 };
 use sharo_core::reasoning_context::FitLoopRecord;
 use sharo_core::runtime_types::{BindingRecord, BindingVisibility};
@@ -41,6 +42,11 @@ struct PersistedState {
     artifacts: BTreeMap<String, Vec<ArtifactSummary>>,
     bindings: BTreeMap<String, Vec<BindingRecord>>,
     approvals: BTreeMap<String, ApprovalRecord>,
+    hazel_preview_records: BTreeMap<String, HazelPreviewRecord>,
+    hazel_validation_records: BTreeMap<String, HazelValidationRecord>,
+    hazel_submission_records: BTreeMap<String, HazelSubmissionRecord>,
+    hazel_proposal_batches: BTreeMap<String, ProposalBatch>,
+    hazel_sleep_jobs: BTreeMap<String, HazelSleepJobRecord>,
     resource_claims: BTreeMap<String, Vec<String>>,
     idempotency_keys: BTreeMap<String, String>,
     idempotency_failures: BTreeMap<String, String>,
@@ -52,6 +58,9 @@ struct PersistedState {
     next_conflict_id: u64,
     next_binding_id: u64,
     next_activity_sequence: u64,
+    next_hazel_preview_id: u64,
+    next_hazel_validation_id: u64,
+    next_hazel_submission_id: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -67,6 +76,37 @@ struct ApprovalRecord {
     reason: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct HazelSleepJobRecord {
+    job_id: String,
+    state: HazelSleepJobState,
+    run_id: Option<String>,
+    proposal_batch_ids: Vec<String>,
+    summary: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct HazelPreviewRecord {
+    preview_id: String,
+    payload: RecollectionPayload,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct HazelValidationRecord {
+    validation_id: String,
+    batch_id: String,
+    accepted: bool,
+    summary: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct HazelSubmissionRecord {
+    submission_id: String,
+    batch_id: String,
+    state: String,
+    summary: String,
+}
+
 impl Default for PersistedState {
     fn default() -> Self {
         Self {
@@ -78,6 +118,11 @@ impl Default for PersistedState {
             artifacts: BTreeMap::new(),
             bindings: BTreeMap::new(),
             approvals: BTreeMap::new(),
+            hazel_preview_records: BTreeMap::new(),
+            hazel_validation_records: BTreeMap::new(),
+            hazel_submission_records: BTreeMap::new(),
+            hazel_proposal_batches: BTreeMap::new(),
+            hazel_sleep_jobs: BTreeMap::new(),
             resource_claims: BTreeMap::new(),
             idempotency_keys: BTreeMap::new(),
             idempotency_failures: BTreeMap::new(),
@@ -89,6 +134,9 @@ impl Default for PersistedState {
             next_conflict_id: 1,
             next_binding_id: 1,
             next_activity_sequence: 1,
+            next_hazel_preview_id: 1,
+            next_hazel_validation_id: 1,
+            next_hazel_submission_id: 1,
         }
     }
 }
@@ -958,6 +1006,190 @@ impl Store {
             .collect::<Vec<_>>();
         approvals.sort_by_key(|approval| parse_id_sequence(&approval.task_id));
         approvals
+    }
+
+    pub fn hazel_proposal_batch_count(&self) -> usize {
+        self.state.hazel_proposal_batches.len()
+    }
+
+    pub fn hazel_sleep_job_count(&self) -> usize {
+        self.state.hazel_sleep_jobs.len()
+    }
+
+    pub fn record_hazel_preview(
+        &mut self,
+        payload: RecollectionPayload,
+    ) -> Result<String, String> {
+        self.commit_mutation(|state| {
+            let preview_id = format!("hazel-preview-{:06}", state.next_hazel_preview_id);
+            state.next_hazel_preview_id += 1;
+            state.hazel_preview_records.insert(
+                preview_id.clone(),
+                HazelPreviewRecord {
+                    preview_id: preview_id.clone(),
+                    payload,
+                },
+            );
+            Ok(preview_id)
+        })
+    }
+
+    pub fn record_hazel_validation(
+        &mut self,
+        batch_id: &str,
+        accepted: bool,
+        summary: &str,
+    ) -> Result<String, String> {
+        self.commit_mutation(|state| {
+            let validation_id =
+                format!("hazel-validation-{:06}", state.next_hazel_validation_id);
+            state.next_hazel_validation_id += 1;
+            state.hazel_validation_records.insert(
+                validation_id.clone(),
+                HazelValidationRecord {
+                    validation_id: validation_id.clone(),
+                    batch_id: batch_id.to_string(),
+                    accepted,
+                    summary: summary.to_string(),
+                },
+            );
+            Ok(validation_id)
+        })
+    }
+
+    pub fn record_hazel_submission(
+        &mut self,
+        batch_id: &str,
+        state_value: &str,
+        summary: &str,
+    ) -> Result<String, String> {
+        self.commit_mutation(|state| {
+            let submission_id =
+                format!("hazel-submission-{:06}", state.next_hazel_submission_id);
+            state.next_hazel_submission_id += 1;
+            state.hazel_submission_records.insert(
+                submission_id.clone(),
+                HazelSubmissionRecord {
+                    submission_id: submission_id.clone(),
+                    batch_id: batch_id.to_string(),
+                    state: state_value.to_string(),
+                    summary: summary.to_string(),
+                },
+            );
+            Ok(submission_id)
+        })
+    }
+
+    pub fn list_hazel_proposal_batches(&self) -> Vec<ProposalBatch> {
+        let mut batches = self
+            .state
+            .hazel_proposal_batches
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        batches.sort_by(|left, right| left.batch_id.cmp(&right.batch_id));
+        batches
+    }
+
+    pub fn get_hazel_proposal_batch(&self, batch_id: &str) -> Option<ProposalBatch> {
+        self.state.hazel_proposal_batches.get(batch_id).cloned()
+    }
+
+    pub fn list_hazel_sleep_jobs(
+        &self,
+    ) -> Vec<(String, HazelSleepJobState, Option<String>, Vec<String>, String)> {
+        let mut jobs = self
+            .state
+            .hazel_sleep_jobs
+            .values()
+            .map(|job| {
+                (
+                    job.job_id.clone(),
+                    job.state.clone(),
+                    job.run_id.clone(),
+                    job.proposal_batch_ids.clone(),
+                    job.summary.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        jobs.sort_by(|left, right| left.0.cmp(&right.0));
+        jobs
+    }
+
+    pub fn get_hazel_sleep_job(
+        &self,
+        job_id: &str,
+    ) -> Option<(String, HazelSleepJobState, Option<String>, Vec<String>, String)> {
+        self.state.hazel_sleep_jobs.get(job_id).map(|job| {
+            (
+                job.job_id.clone(),
+                job.state.clone(),
+                job.run_id.clone(),
+                job.proposal_batch_ids.clone(),
+                job.summary.clone(),
+            )
+        })
+    }
+
+    pub fn record_hazel_proposal_batch(&mut self, batch: ProposalBatch) -> Result<(), String> {
+        self.commit_mutation(|state| {
+            state
+                .hazel_proposal_batches
+                .insert(batch.batch_id.clone(), batch);
+            Ok(())
+        })
+    }
+
+    pub fn update_hazel_sleep_job_state(
+        &mut self,
+        job_id: &str,
+        state_value: HazelSleepJobState,
+        summary: &str,
+    ) -> Result<(String, HazelSleepJobState, Option<String>, Vec<String>, String), String> {
+        self.commit_mutation(|state| {
+            let job = state
+                .hazel_sleep_jobs
+                .get_mut(job_id)
+                .ok_or_else(|| format!("hazel_sleep_job_not_found job_id={job_id}"))?;
+            if job.state != HazelSleepJobState::Pending {
+                return Err(format!(
+                    "hazel_sleep_job_cancel_invalid job_id={} state={:?}",
+                    job_id, job.state
+                ));
+            }
+            job.state = state_value;
+            job.summary = summary.to_string();
+            Ok((
+                job.job_id.clone(),
+                job.state.clone(),
+                job.run_id.clone(),
+                job.proposal_batch_ids.clone(),
+                job.summary.clone(),
+            ))
+        })
+    }
+
+    pub fn record_hazel_sleep_job(
+        &mut self,
+        job_id: &str,
+        state_value: HazelSleepJobState,
+        run_id: Option<String>,
+        proposal_batch_ids: Vec<String>,
+        summary: &str,
+    ) -> Result<(), String> {
+        self.commit_mutation(|state| {
+            state.hazel_sleep_jobs.insert(
+                job_id.to_string(),
+                HazelSleepJobRecord {
+                    job_id: job_id.to_string(),
+                    state: state_value,
+                    run_id,
+                    proposal_batch_ids,
+                    summary: summary.to_string(),
+                },
+            );
+            Ok(())
+        })
     }
 
     fn owns_in_flight_idempotency(

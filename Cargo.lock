@@ -1542,6 +1542,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "sharo-core",
+ "sharo-hazel-core",
  "tokio",
  "toml",
  "url",

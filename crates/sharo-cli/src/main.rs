@@ -3,9 +3,13 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand, ValueEnum};
 use sharo_core::client::{RuntimeClient, StubClient};
 use sharo_core::protocol::{
-    DaemonRequest, DaemonResponse, GetArtifactsRequest, GetTaskRequest, GetTraceRequest,
-    RegisterSessionRequest, ResolveApprovalRequest, SubmitTaskOpRequest, SubmitTaskRequest,
-    TaskStatusRequest,
+    CancelHazelSleepJobRequest, DaemonRequest, DaemonResponse, GetArtifactsRequest,
+    EnqueueHazelSleepJobRequest, GetTaskRequest, GetTraceRequest, HazelConversationMessage,
+    HazelRetrievalPreviewRequest, HazelSleepJobState, ListHazelCardsRequest,
+    ListHazelProposalBatchesRequest, ListHazelSleepJobsRequest, PrePromptComposeHookInput,
+    RegisterSessionRequest, ResolveApprovalRequest, SubmitHazelProposalBatchRequest,
+    SubmitTaskOpRequest, SubmitTaskRequest, TaskStatusRequest,
+    ValidateHazelProposalBatchRequest,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
@@ -78,6 +82,10 @@ enum Command {
         #[command(subcommand)]
         command: ApprovalCommand,
     },
+    Hazel {
+        #[command(subcommand)]
+        command: HazelCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -126,6 +134,47 @@ enum ApprovalCommand {
         approval_id: String,
         #[arg(long)]
         decision: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum HazelCommand {
+    Status,
+    Cards {
+        #[arg(long, default_value_t = 8)]
+        limit: u32,
+    },
+    Batches {
+        #[arg(long, default_value_t = 8)]
+        limit: u32,
+    },
+    Jobs {
+        #[arg(long, default_value_t = 8)]
+        limit: u32,
+    },
+    Preview {
+        #[arg(long)]
+        goal: String,
+    },
+    Submit {
+        #[arg(long)]
+        batch_id: String,
+    },
+    Validate {
+        #[arg(long)]
+        batch_id: String,
+    },
+    EnqueueJob {
+        #[arg(long)]
+        source_ref: String,
+        #[arg(long)]
+        idempotency_key: String,
+        #[arg(long)]
+        message: String,
+    },
+    CancelJob {
+        #[arg(long)]
+        job_id: String,
     },
 }
 
@@ -387,6 +436,246 @@ async fn run_ipc(cli: &Cli) -> Result<(), String> {
                 other => Err(format!("unexpected_response={:?}", other)),
             }
         }
+        Command::Hazel {
+            command: HazelCommand::Status,
+        } => match send_ipc(&cli.socket_path, &DaemonRequest::GetHazelStatus).await? {
+            DaemonResponse::GetHazelStatus(response) => {
+                println!(
+                    "available={} cards={} proposal_batches={} sleep_jobs={}",
+                    response.status.available,
+                    response.status.card_count,
+                    response.status.proposal_batch_count,
+                    response.status.sleep_job_count
+                );
+                Ok(())
+            }
+            DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
+            other => Err(format!("unexpected_response={:?}", other)),
+        },
+        Command::Hazel {
+            command: HazelCommand::Cards { limit },
+        } => match send_ipc(
+            &cli.socket_path,
+            &DaemonRequest::ListHazelCards(ListHazelCardsRequest { limit: Some(*limit) }),
+        )
+        .await?
+        {
+            DaemonResponse::ListHazelCards(response) => {
+                println!("hazel_cards={}", response.cards.len());
+                for card in response.cards {
+                    println!(
+                        "card_id={} subject={} provenance={}",
+                        card.card_id,
+                        encode_field_value(&card.subject),
+                        card.provenance.len()
+                    );
+                }
+                Ok(())
+            }
+            DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
+            other => Err(format!("unexpected_response={:?}", other)),
+        },
+        Command::Hazel {
+            command: HazelCommand::Batches { limit },
+        } => match send_ipc(
+            &cli.socket_path,
+            &DaemonRequest::ListHazelProposalBatches(ListHazelProposalBatchesRequest {
+                limit: Some(*limit),
+            }),
+        )
+        .await?
+        {
+            DaemonResponse::ListHazelProposalBatches(response) => {
+                println!("hazel_batches={}", response.batches.len());
+                for batch in response.batches {
+                    println!(
+                        "batch_id={} source_ref={} proposal_count={}",
+                        batch.batch_id,
+                        encode_field_value(&batch.source_ref),
+                        batch.proposal_count
+                    );
+                }
+                Ok(())
+            }
+            DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
+            other => Err(format!("unexpected_response={:?}", other)),
+        },
+        Command::Hazel {
+            command: HazelCommand::Jobs { limit },
+        } => match send_ipc(
+            &cli.socket_path,
+            &DaemonRequest::ListHazelSleepJobs(ListHazelSleepJobsRequest { limit: Some(*limit) }),
+        )
+        .await?
+        {
+            DaemonResponse::ListHazelSleepJobs(response) => {
+                println!("hazel_jobs={}", response.jobs.len());
+                for job in response.jobs {
+                    println!(
+                        "job_id={} state={} batches={}",
+                        job.job_id,
+                        hazel_sleep_job_state_label(job.state),
+                        job.proposal_batch_ids.len()
+                    );
+                }
+                Ok(())
+            }
+            DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
+            other => Err(format!("unexpected_response={:?}", other)),
+        },
+        Command::Hazel {
+            command: HazelCommand::Preview { goal },
+        } => match send_ipc(
+            &cli.socket_path,
+            &DaemonRequest::HazelPreview(HazelRetrievalPreviewRequest {
+                input: PrePromptComposeHookInput {
+                    session_id: "operator".to_string(),
+                    task_id: "hazel-preview".to_string(),
+                    goal: goal.clone(),
+                    runtime: "operator".to_string(),
+                    top_k: Some(3),
+                    token_budget: Some(128),
+                    relevance_threshold: Some(0.0),
+                    policy_ids: vec!["hunch.v1".to_string()],
+                    card_policy_hints: Vec::new(),
+                },
+            }),
+        )
+        .await?
+        {
+            DaemonResponse::HazelPreview(response) => {
+                println!(
+                    "preview_id={} cards={}",
+                    response.preview_id,
+                    response.payload.cards.len()
+                );
+                Ok(())
+            }
+            DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
+            other => Err(format!("unexpected_response={:?}", other)),
+        },
+        Command::Hazel {
+            command: HazelCommand::Submit { batch_id },
+        } => match send_ipc(
+            &cli.socket_path,
+            &DaemonRequest::SubmitHazelProposalBatch(SubmitHazelProposalBatchRequest {
+                batch_id: batch_id.clone(),
+                strict_policy_ids: vec!["hunch.v1".to_string()],
+            }),
+        )
+        .await?
+        {
+            DaemonResponse::SubmitHazelProposalBatch(response) => {
+                println!(
+                    "submission_id={} batch_id={} state={}",
+                    response.submission_id, response.batch_id, response.state
+                );
+                Ok(())
+            }
+            DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
+            other => Err(format!("unexpected_response={:?}", other)),
+        },
+        Command::Hazel {
+            command: HazelCommand::Validate { batch_id },
+        } => match send_ipc(
+            &cli.socket_path,
+            &DaemonRequest::ValidateHazelProposalBatch(ValidateHazelProposalBatchRequest {
+                batch_id: batch_id.clone(),
+                strict_policy_ids: vec!["hunch.v1".to_string()],
+            }),
+        )
+        .await?
+        {
+            DaemonResponse::ValidateHazelProposalBatch(response) => {
+                println!(
+                    "validation_id={} batch_id={} accepted={} summary={}",
+                    response.validation_id,
+                    response.batch_id,
+                    response.accepted,
+                    encode_field_value(&response.summary)
+                );
+                Ok(())
+            }
+            DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
+            other => Err(format!("unexpected_response={:?}", other)),
+        },
+        Command::Hazel {
+            command:
+                HazelCommand::EnqueueJob {
+                    source_ref,
+                    idempotency_key,
+                    message,
+                },
+        } => match send_ipc(
+            &cli.socket_path,
+            &DaemonRequest::EnqueueHazelSleepJob(EnqueueHazelSleepJobRequest {
+                job_id: None,
+                source_ref: source_ref.clone(),
+                idempotency_key: idempotency_key.clone(),
+                messages: vec![parse_hazel_message(message)?],
+                max_batches: 8,
+                max_proposals_per_batch: 64,
+            }),
+        )
+        .await?
+        {
+            DaemonResponse::EnqueueHazelSleepJob(response) => {
+                println!(
+                    "job_id={} state={} proposal_batches={}",
+                    response.job.job_id,
+                    hazel_sleep_job_state_label(response.job.state),
+                    response.proposal_batch_ids.len()
+                );
+                Ok(())
+            }
+            DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
+            other => Err(format!("unexpected_response={:?}", other)),
+        },
+        Command::Hazel {
+            command: HazelCommand::CancelJob { job_id },
+        } => match send_ipc(
+            &cli.socket_path,
+            &DaemonRequest::CancelHazelSleepJob(CancelHazelSleepJobRequest {
+                job_id: job_id.clone(),
+            }),
+        )
+        .await?
+        {
+            DaemonResponse::CancelHazelSleepJob(response) => {
+                println!(
+                    "job_id={} state={}",
+                    response.job.job_id,
+                    hazel_sleep_job_state_label(response.job.state)
+                );
+                Ok(())
+            }
+            DaemonResponse::Error { message } => Err(format!("daemon_error={}", message)),
+            other => Err(format!("unexpected_response={:?}", other)),
+        },
+    }
+}
+
+fn parse_hazel_message(input: &str) -> Result<HazelConversationMessage, String> {
+    let (role, content) = input
+        .split_once(':')
+        .ok_or_else(|| "hazel_message_invalid expected=role: content".to_string())?;
+    let role = role.trim();
+    let content = content.trim();
+    if role.is_empty() || content.is_empty() {
+        return Err("hazel_message_invalid expected=role: content".to_string());
+    }
+    Ok(HazelConversationMessage {
+        role: role.to_string(),
+        content: content.to_string(),
+    })
+}
+
+fn hazel_sleep_job_state_label(state: HazelSleepJobState) -> &'static str {
+    match state {
+        HazelSleepJobState::Pending => "pending",
+        HazelSleepJobState::Completed => "completed",
+        HazelSleepJobState::Failed => "failed",
+        HazelSleepJobState::Canceled => "canceled",
     }
 }
 

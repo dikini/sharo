@@ -4,13 +4,21 @@ use std::path::{Path, PathBuf};
 
 use sharo_core::mcp::{McpRuntimeStatus, McpServerSummary};
 use sharo_core::protocol::{
-    ArtifactSummary, DaemonRequest, DaemonResponse, GetArtifactsRequest, GetArtifactsResponse,
+    ArtifactSummary, CancelHazelSleepJobRequest, CancelHazelSleepJobResponse, DaemonRequest,
+    DaemonResponse, GetArtifactsRequest, GetArtifactsResponse, GetHazelStatusResponse,
     GetRuntimeStatusResponse, GetSessionViewRequest, GetSessionViewResponse, GetTraceRequest,
-    GetTraceResponse, ListMcpServersResponse, ListPendingApprovalsResponse, ListSessionsResponse,
-    ListSkillsRequest, ListSkillsResponse, RegisterSessionRequest, RegisterSessionResponse,
-    ResolveApprovalRequest, ResolveApprovalResponse, SessionSummary, SetSessionSkillsRequest,
-    SetSessionSkillsResponse, SubmitTaskOpRequest, SubmitTaskOpResponse, TaskSummary, TraceSummary,
-    UpdateMcpServerStateRequest, UpdateMcpServerStateResponse,
+    GetTraceResponse, HazelConversationMessage, HazelRetrievalPreviewRequest,
+    HazelRetrievalPreviewResponse,
+    ListHazelCardsRequest, ListHazelCardsResponse, ListHazelProposalBatchesRequest,
+    ListHazelProposalBatchesResponse, ListHazelSleepJobsRequest, ListHazelSleepJobsResponse,
+    ListMcpServersResponse, ListPendingApprovalsResponse, ListSessionsResponse, ListSkillsRequest,
+    ListSkillsResponse, PrePromptComposeHookInput, RegisterSessionRequest,
+    RegisterSessionResponse, ResolveApprovalRequest, ResolveApprovalResponse, SessionSummary,
+    SetSessionSkillsRequest, SetSessionSkillsResponse, SubmitHazelProposalBatchRequest,
+    SubmitHazelProposalBatchResponse, SubmitTaskOpRequest, SubmitTaskOpResponse, TaskSummary,
+    TraceSummary, UpdateMcpServerStateRequest, UpdateMcpServerStateResponse,
+    ValidateHazelProposalBatchRequest, ValidateHazelProposalBatchResponse,
+    EnqueueHazelSleepJobRequest, EnqueueHazelSleepJobResponse,
 };
 use sharo_core::skills::SkillCatalogEntry;
 
@@ -197,6 +205,144 @@ impl DaemonClient {
         }
     }
 
+    pub fn get_hazel_status(&self) -> Result<GetHazelStatusResponse, String> {
+        let response = self.send(&DaemonRequest::GetHazelStatus)?;
+        match response {
+            DaemonResponse::GetHazelStatus(status) => Ok(status),
+            DaemonResponse::Error { message } => Err(message),
+            other => Err(format!("unexpected_daemon_response response={other:?}")),
+        }
+    }
+
+    pub fn list_hazel_cards(&self, limit: u32) -> Result<ListHazelCardsResponse, String> {
+        let response = self.send(&DaemonRequest::ListHazelCards(ListHazelCardsRequest {
+            limit: Some(limit),
+        }))?;
+        match response {
+            DaemonResponse::ListHazelCards(cards) => Ok(cards),
+            DaemonResponse::Error { message } => Err(message),
+            other => Err(format!("unexpected_daemon_response response={other:?}")),
+        }
+    }
+
+    pub fn list_hazel_proposal_batches(
+        &self,
+        limit: u32,
+    ) -> Result<ListHazelProposalBatchesResponse, String> {
+        let response = self.send(&DaemonRequest::ListHazelProposalBatches(
+            ListHazelProposalBatchesRequest { limit: Some(limit) },
+        ))?;
+        match response {
+            DaemonResponse::ListHazelProposalBatches(batches) => Ok(batches),
+            DaemonResponse::Error { message } => Err(message),
+            other => Err(format!("unexpected_daemon_response response={other:?}")),
+        }
+    }
+
+    pub fn list_hazel_sleep_jobs(&self, limit: u32) -> Result<ListHazelSleepJobsResponse, String> {
+        let response = self.send(&DaemonRequest::ListHazelSleepJobs(
+            ListHazelSleepJobsRequest { limit: Some(limit) },
+        ))?;
+        match response {
+            DaemonResponse::ListHazelSleepJobs(jobs) => Ok(jobs),
+            DaemonResponse::Error { message } => Err(message),
+            other => Err(format!("unexpected_daemon_response response={other:?}")),
+        }
+    }
+
+    pub fn hazel_preview(&self, goal: &str) -> Result<HazelRetrievalPreviewResponse, String> {
+        let response = self.send(&DaemonRequest::HazelPreview(HazelRetrievalPreviewRequest {
+            input: PrePromptComposeHookInput {
+                session_id: "operator".to_string(),
+                task_id: "hazel-preview".to_string(),
+                goal: goal.to_string(),
+                runtime: "operator".to_string(),
+                top_k: Some(3),
+                token_budget: Some(128),
+                relevance_threshold: Some(0.0),
+                policy_ids: vec!["hunch.v1".to_string()],
+                card_policy_hints: Vec::new(),
+            },
+        }))?;
+        match response {
+            DaemonResponse::HazelPreview(preview) => Ok(preview),
+            DaemonResponse::Error { message } => Err(message),
+            other => Err(format!("unexpected_daemon_response response={other:?}")),
+        }
+    }
+
+    pub fn submit_hazel_batch(
+        &self,
+        batch_id: &str,
+    ) -> Result<SubmitHazelProposalBatchResponse, String> {
+        let response =
+            self.send(&DaemonRequest::SubmitHazelProposalBatch(SubmitHazelProposalBatchRequest {
+                batch_id: batch_id.to_string(),
+                strict_policy_ids: vec!["hunch.v1".to_string()],
+            }))?;
+        match response {
+            DaemonResponse::SubmitHazelProposalBatch(submission) => Ok(submission),
+            DaemonResponse::Error { message } => Err(message),
+            other => Err(format!("unexpected_daemon_response response={other:?}")),
+        }
+    }
+
+    pub fn validate_hazel_batch(
+        &self,
+        batch_id: &str,
+    ) -> Result<ValidateHazelProposalBatchResponse, String> {
+        let response = self.send(&DaemonRequest::ValidateHazelProposalBatch(
+            ValidateHazelProposalBatchRequest {
+                batch_id: batch_id.to_string(),
+                strict_policy_ids: vec!["hunch.v1".to_string()],
+            },
+        ))?;
+        match response {
+            DaemonResponse::ValidateHazelProposalBatch(validation) => Ok(validation),
+            DaemonResponse::Error { message } => Err(message),
+            other => Err(format!("unexpected_daemon_response response={other:?}")),
+        }
+    }
+
+    pub fn enqueue_hazel_sleep_job(
+        &self,
+        source_ref: &str,
+        idempotency_key: &str,
+        message: &str,
+    ) -> Result<EnqueueHazelSleepJobResponse, String> {
+        let response = self.send(&DaemonRequest::EnqueueHazelSleepJob(
+            EnqueueHazelSleepJobRequest {
+                job_id: None,
+                source_ref: source_ref.to_string(),
+                idempotency_key: idempotency_key.to_string(),
+                messages: vec![parse_hazel_message(message)?],
+                max_batches: 8,
+                max_proposals_per_batch: 64,
+            },
+        ))?;
+        match response {
+            DaemonResponse::EnqueueHazelSleepJob(job) => Ok(job),
+            DaemonResponse::Error { message } => Err(message),
+            other => Err(format!("unexpected_daemon_response response={other:?}")),
+        }
+    }
+
+    pub fn cancel_hazel_sleep_job(
+        &self,
+        job_id: &str,
+    ) -> Result<CancelHazelSleepJobResponse, String> {
+        let response = self.send(&DaemonRequest::CancelHazelSleepJob(
+            CancelHazelSleepJobRequest {
+                job_id: job_id.to_string(),
+            },
+        ))?;
+        match response {
+            DaemonResponse::CancelHazelSleepJob(job) => Ok(job),
+            DaemonResponse::Error { message } => Err(message),
+            other => Err(format!("unexpected_daemon_response response={other:?}")),
+        }
+    }
+
     fn send(&self, request: &DaemonRequest) -> Result<DaemonResponse, String> {
         let mut stream = UnixStream::connect(&self.socket_path).map_err(|error| {
             format!(
@@ -284,9 +430,10 @@ impl App {
             .unwrap_or_default();
 
         format!(
-            "Sharo TUI\nscreen: {}\nscreens: {} | {} | {} | {} | {}\nactive session: {}\ndaemon: {}{}\n{}\n",
+            "Sharo TUI\nscreen: {}\nscreens: {} | {} | {} | {} | {} | {}\nactive session: {}\ndaemon: {}{}\n{}\n",
             self.state.active_screen().title(),
             Screen::Chat.title(),
+            Screen::Hazel.title(),
             Screen::Sessions.title(),
             Screen::Approvals.title(),
             Screen::TraceArtifacts.title(),
@@ -386,6 +533,10 @@ impl App {
             .unwrap_or_else(|| "no active session\n".to_string())
     }
 
+    pub fn render_hazel(&self) -> String {
+        self.state.hazel_panel().to_string()
+    }
+
     pub fn render_sessions(&self) -> String {
         sessions::render_sessions(self.state.sessions(), self.state.active_session_id())
     }
@@ -435,6 +586,8 @@ impl App {
             .set_current_session_view(snapshot.state.current_session_view().cloned());
         self.state
             .set_approvals(snapshot.state.approvals().to_vec());
+        self.state
+            .set_hazel_panel(snapshot.state.hazel_panel().to_string());
         self.runtime_status = snapshot.runtime_status;
         self.active_skills = snapshot.active_skills;
         self.mcp_servers = snapshot.mcp_servers;
@@ -564,6 +717,95 @@ impl App {
                 self.refresh_sessions()?;
                 Ok(render_sessions_listing(self.state.sessions()))
             }
+            SlashCommand::Hazel => {
+                self.state.set_active_screen(Screen::Hazel);
+                Ok(self.render_hazel())
+            }
+            SlashCommand::HazelStatus => {
+                let status = self.client.get_hazel_status()?;
+                let rendered = render_hazel_status(&status);
+                self.state.set_hazel_panel(rendered.clone());
+                self.state.set_active_screen(Screen::Hazel);
+                Ok(rendered)
+            }
+            SlashCommand::HazelCards => {
+                let cards = self.client.list_hazel_cards(8)?;
+                let rendered = render_hazel_cards(&cards);
+                self.state.set_hazel_panel(rendered.clone());
+                self.state.set_active_screen(Screen::Hazel);
+                Ok(rendered)
+            }
+            SlashCommand::HazelBatches => {
+                let batches = self.client.list_hazel_proposal_batches(8)?;
+                let rendered = render_hazel_batches(&batches);
+                self.state.set_hazel_panel(rendered.clone());
+                self.state.set_active_screen(Screen::Hazel);
+                Ok(rendered)
+            }
+            SlashCommand::HazelJobs => {
+                let jobs = self.client.list_hazel_sleep_jobs(8)?;
+                let rendered = render_hazel_jobs(&jobs);
+                self.state.set_hazel_panel(rendered.clone());
+                self.state.set_active_screen(Screen::Hazel);
+                Ok(rendered)
+            }
+            SlashCommand::HazelPreview { goal } => {
+                let preview = self.client.hazel_preview(&goal)?;
+                let rendered = render_hazel_preview(&preview);
+                self.state.set_hazel_panel(rendered.clone());
+                self.state.set_active_screen(Screen::Hazel);
+                Ok(rendered)
+            }
+            SlashCommand::HazelValidate { batch_id } => {
+                let validation = self.client.validate_hazel_batch(&batch_id)?;
+                let rendered = format!(
+                    "hazel validate: {} [accepted={}]",
+                    sanitize_for_terminal(&validation.batch_id),
+                    validation.accepted
+                );
+                self.state.set_hazel_panel(rendered.clone());
+                self.state.set_active_screen(Screen::Hazel);
+                Ok(rendered)
+            }
+            SlashCommand::HazelEnqueueJob {
+                source_ref,
+                idempotency_key,
+                message,
+            } => {
+                let response = self
+                    .client
+                    .enqueue_hazel_sleep_job(&source_ref, &idempotency_key, &message)?;
+                let rendered = format!(
+                    "hazel job: {} [{}]",
+                    sanitize_for_terminal(&response.job.job_id),
+                    hazel_sleep_job_state_label(&response.job.state)
+                );
+                self.state.set_hazel_panel(rendered.clone());
+                self.state.set_active_screen(Screen::Hazel);
+                Ok(rendered)
+            }
+            SlashCommand::HazelSubmit { batch_id } => {
+                let submission = self.client.submit_hazel_batch(&batch_id)?;
+                let rendered = format!(
+                    "hazel submit: {} [{}]",
+                    sanitize_for_terminal(&submission.batch_id),
+                    sanitize_for_terminal(&submission.state)
+                );
+                self.state.set_hazel_panel(rendered.clone());
+                self.state.set_active_screen(Screen::Hazel);
+                Ok(rendered)
+            }
+            SlashCommand::HazelCancelJob { job_id } => {
+                let response = self.client.cancel_hazel_sleep_job(&job_id)?;
+                let rendered = format!(
+                    "hazel job: {} [{}]",
+                    sanitize_for_terminal(&response.job.job_id),
+                    hazel_sleep_job_state_label(&response.job.state)
+                );
+                self.state.set_hazel_panel(rendered.clone());
+                self.state.set_active_screen(Screen::Hazel);
+                Ok(rendered)
+            }
             SlashCommand::SessionNew { label } => {
                 let label = label.unwrap_or_else(|| "chat".to_string());
                 let session_id = self.create_session(&label)?;
@@ -685,6 +927,7 @@ impl App {
     fn render_active_screen(&self) -> String {
         match self.state.active_screen() {
             Screen::Chat => self.render_chat(),
+            Screen::Hazel => self.render_hazel(),
             Screen::Sessions => self.render_sessions(),
             Screen::Approvals => self.render_approvals(),
             Screen::TraceArtifacts => self.render_trace_artifacts(),
@@ -763,6 +1006,108 @@ fn render_skills_listing(skills: &[sharo_core::skills::SkillCatalogEntry]) -> St
         })
         .collect::<Vec<_>>();
     format!("skills:\n{}", lines.join("\n"))
+}
+
+fn render_hazel_status(status: &GetHazelStatusResponse) -> String {
+    format!(
+        "hazel status:\navailable={}\ncards={}\nbatches={}\njobs={}",
+        status.status.available,
+        status.status.card_count,
+        status.status.proposal_batch_count,
+        status.status.sleep_job_count
+    )
+}
+
+fn render_hazel_cards(cards: &ListHazelCardsResponse) -> String {
+    if cards.cards.is_empty() {
+        return "hazel cards: none".to_string();
+    }
+    let lines = cards
+        .cards
+        .iter()
+        .map(|card| {
+            format!(
+                "{} [{}]",
+                sanitize_for_terminal(&card.card_id),
+                sanitize_for_terminal(&card.subject)
+            )
+        })
+        .collect::<Vec<_>>();
+    format!("hazel cards:\n{}", lines.join("\n"))
+}
+
+fn render_hazel_batches(batches: &ListHazelProposalBatchesResponse) -> String {
+    if batches.batches.is_empty() {
+        return "hazel batches: none".to_string();
+    }
+    let lines = batches
+        .batches
+        .iter()
+        .map(|batch| {
+            format!(
+                "{} [{}]",
+                sanitize_for_terminal(&batch.batch_id),
+                sanitize_for_terminal(&batch.source_ref)
+            )
+        })
+        .collect::<Vec<_>>();
+    format!("hazel batches:\n{}", lines.join("\n"))
+}
+
+fn render_hazel_jobs(jobs: &ListHazelSleepJobsResponse) -> String {
+    if jobs.jobs.is_empty() {
+        return "hazel jobs: none".to_string();
+    }
+    let lines = jobs
+        .jobs
+        .iter()
+        .map(|job| {
+            format!(
+                "{} [{}]",
+                sanitize_for_terminal(&job.job_id),
+                hazel_sleep_job_state_label(&job.state)
+            )
+        })
+        .collect::<Vec<_>>();
+    format!("hazel jobs:\n{}", lines.join("\n"))
+}
+
+fn render_hazel_preview(preview: &HazelRetrievalPreviewResponse) -> String {
+    let cards = preview
+        .payload
+        .cards
+        .iter()
+        .map(|card| sanitize_for_terminal(&card.card_id))
+        .collect::<Vec<_>>();
+    format!(
+        "hazel preview: {}\ncards={}",
+        sanitize_for_terminal(&preview.preview_id),
+        cards.join(", ")
+    )
+}
+
+fn parse_hazel_message(input: &str) -> Result<HazelConversationMessage, String> {
+    let (role, content) = input
+        .split_once(':')
+        .ok_or_else(|| "hazel_message_invalid expected=role: content".to_string())?;
+    let role = role.trim();
+    let content = content.trim();
+    if role.is_empty() || content.is_empty() {
+        return Err("hazel_message_invalid expected=role: content".to_string());
+    }
+    Ok(HazelConversationMessage {
+        role: role.to_string(),
+        content: content.to_string(),
+    })
+}
+
+fn hazel_sleep_job_state_label(state: &sharo_core::protocol::HazelSleepJobState) -> &'static str {
+    match state {
+        sharo_core::protocol::HazelSleepJobState::Pending => "pending",
+        sharo_core::protocol::HazelSleepJobState::Completed => "completed",
+        sharo_core::protocol::HazelSleepJobState::Failed => "failed",
+        sharo_core::protocol::HazelSleepJobState::Canceled => "canceled",
+    }
 }
 
 fn render_mcp_listing(servers: &[sharo_core::mcp::McpServerSummary]) -> String {

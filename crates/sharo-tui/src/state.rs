@@ -5,6 +5,7 @@ use clap::ValueEnum;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum Screen {
     Chat,
+    Hazel,
     Sessions,
     Approvals,
     TraceArtifacts,
@@ -15,6 +16,7 @@ impl Screen {
     pub fn title(self) -> &'static str {
         match self {
             Self::Chat => "Chat",
+            Self::Hazel => "Hazel",
             Self::Sessions => "Sessions",
             Self::Approvals => "Approvals",
             Self::TraceArtifacts => "Trace/Artifacts",
@@ -32,6 +34,7 @@ pub struct AppState {
     sessions: Vec<SessionSummary>,
     current_session_view: Option<SessionView>,
     approvals: Vec<ApprovalSummary>,
+    hazel_panel: String,
 }
 
 impl Default for AppState {
@@ -44,6 +47,7 @@ impl Default for AppState {
             sessions: Vec::new(),
             current_session_view: None,
             approvals: Vec::new(),
+            hazel_panel: "hazel: no data\n".to_string(),
         }
     }
 }
@@ -77,6 +81,10 @@ impl AppState {
         &self.approvals
     }
 
+    pub fn hazel_panel(&self) -> &str {
+        &self.hazel_panel
+    }
+
     #[allow(dead_code)]
     pub fn set_active_screen(&mut self, screen: Screen) {
         self.active_screen = screen;
@@ -105,6 +113,10 @@ impl AppState {
 
     pub fn set_approvals(&mut self, approvals: Vec<ApprovalSummary>) {
         self.approvals = approvals;
+    }
+
+    pub fn set_hazel_panel(&mut self, hazel_panel: String) {
+        self.hazel_panel = hazel_panel;
     }
 }
 

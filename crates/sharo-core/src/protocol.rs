@@ -585,6 +585,209 @@ pub struct GetRuntimeStatusResponse {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HazelActionAvailability {
+    pub retrieval_preview: bool,
+    pub validate_batch: bool,
+    pub submit_batch: bool,
+    pub enqueue_sleep_job: bool,
+    pub cancel_sleep_job: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HazelLimitsSummary {
+    pub max_list_items: u32,
+    pub max_preview_cards: u32,
+    pub max_sleep_batches: u32,
+    pub max_sleep_proposals_per_batch: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HazelStatusSummary {
+    pub available: bool,
+    pub card_count: u32,
+    pub proposal_batch_count: u32,
+    pub sleep_job_count: u32,
+    pub actions: HazelActionAvailability,
+    pub limits: HazelLimitsSummary,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GetHazelStatusResponse {
+    pub status: HazelStatusSummary,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListHazelCardsRequest {
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HazelCardView {
+    pub card_id: String,
+    pub kind: RecollectionCardKind,
+    pub state: RecollectionCardState,
+    pub subject: String,
+    pub text: String,
+    pub provenance: Vec<ProvenanceRef>,
+    pub policy_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListHazelCardsResponse {
+    pub cards: Vec<HazelCardView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GetHazelCardRequest {
+    pub card_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GetHazelCardResponse {
+    pub card: HazelCardView,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListHazelProposalBatchesRequest {
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HazelProposalBatchView {
+    pub batch_id: String,
+    pub idempotency_key: String,
+    pub source_ref: String,
+    pub producer: String,
+    pub proposal_count: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListHazelProposalBatchesResponse {
+    pub batches: Vec<HazelProposalBatchView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GetHazelProposalBatchRequest {
+    pub batch_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GetHazelProposalBatchResponse {
+    pub batch: HazelProposalBatchView,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HazelSleepJobState {
+    Pending,
+    Completed,
+    Failed,
+    Canceled,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HazelSleepJobView {
+    pub job_id: String,
+    pub state: HazelSleepJobState,
+    pub run_id: Option<String>,
+    pub proposal_batch_ids: Vec<String>,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListHazelSleepJobsRequest {
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListHazelSleepJobsResponse {
+    pub jobs: Vec<HazelSleepJobView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GetHazelSleepJobRequest {
+    pub job_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GetHazelSleepJobResponse {
+    pub job: HazelSleepJobView,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HazelRetrievalPreviewRequest {
+    pub input: PrePromptComposeHookInput,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HazelRetrievalPreviewResponse {
+    pub preview_id: String,
+    pub payload: RecollectionPayload,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ValidateHazelProposalBatchRequest {
+    pub batch_id: String,
+    #[serde(default)]
+    pub strict_policy_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ValidateHazelProposalBatchResponse {
+    pub validation_id: String,
+    pub batch_id: String,
+    pub accepted: bool,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SubmitHazelProposalBatchRequest {
+    pub batch_id: String,
+    #[serde(default)]
+    pub strict_policy_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SubmitHazelProposalBatchResponse {
+    pub submission_id: String,
+    pub batch_id: String,
+    pub state: String,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HazelConversationMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnqueueHazelSleepJobRequest {
+    pub job_id: Option<String>,
+    pub source_ref: String,
+    pub idempotency_key: String,
+    pub messages: Vec<HazelConversationMessage>,
+    pub max_batches: u32,
+    pub max_proposals_per_batch: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnqueueHazelSleepJobResponse {
+    pub job: HazelSleepJobView,
+    pub proposal_batch_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CancelHazelSleepJobRequest {
+    pub job_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CancelHazelSleepJobResponse {
+    pub job: HazelSleepJobView,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResolveApprovalRequest {
     pub approval_id: String,
     pub decision: String,
@@ -597,7 +800,7 @@ pub struct ResolveApprovalResponse {
     pub state: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DaemonRequest {
     Submit(SubmitTaskRequest),
     Status(TaskStatusRequest),
@@ -613,13 +816,25 @@ pub enum DaemonRequest {
     ListMcpServers,
     UpdateMcpServerState(UpdateMcpServerStateRequest),
     GetRuntimeStatus,
+    GetHazelStatus,
+    ListHazelCards(ListHazelCardsRequest),
+    GetHazelCard(GetHazelCardRequest),
+    ListHazelProposalBatches(ListHazelProposalBatchesRequest),
+    GetHazelProposalBatch(GetHazelProposalBatchRequest),
+    ListHazelSleepJobs(ListHazelSleepJobsRequest),
+    GetHazelSleepJob(GetHazelSleepJobRequest),
+    HazelPreview(HazelRetrievalPreviewRequest),
+    ValidateHazelProposalBatch(ValidateHazelProposalBatchRequest),
+    SubmitHazelProposalBatch(SubmitHazelProposalBatchRequest),
+    EnqueueHazelSleepJob(EnqueueHazelSleepJobRequest),
+    CancelHazelSleepJob(CancelHazelSleepJobRequest),
     GetTrace(GetTraceRequest),
     GetArtifacts(GetArtifactsRequest),
     ListPendingApprovals,
     ResolveApproval(ResolveApprovalRequest),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DaemonResponse {
     Submit(SubmitTaskResponse),
     Status(TaskStatusResponse),
@@ -635,6 +850,18 @@ pub enum DaemonResponse {
     ListMcpServers(ListMcpServersResponse),
     UpdateMcpServerState(UpdateMcpServerStateResponse),
     GetRuntimeStatus(GetRuntimeStatusResponse),
+    GetHazelStatus(GetHazelStatusResponse),
+    ListHazelCards(ListHazelCardsResponse),
+    GetHazelCard(GetHazelCardResponse),
+    ListHazelProposalBatches(ListHazelProposalBatchesResponse),
+    GetHazelProposalBatch(GetHazelProposalBatchResponse),
+    ListHazelSleepJobs(ListHazelSleepJobsResponse),
+    GetHazelSleepJob(GetHazelSleepJobResponse),
+    HazelPreview(HazelRetrievalPreviewResponse),
+    ValidateHazelProposalBatch(ValidateHazelProposalBatchResponse),
+    SubmitHazelProposalBatch(SubmitHazelProposalBatchResponse),
+    EnqueueHazelSleepJob(EnqueueHazelSleepJobResponse),
+    CancelHazelSleepJob(CancelHazelSleepJobResponse),
     GetTrace(GetTraceResponse),
     GetArtifacts(GetArtifactsResponse),
     ListPendingApprovals(ListPendingApprovalsResponse),

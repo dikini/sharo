@@ -1,6 +1,20 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SlashCommand {
     Sessions,
+    Hazel,
+    HazelStatus,
+    HazelCards,
+    HazelBatches,
+    HazelJobs,
+    HazelPreview { goal: String },
+    HazelValidate { batch_id: String },
+    HazelEnqueueJob {
+        source_ref: String,
+        idempotency_key: String,
+        message: String,
+    },
+    HazelSubmit { batch_id: String },
+    HazelCancelJob { job_id: String },
     SessionNew { label: Option<String> },
     SessionSwitch { session_id: String },
     Approve { approval_id: String },
@@ -45,6 +59,7 @@ fn parse_slash_tokens(tokens: &[String]) -> Result<SlashCommand, SlashCommandErr
         "sessions" => {
             expect_no_extra_args("sessions", &tokens[1..]).map(|()| SlashCommand::Sessions)
         }
+        "hazel" => parse_hazel_command(&tokens[1..]),
         "session" => parse_session_command(&tokens[1..]),
         "approve" => single_arg("approve", &tokens[1..])
             .map(|approval_id| SlashCommand::Approve { approval_id }),
@@ -60,6 +75,42 @@ fn parse_slash_tokens(tokens: &[String]) -> Result<SlashCommand, SlashCommandErr
             format!("unknown slash command `{other}`"),
         )),
     }
+}
+
+fn parse_hazel_command(args: &[String]) -> Result<SlashCommand, SlashCommandError> {
+    if args.is_empty() {
+        return Ok(SlashCommand::Hazel);
+    }
+    match args[0].as_str() {
+        "status" => expect_no_extra_args("hazel status", &args[1..]).map(|()| SlashCommand::HazelStatus),
+        "cards" => expect_no_extra_args("hazel cards", &args[1..]).map(|()| SlashCommand::HazelCards),
+        "batches" => expect_no_extra_args("hazel batches", &args[1..]).map(|()| SlashCommand::HazelBatches),
+        "jobs" => expect_no_extra_args("hazel jobs", &args[1..]).map(|()| SlashCommand::HazelJobs),
+        "preview" => single_arg("hazel preview", &args[1..]).map(|goal| SlashCommand::HazelPreview { goal }),
+        "validate" => single_arg("hazel validate", &args[1..]).map(|batch_id| SlashCommand::HazelValidate { batch_id }),
+        "enqueue-job" => hazel_enqueue_job_args(&args[1..]),
+        "submit" => single_arg("hazel submit", &args[1..]).map(|batch_id| SlashCommand::HazelSubmit { batch_id }),
+        "cancel-job" => single_arg("hazel cancel-job", &args[1..])
+            .map(|job_id| SlashCommand::HazelCancelJob { job_id }),
+        other => Err(SlashCommandError::new(
+            "slash_command_usage",
+            format!("hazel subcommand `{other}` is not supported"),
+        )),
+    }
+}
+
+fn hazel_enqueue_job_args(args: &[String]) -> Result<SlashCommand, SlashCommandError> {
+    if args.len() != 3 {
+        return Err(SlashCommandError::new(
+            "slash_command_usage",
+            "`/hazel enqueue-job` requires exactly three arguments".to_string(),
+        ));
+    }
+    Ok(SlashCommand::HazelEnqueueJob {
+        source_ref: args[0].clone(),
+        idempotency_key: args[1].clone(),
+        message: args[2].clone(),
+    })
 }
 
 fn parse_session_command(args: &[String]) -> Result<SlashCommand, SlashCommandError> {

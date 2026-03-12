@@ -7,6 +7,14 @@ The format is based on Common Changelog:
 
 ## Unreleased
 
+### Added
+
+- Added daemon/TUI-first Hazel inspection and safe control tooling by:
+  - extending the daemon protocol with Hazel status, cards, proposal-batch, sleep-job, preview, validation, submission, and cancel-job control-plane operations
+  - persisting durable Hazel preview, validation, submission, proposal-batch, and sleep-job records in the daemon store
+  - adding `sharo` CLI Hazel operator commands and a `sharo-tui` Hazel screen with slash-command access to status, cards, jobs, preview, submission, and job cancellation
+  - updating the Hazel inspection spec/design/plan and closing `TASK-HAZEL-INSPECTION-SPEC-001`, `TASK-HAZEL-INSPECTION-DESIGN-001`, and `TASK-HAZEL-INSPECTION-PLAN-001`
+
 ### Fixed
 
 - Removed generated fuzz `corpus/` files from tracked branch history for the chat-first TUI worktree and ignored local fuzz `corpus/` output in per-crate fuzz `.gitignore` files.
@@ -99,6 +107,14 @@ The format is based on Common Changelog:
 
 ### Added
 
+- Added Hazel inspection tooling planning artifacts:
+  - `docs/specs/hazel-inspection-tooling.md`
+  - `docs/plans/2026-03-12-hazel-inspection-tooling-design.md`
+  - `docs/plans/2026-03-12-hazel-inspection-tooling-plan.md`
+  - task registry entries:
+    - `TASK-HAZEL-INSPECTION-SPEC-001`
+    - `TASK-HAZEL-INSPECTION-DESIGN-001`
+    - `TASK-HAZEL-INSPECTION-PLAN-001`
 - Added interaction-loop design and implementation planning artifacts for the next `sharo-tui` slice covering a single-threaded UI event loop, live composer input, keybindings, periodic refresh, and the explicit boundary that daemon/kernel execution remains concurrent.
 - Added exact-inspection and settings surfaces to `sharo-tui`:
   - new settings rendering for model profile, warnings, session-scoped skills, and MCP server status

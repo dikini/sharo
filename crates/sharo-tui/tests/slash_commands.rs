@@ -89,6 +89,39 @@ fn cleanup(
     let _ = fs::remove_dir_all(skill_root);
 }
 
+fn start_daemon_with_store_seed(
+    prefix: &str,
+    seeded_store: serde_json::Value,
+) -> (std::process::Child, PathBuf, PathBuf, PathBuf, PathBuf) {
+    let socket = temp_path(prefix, ".sock");
+    let store = temp_path(prefix, ".json");
+    let skill_root = temp_path(prefix, "-skills");
+    fs::create_dir_all(&skill_root).expect("create skills root");
+    create_skill(
+        &skill_root,
+        "writing/docs",
+        "# Docs Writer\n\nStructured docs drafting support.\n",
+    );
+    fs::write(&store, seeded_store.to_string()).expect("write seeded store");
+    let config = write_slash_config(prefix, &skill_root);
+    let daemon = Command::new(binary_path("sharo-daemon"))
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket"),
+            "--store-path",
+            store.to_str().expect("store"),
+            "--config-path",
+            config.to_str().expect("config"),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+    wait_for_socket(&socket);
+    (daemon, socket, store, config, skill_root)
+}
+
 #[test]
 fn slash_commands_dispatch_never_uses_chat_submit_path_for_control_actions() {
     let (daemon, socket, store, config, skill_root) = start_daemon("sharo-tui-slash-invariant");
@@ -201,6 +234,14 @@ fn slash_commands_parse_slash_command_with_argument_vector() {
 }
 
 #[test]
+fn slash_commands_parse_hazel_status_command() {
+    let parsed = parse_slash_command("/hazel status")
+        .expect("parse")
+        .expect("slash command");
+    assert_eq!(parsed, SlashCommand::HazelStatus);
+}
+
+#[test]
 fn slash_commands_invalid_slash_command_returns_structured_error() {
     let error = parse_slash_command("/mcp enable a b").expect_err("invalid");
     assert_eq!(error.code, "slash_command_usage");
@@ -221,6 +262,123 @@ fn slash_commands_dispatch_errors_are_terminal_sanitized() {
     assert!(error.contains("session_not_found"));
     assert!(!error.contains('\u{1b}'));
     assert!(error.contains("\\u{1b}"));
+
+    cleanup(daemon, socket, store, config, skill_root);
+}
+
+#[test]
+fn slash_commands_hazel_cards_command_switches_to_hazel_screen() {
+    let (daemon, socket, store, config, skill_root) = start_daemon("sharo-tui-slash-hazel");
+    let mut app = App::new(DaemonClient::new(&socket));
+    app.initialize().expect("initialize");
+
+    let output = app
+        .handle_chat_input("/hazel cards")
+        .expect("hazel cards");
+
+    assert!(output.contains("hazel cards:"));
+    assert_eq!(app.state().active_screen(), sharo_tui::state::Screen::Hazel);
+    assert!(app.render_hazel().contains("hazel cards:"));
+
+    cleanup(daemon, socket, store, config, skill_root);
+}
+
+#[test]
+fn slash_commands_hazel_validate_and_enqueue_render_operator_results() {
+    let (daemon, socket, store, config, skill_root) = start_daemon_with_store_seed(
+        "sharo-tui-slash-hazel-actions",
+        serde_json::json!({
+            "hazel_proposal_batches": {
+                "batch-000001": {
+                    "batch_id": "batch-000001",
+                    "idempotency_key": "idemp-000001",
+                    "provenance": { "source_ref": "note:hazel", "producer": "operator" },
+                    "proposals": [{
+                        "proposal_id": "proposal-000001",
+                        "kind": "chunk_upsert",
+                        "chunk": {
+                            "chunk_id": "chunk-000001",
+                            "content": "hazel inspection batch",
+                            "source_ref": "note:hazel"
+                        },
+                        "entity": null,
+                        "relation": null,
+                        "assertion": null
+                    }]
+                }
+            },
+            "hazel_sleep_jobs": {
+                "job-000001": {
+                "job_id": "job-000001",
+                    "state": "pending",
+                    "run_id": null,
+                    "proposal_batch_ids": [],
+                    "summary": "queued"
+                }
+            }
+        }),
+    )
+    ;
+    let mut app = App::new(DaemonClient::new(&socket));
+    app.initialize().expect("initialize");
+
+    let validate = app
+        .handle_chat_input("/hazel validate batch-000001")
+        .expect("hazel validate");
+    assert!(validate.contains("hazel validate:"));
+
+    let enqueue = app
+        .handle_chat_input("/hazel enqueue-job note:operator job-001 \"user: remember hazel\"")
+        .expect("hazel enqueue");
+    assert!(enqueue.contains("hazel job:"));
+    assert!(enqueue.contains("[completed]"));
+
+    let cancel = app
+        .handle_chat_input("/hazel cancel-job job-000001")
+        .expect("hazel cancel");
+    assert!(cancel.contains("hazel job:"));
+    assert!(cancel.contains("[canceled]"));
+    assert_eq!(app.state().active_screen(), sharo_tui::state::Screen::Hazel);
+
+    cleanup(daemon, socket, store, config, skill_root);
+}
+
+#[test]
+fn slash_commands_hazel_batches_lists_known_batch_ids() {
+    let (daemon, socket, store, config, skill_root) = start_daemon_with_store_seed(
+        "sharo-tui-slash-hazel-batches",
+        serde_json::json!({
+            "hazel_proposal_batches": {
+                "batch-000001": {
+                    "batch_id": "batch-000001",
+                    "idempotency_key": "idemp-000001",
+                    "provenance": { "source_ref": "note:hazel", "producer": "operator" },
+                    "proposals": [{
+                        "proposal_id": "proposal-000001",
+                        "kind": "chunk_upsert",
+                        "chunk": {
+                            "chunk_id": "chunk-000001",
+                            "content": "hazel inspection batch",
+                            "source_ref": "note:hazel"
+                        },
+                        "entity": null,
+                        "relation": null,
+                        "assertion": null
+                    }]
+                }
+            }
+        }),
+    );
+    let mut app = App::new(DaemonClient::new(&socket));
+    app.initialize().expect("initialize");
+
+    let output = app
+        .handle_chat_input("/hazel batches")
+        .expect("hazel batches");
+
+    assert!(output.contains("hazel batches:"));
+    assert!(output.contains("batch-000001"));
+    assert_eq!(app.state().active_screen(), sharo_tui::state::Screen::Hazel);
 
     cleanup(daemon, socket, store, config, skill_root);
 }

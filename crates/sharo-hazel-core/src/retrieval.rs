@@ -43,6 +43,23 @@ impl Default for HazelMemoryCore {
 }
 
 impl HazelMemoryCore {
+    pub fn inspect_cards(&self) -> Vec<RecollectionCard> {
+        self.assertions
+            .iter()
+            .map(|assertion| {
+                assertion_to_card(
+                    assertion,
+                    &HazelCardPolicyHint {
+                        kind: RecollectionCardKind::AssociationCue,
+                        policy_ids: vec!["inspection.default".to_string()],
+                        max_cards: Some(1),
+                    },
+                    "hazel inspection",
+                )
+            })
+            .collect()
+    }
+
     pub fn recollect(&self, input: &PrePromptComposeHookInput) -> RecollectionPayload {
         let top_k = input.top_k.unwrap_or(3).max(1);
         let token_budget = input.token_budget.unwrap_or(usize::MAX).max(1);

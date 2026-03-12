@@ -69,6 +69,20 @@ fn conversation_import_canonicalizes_idempotency_key() {
 }
 
 #[test]
+fn conversation_import_rejects_unknown_message_roles() {
+    let error = import_openai_messages_to_proposal_batch(
+        "conversation:session-4",
+        "idem-unknown-role",
+        &[OpenAiMessage {
+            role: "operator".to_string(),
+            content: "remember hazel".to_string(),
+        }],
+    )
+    .expect_err("unknown role must fail");
+    assert!(error.contains("conversation_import_invalid_role"));
+}
+
+#[test]
 fn bulk_submit_requires_idempotency_key_and_batch_provenance() {
     let batch = ProposalBatch {
         batch_id: "b-1".to_string(),

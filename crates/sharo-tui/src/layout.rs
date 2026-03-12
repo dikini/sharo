@@ -117,7 +117,7 @@ fn header_text(app: &App) -> Text<'_> {
         ]),
         Line::from(vec![
             "keys: ".into(),
-            "F1-F5 screens | Tab next session | Shift-Tab prev | Ctrl-R refresh | q quit".into(),
+            "F1-F6 screens | Tab next session | Shift-Tab prev | Ctrl-R refresh | q quit".into(),
         ]),
     ])
 }
@@ -125,6 +125,7 @@ fn header_text(app: &App) -> Text<'_> {
 fn active_screen_text(app: &App) -> Text<'_> {
     let raw = match app.state().active_screen() {
         Screen::Chat => app.render_chat(),
+        Screen::Hazel => app.render_hazel(),
         Screen::Sessions => app.render_sessions(),
         Screen::Approvals => app.render_approvals(),
         Screen::TraceArtifacts => app.render_trace_artifacts(),
@@ -133,6 +134,7 @@ fn active_screen_text(app: &App) -> Text<'_> {
 
     let title = match app.state().active_screen() {
         Screen::Chat => "Chat",
+        Screen::Hazel => "Hazel",
         Screen::Sessions => "Sessions",
         Screen::Approvals => "Approvals",
         Screen::TraceArtifacts => "Trace/Artifacts",

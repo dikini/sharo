@@ -9,9 +9,11 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use sharo_core::mcp::McpRuntimeStatus;
 use sharo_core::protocol::{
-    DaemonRequest, DaemonResponse, GetRuntimeStatusResponse, GetSessionViewRequest,
-    GetSkillRequest, ListMcpServersResponse, ListSessionsResponse, ListSkillsRequest,
-    SubmitTaskOpRequest, SubmitTaskRequest, TaskStatusRequest, UpdateMcpServerStateRequest,
+    DaemonRequest, DaemonResponse, GetHazelStatusResponse, GetRuntimeStatusResponse,
+    GetSessionViewRequest, GetSkillRequest, HazelRetrievalPreviewRequest, HazelSleepJobState,
+    ListHazelCardsResponse, ListHazelSleepJobsResponse, ListMcpServersResponse,
+    ListSessionsResponse, ListSkillsRequest, PrePromptComposeHookInput, SubmitTaskOpRequest,
+    SubmitTaskRequest, TaskStatusRequest, UpdateMcpServerStateRequest,
 };
 
 fn socket_path() -> PathBuf {
@@ -28,6 +30,88 @@ fn temp_path(prefix: &str, suffix: &str) -> PathBuf {
         .expect("time")
         .as_nanos();
     std::env::temp_dir().join(format!("{prefix}-{nanos}{suffix}"))
+}
+
+fn write_hazel_seed_store(path: &PathBuf) {
+    let state = serde_json::json!({
+        "hazel_proposal_batches": {
+            "batch-000001": {
+                "batch_id": "batch-000001",
+                "idempotency_key": "idemp-000001",
+                "provenance": {
+                    "source_ref": "note:hazel",
+                    "producer": "operator"
+                },
+                "proposals": [{
+                    "proposal_id": "proposal-000001",
+                    "kind": "chunk_upsert",
+                    "chunk": {
+                        "chunk_id": "chunk-000001",
+                        "content": "hazel inspection batch",
+                        "source_ref": "note:hazel"
+                    },
+                    "entity": null,
+                    "relation": null,
+                    "assertion": null
+                }]
+            }
+        },
+        "hazel_sleep_jobs": {
+            "job-000001": {
+                "job_id": "job-000001",
+                "state": "completed",
+                "run_id": "sleep-run-v2-seeded",
+                "proposal_batch_ids": ["batch-000001"],
+                "summary": "completed with one batch"
+            }
+        }
+    });
+    fs::write(
+        path,
+        serde_json::to_string_pretty(&state).expect("serialize hazel seed store"),
+    )
+    .expect("write hazel seed store");
+}
+
+fn write_hazel_pending_job_store(path: &PathBuf) {
+    let state = serde_json::json!({
+        "hazel_proposal_batches": {
+            "batch-000001": {
+                "batch_id": "batch-000001",
+                "idempotency_key": "idemp-000001",
+                "provenance": {
+                    "source_ref": "note:hazel",
+                    "producer": "operator"
+                },
+                "proposals": [{
+                    "proposal_id": "proposal-000001",
+                    "kind": "chunk_upsert",
+                    "chunk": {
+                        "chunk_id": "chunk-000001",
+                        "content": "hazel inspection batch",
+                        "source_ref": "note:hazel"
+                    },
+                    "entity": null,
+                    "relation": null,
+                    "assertion": null
+                }]
+            }
+        },
+        "hazel_sleep_jobs": {
+            "job-000001": {
+                "job_id": "job-000001",
+                "state": "pending",
+                "run_id": null,
+                "proposal_batch_ids": ["batch-000001"],
+                "summary": "pending job"
+            }
+        }
+    });
+    fs::write(
+        path,
+        serde_json::to_string_pretty(&state).expect("serialize hazel pending store"),
+    )
+    .expect("write hazel pending store");
 }
 
 fn write_slow_openai_config(prefix: &str, base_url: &str) -> PathBuf {
@@ -301,6 +385,447 @@ fn daemon_ipc_submit_roundtrip() {
     if socket.exists() {
         let _ = fs::remove_file(&socket);
     }
+}
+
+#[test]
+fn hazel_status_response_is_bounded() {
+    let socket = socket_path();
+    let store = temp_path("sharo-daemon-hazel-store", ".json");
+    write_hazel_seed_store(&store);
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sharo-daemon"))
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+            "--serve-once",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let response = send_request(&socket, &DaemonRequest::GetHazelStatus);
+    match response {
+        DaemonResponse::GetHazelStatus(GetHazelStatusResponse { status }) => {
+            assert!(status.available);
+            assert!(status.card_count <= status.limits.max_list_items);
+            assert_eq!(status.proposal_batch_count, 1);
+            assert_eq!(status.sleep_job_count, 1);
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    child.wait().expect("wait daemon");
+    let _ = fs::remove_file(&socket);
+    let _ = fs::remove_file(&store);
+}
+
+#[test]
+fn hazel_list_cards_returns_transport_safe_view() {
+    let socket = socket_path();
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sharo-daemon"))
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--serve-once",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let response = send_request(
+        &socket,
+        &DaemonRequest::ListHazelCards(sharo_core::protocol::ListHazelCardsRequest {
+            limit: Some(1),
+        }),
+    );
+    match response {
+        DaemonResponse::ListHazelCards(ListHazelCardsResponse { cards }) => {
+            assert_eq!(cards.len(), 1);
+            assert!(!cards[0].card_id.is_empty());
+            assert!(!cards[0].provenance.is_empty());
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    child.wait().expect("wait daemon");
+    let _ = fs::remove_file(&socket);
+}
+
+#[test]
+fn hazel_get_proposal_batch_returns_exact_provenance_summary() {
+    let socket = socket_path();
+    let store = temp_path("sharo-daemon-hazel-store", ".json");
+    write_hazel_seed_store(&store);
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sharo-daemon"))
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+            "--serve-once",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let response = send_request(
+        &socket,
+        &DaemonRequest::GetHazelProposalBatch(sharo_core::protocol::GetHazelProposalBatchRequest {
+            batch_id: "batch-000001".to_string(),
+        }),
+    );
+    match response {
+        DaemonResponse::GetHazelProposalBatch(payload) => {
+            assert_eq!(payload.batch.batch_id, "batch-000001");
+            assert_eq!(payload.batch.source_ref, "note:hazel");
+            assert_eq!(payload.batch.producer, "operator");
+            assert_eq!(payload.batch.proposal_count, 1);
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    child.wait().expect("wait daemon");
+    let _ = fs::remove_file(&socket);
+    let _ = fs::remove_file(&store);
+}
+
+#[test]
+fn hazel_list_sleep_jobs_returns_bounded_statuses() {
+    let socket = socket_path();
+    let store = temp_path("sharo-daemon-hazel-store", ".json");
+    write_hazel_seed_store(&store);
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sharo-daemon"))
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+            "--serve-once",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let response = send_request(
+        &socket,
+        &DaemonRequest::ListHazelSleepJobs(sharo_core::protocol::ListHazelSleepJobsRequest {
+            limit: Some(8),
+        }),
+    );
+    match response {
+        DaemonResponse::ListHazelSleepJobs(ListHazelSleepJobsResponse { jobs }) => {
+            assert_eq!(jobs.len(), 1);
+            assert_eq!(jobs[0].state, HazelSleepJobState::Completed);
+            assert_eq!(jobs[0].proposal_batch_ids, vec!["batch-000001".to_string()]);
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    child.wait().expect("wait daemon");
+    let _ = fs::remove_file(&socket);
+    let _ = fs::remove_file(&store);
+}
+
+#[test]
+fn hazel_preview_returns_derived_payload_without_canonical_write() {
+    let socket = socket_path();
+    let store = temp_path("sharo-daemon-hazel-preview-store", ".json");
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sharo-daemon"))
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+            "--serve-once",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let response = send_request(
+        &socket,
+        &DaemonRequest::HazelPreview(HazelRetrievalPreviewRequest {
+            input: PrePromptComposeHookInput {
+                session_id: "session-000001".to_string(),
+                task_id: "task-000001".to_string(),
+                goal: "structured memory hazel".to_string(),
+                runtime: "operator".to_string(),
+                top_k: Some(2),
+                token_budget: Some(64),
+                relevance_threshold: Some(0.0),
+                policy_ids: vec!["hunch.v1".to_string()],
+                card_policy_hints: Vec::new(),
+            },
+        }),
+    );
+    match response {
+        DaemonResponse::HazelPreview(payload) => {
+            assert!(!payload.preview_id.is_empty());
+            assert!(!payload.payload.cards.is_empty());
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    child.wait().expect("wait daemon");
+    let persisted = fs::read_to_string(&store).expect("read store");
+    let json: serde_json::Value = serde_json::from_str(&persisted).expect("parse store");
+    assert!(json["hazel_proposal_batches"]
+        .as_object()
+        .expect("proposal batches object")
+        .is_empty());
+
+    let _ = fs::remove_file(&socket);
+    let _ = fs::remove_file(&store);
+}
+
+#[test]
+fn hazel_preview_rejects_oversized_token_budget() {
+    let socket = socket_path();
+    let store = temp_path("sharo-daemon-hazel-preview-oversized-store", ".json");
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sharo-daemon"))
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+            "--serve-once",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let response = send_request(
+        &socket,
+        &DaemonRequest::HazelPreview(HazelRetrievalPreviewRequest {
+            input: PrePromptComposeHookInput {
+                session_id: "session-000001".to_string(),
+                task_id: "task-oversized".to_string(),
+                goal: "structured memory hazel".to_string(),
+                runtime: "operator".to_string(),
+                top_k: Some(2),
+                token_budget: Some(65_537),
+                relevance_threshold: Some(0.0),
+                policy_ids: vec!["hunch.v1".to_string()],
+                card_policy_hints: Vec::new(),
+            },
+        }),
+    );
+    match response {
+        DaemonResponse::Error { message } => {
+            assert!(message.contains("hazel_preview_invalid"));
+            assert!(message.contains("token_budget_exceeded"));
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    child.wait().expect("wait daemon");
+    let _ = fs::remove_file(&socket);
+    let _ = fs::remove_file(&store);
+}
+
+#[test]
+fn hazel_submit_batch_persists_submission_outcome_record() {
+    let socket = socket_path();
+    let store = temp_path("sharo-daemon-hazel-submit-store", ".json");
+    write_hazel_seed_store(&store);
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sharo-daemon"))
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+            "--serve-once",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let response = send_request(
+        &socket,
+        &DaemonRequest::SubmitHazelProposalBatch(
+            sharo_core::protocol::SubmitHazelProposalBatchRequest {
+                batch_id: "batch-000001".to_string(),
+                strict_policy_ids: vec!["hunch.v1".to_string()],
+            },
+        ),
+    );
+    match response {
+        DaemonResponse::SubmitHazelProposalBatch(payload) => {
+            assert_eq!(payload.batch_id, "batch-000001");
+            assert_eq!(payload.state, "accepted");
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    child.wait().expect("wait daemon");
+    let persisted = fs::read_to_string(&store).expect("read store");
+    let json: serde_json::Value = serde_json::from_str(&persisted).expect("parse store");
+    assert_eq!(
+        json["hazel_submission_records"]
+            .as_object()
+            .expect("submission records object")
+            .len(),
+        1
+    );
+
+    let _ = fs::remove_file(&socket);
+    let _ = fs::remove_file(&store);
+}
+
+#[test]
+fn hazel_validate_batch_rejects_unknown_policy_ids_in_strict_mode() {
+    let socket = socket_path();
+    let store = temp_path("sharo-daemon-hazel-validate-store", ".json");
+    write_hazel_seed_store(&store);
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sharo-daemon"))
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+            "--serve-once",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let response = send_request(
+        &socket,
+        &DaemonRequest::ValidateHazelProposalBatch(
+            sharo_core::protocol::ValidateHazelProposalBatchRequest {
+                batch_id: "batch-000001".to_string(),
+                strict_policy_ids: vec!["unknown.v9".to_string()],
+            },
+        ),
+    );
+    match response {
+        DaemonResponse::Error { message } => assert!(message.contains("hazel_policy_unknown")),
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    child.wait().expect("wait daemon");
+    let _ = fs::remove_file(&socket);
+    let _ = fs::remove_file(&store);
+}
+
+#[test]
+fn hazel_cancel_sleep_job_stops_future_proposal_production() {
+    let socket = socket_path();
+    let store = temp_path("sharo-daemon-hazel-cancel-store", ".json");
+    write_hazel_pending_job_store(&store);
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sharo-daemon"))
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+            "--serve-once",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let response = send_request(
+        &socket,
+        &DaemonRequest::CancelHazelSleepJob(sharo_core::protocol::CancelHazelSleepJobRequest {
+            job_id: "job-000001".to_string(),
+        }),
+    );
+    match response {
+        DaemonResponse::CancelHazelSleepJob(payload) => {
+            assert_eq!(payload.job.job_id, "job-000001");
+            assert_eq!(payload.job.state, HazelSleepJobState::Canceled);
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    child.wait().expect("wait daemon");
+    let persisted = fs::read_to_string(&store).expect("read store");
+    let json: serde_json::Value = serde_json::from_str(&persisted).expect("parse store");
+    assert_eq!(
+        json["hazel_sleep_jobs"]["job-000001"]["state"],
+        serde_json::Value::String("canceled".to_string())
+    );
+    assert_eq!(
+        json["hazel_sleep_jobs"]["job-000001"]["proposal_batch_ids"],
+        serde_json::json!(["batch-000001"])
+    );
+
+    let _ = fs::remove_file(&socket);
+    let _ = fs::remove_file(&store);
+}
+
+#[test]
+fn hazel_cancel_sleep_job_rejects_completed_job() {
+    let socket = socket_path();
+    let store = temp_path("sharo-daemon-hazel-cancel-completed", ".json");
+    write_hazel_seed_store(&store);
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sharo-daemon"))
+        .args([
+            "start",
+            "--socket-path",
+            socket.to_str().expect("socket path"),
+            "--store-path",
+            store.to_str().expect("store path"),
+            "--serve-once",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let response = send_request(
+        &socket,
+        &DaemonRequest::CancelHazelSleepJob(sharo_core::protocol::CancelHazelSleepJobRequest {
+            job_id: "job-000001".to_string(),
+        }),
+    );
+    match response {
+        DaemonResponse::Error { message } => {
+            assert!(message.contains("hazel_sleep_job_cancel_invalid"))
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    child.wait().expect("wait daemon");
+    let persisted = fs::read_to_string(&store).expect("read store");
+    let json: serde_json::Value = serde_json::from_str(&persisted).expect("parse store");
+    assert_eq!(
+        json["hazel_sleep_jobs"]["job-000001"]["state"],
+        serde_json::Value::String("completed".to_string())
+    );
+
+    let _ = fs::remove_file(&socket);
+    let _ = fs::remove_file(&store);
 }
 
 #[test]

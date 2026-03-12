@@ -1,13 +1,17 @@
 use sharo_core::mcp::{McpRuntimeStatus, McpServerSummary, McpTransportKind, RuntimeStatusSummary};
 use sharo_core::protocol::{
     ApprovalSummary, ArtifactSummary, DaemonRequest, DaemonResponse, GetArtifactsResponse,
+    GetHazelProposalBatchResponse, GetHazelSleepJobResponse, GetHazelStatusResponse,
     GetRuntimeStatusResponse, GetSessionViewResponse, GetSkillRequest, GetSkillResponse,
-    GetTaskResponse, GetTraceResponse, ListMcpServersResponse, ListSessionsResponse,
-    ListSkillsRequest, ListSkillsResponse, ResolveApprovalRequest, ResolveApprovalResponse,
-    SessionSummary, SessionView, SetSessionSkillsRequest, SetSessionSkillsResponse,
-    SubmitTaskRequest, SubmitTaskResponse, TaskState, TaskStatusRequest, TaskStatusResponse,
-    TaskSummary, TraceEventSummary, TraceSummary, UpdateMcpServerStateRequest,
-    UpdateMcpServerStateResponse,
+    GetTaskResponse, GetTraceResponse, HazelActionAvailability, HazelCardView,
+    HazelLimitsSummary, HazelProposalBatchView, HazelSleepJobState, HazelSleepJobView,
+    HazelStatusSummary, ListHazelCardsResponse, ListHazelProposalBatchesResponse,
+    ListHazelSleepJobsResponse, ListMcpServersResponse, ListSessionsResponse, ListSkillsRequest,
+    ListSkillsResponse, ProvenanceRef, RecollectionCardKind, RecollectionCardState,
+    ResolveApprovalRequest, ResolveApprovalResponse, SessionSummary, SessionView,
+    SetSessionSkillsRequest, SetSessionSkillsResponse, SubmitTaskRequest, SubmitTaskResponse,
+    TaskState, TaskStatusRequest, TaskStatusResponse, TaskSummary, TraceEventSummary,
+    TraceSummary, UpdateMcpServerStateRequest, UpdateMcpServerStateResponse,
 };
 use sharo_core::skills::{SkillCatalogEntry, SkillDocument, SkillSourceScope};
 
@@ -481,6 +485,172 @@ fn mcp_control_plane_envelopes_roundtrip() {
         DaemonResponse::GetRuntimeStatus(payload) => {
             assert_eq!(payload.status.mcp_enabled_count, 1);
             assert_eq!(payload.status.mcp_disabled_count, 1);
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+}
+
+#[test]
+fn hazel_control_plane_envelopes_roundtrip() {
+    let status_request = DaemonRequest::GetHazelStatus;
+    let status_request_json =
+        serde_json::to_string(&status_request).expect("serialize hazel status request");
+    let status_request_parsed: DaemonRequest =
+        serde_json::from_str(&status_request_json).expect("deserialize hazel status request");
+    assert!(matches!(status_request_parsed, DaemonRequest::GetHazelStatus));
+
+    let status_response = DaemonResponse::GetHazelStatus(GetHazelStatusResponse {
+        status: HazelStatusSummary {
+            available: true,
+            card_count: 2,
+            proposal_batch_count: 1,
+            sleep_job_count: 1,
+            actions: HazelActionAvailability {
+                retrieval_preview: true,
+                validate_batch: true,
+                submit_batch: true,
+                enqueue_sleep_job: true,
+                cancel_sleep_job: true,
+            },
+            limits: HazelLimitsSummary {
+                max_list_items: 64,
+                max_preview_cards: 8,
+                max_sleep_batches: 8,
+                max_sleep_proposals_per_batch: 64,
+            },
+        },
+    });
+    let status_response_json =
+        serde_json::to_string(&status_response).expect("serialize hazel status response");
+    let status_response_parsed: DaemonResponse =
+        serde_json::from_str(&status_response_json).expect("deserialize hazel status response");
+    match status_response_parsed {
+        DaemonResponse::GetHazelStatus(payload) => {
+            assert!(payload.status.available);
+            assert_eq!(payload.status.limits.max_list_items, 64);
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    let cards_request =
+        DaemonRequest::ListHazelCards(sharo_core::protocol::ListHazelCardsRequest { limit: Some(8) });
+    let cards_request_json =
+        serde_json::to_string(&cards_request).expect("serialize list hazel cards request");
+    let cards_request_parsed: DaemonRequest =
+        serde_json::from_str(&cards_request_json).expect("deserialize list hazel cards request");
+    match cards_request_parsed {
+        DaemonRequest::ListHazelCards(payload) => assert_eq!(payload.limit, Some(8)),
+        other => panic!("unexpected request: {other:?}"),
+    }
+
+    let card = HazelCardView {
+        card_id: "hazel-memory-1".to_string(),
+        kind: RecollectionCardKind::AssociationCue,
+        state: RecollectionCardState::Active,
+        subject: "hazel".to_string(),
+        text: "hazel is structured memory".to_string(),
+        provenance: vec![ProvenanceRef {
+            source_ref: "hazel:assertion/hazel-memory-1".to_string(),
+            source_excerpt: Some("support=5 contradiction=0 confidence_milli=920".to_string()),
+        }],
+        policy_ids: vec!["hunch.v1".to_string()],
+    };
+    let cards_response = DaemonResponse::ListHazelCards(ListHazelCardsResponse {
+        cards: vec![card.clone()],
+    });
+    let cards_response_json =
+        serde_json::to_string(&cards_response).expect("serialize list hazel cards response");
+    let cards_response_parsed: DaemonResponse =
+        serde_json::from_str(&cards_response_json).expect("deserialize list hazel cards response");
+    match cards_response_parsed {
+        DaemonResponse::ListHazelCards(payload) => {
+            assert_eq!(
+                payload.cards[0].provenance[0].source_ref,
+                "hazel:assertion/hazel-memory-1"
+            );
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    let batch_response = DaemonResponse::GetHazelProposalBatch(GetHazelProposalBatchResponse {
+        batch: HazelProposalBatchView {
+            batch_id: "batch-1".to_string(),
+            idempotency_key: "idemp-1".to_string(),
+            source_ref: "note:hazel".to_string(),
+            producer: "operator".to_string(),
+            proposal_count: 2,
+        },
+    });
+    let batch_response_json =
+        serde_json::to_string(&batch_response).expect("serialize hazel proposal batch response");
+    let batch_response_parsed: DaemonResponse = serde_json::from_str(&batch_response_json)
+        .expect("deserialize hazel proposal batch response");
+    match batch_response_parsed {
+        DaemonResponse::GetHazelProposalBatch(payload) => {
+            assert_eq!(payload.batch.source_ref, "note:hazel");
+            assert_eq!(payload.batch.proposal_count, 2);
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    let jobs_response = DaemonResponse::ListHazelSleepJobs(ListHazelSleepJobsResponse {
+        jobs: vec![HazelSleepJobView {
+            job_id: "job-1".to_string(),
+            state: HazelSleepJobState::Completed,
+            run_id: Some("sleep-run-v2-1234".to_string()),
+            proposal_batch_ids: vec!["batch-1".to_string()],
+            summary: "completed with one batch".to_string(),
+        }],
+    });
+    let jobs_response_json =
+        serde_json::to_string(&jobs_response).expect("serialize hazel sleep jobs response");
+    let jobs_response_parsed: DaemonResponse =
+        serde_json::from_str(&jobs_response_json).expect("deserialize hazel sleep jobs response");
+    match jobs_response_parsed {
+        DaemonResponse::ListHazelSleepJobs(payload) => {
+            assert_eq!(payload.jobs[0].state, HazelSleepJobState::Completed);
+            assert_eq!(payload.jobs[0].proposal_batch_ids, vec!["batch-1".to_string()]);
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    let job_response = DaemonResponse::GetHazelSleepJob(GetHazelSleepJobResponse {
+        job: HazelSleepJobView {
+            job_id: "job-1".to_string(),
+            state: HazelSleepJobState::Completed,
+            run_id: Some("sleep-run-v2-1234".to_string()),
+            proposal_batch_ids: vec!["batch-1".to_string()],
+            summary: "completed with one batch".to_string(),
+        },
+    });
+    let job_response_json =
+        serde_json::to_string(&job_response).expect("serialize hazel sleep job response");
+    let job_response_parsed: DaemonResponse =
+        serde_json::from_str(&job_response_json).expect("deserialize hazel sleep job response");
+    match job_response_parsed {
+        DaemonResponse::GetHazelSleepJob(payload) => {
+            assert_eq!(payload.job.run_id.as_deref(), Some("sleep-run-v2-1234"));
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    let list_batches_response =
+        DaemonResponse::ListHazelProposalBatches(ListHazelProposalBatchesResponse {
+            batches: vec![HazelProposalBatchView {
+                batch_id: "batch-1".to_string(),
+                idempotency_key: "idemp-1".to_string(),
+                source_ref: "note:hazel".to_string(),
+                producer: "operator".to_string(),
+                proposal_count: 2,
+            }],
+        });
+    let list_batches_json =
+        serde_json::to_string(&list_batches_response).expect("serialize hazel batches response");
+    let list_batches_parsed: DaemonResponse =
+        serde_json::from_str(&list_batches_json).expect("deserialize hazel batches response");
+    match list_batches_parsed {
+        DaemonResponse::ListHazelProposalBatches(payload) => {
+            assert_eq!(payload.batches[0].producer, "operator");
         }
         other => panic!("unexpected response: {other:?}"),
     }

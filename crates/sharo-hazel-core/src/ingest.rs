@@ -35,7 +35,12 @@ pub fn import_openai_messages_to_proposal_batch(
         return Err("conversation_import_idempotency_key_required".to_string());
     }
 
-    let proposals: Vec<Proposal> = messages
+    let canonical_messages = messages
+        .iter()
+        .map(canonicalize_openai_message)
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let proposals: Vec<Proposal> = canonical_messages
         .iter()
         .enumerate()
         .filter_map(|(index, message)| {
@@ -66,6 +71,20 @@ pub fn import_openai_messages_to_proposal_batch(
             producer: "conversation-import/openai-messages-v1".to_string(),
         },
         proposals,
+    })
+}
+
+fn canonicalize_openai_message(message: &OpenAiMessage) -> Result<OpenAiMessage, String> {
+    let role = message.role.trim().to_ascii_lowercase();
+    if !matches!(role.as_str(), "system" | "user" | "assistant" | "tool") {
+        return Err(format!(
+            "conversation_import_invalid_role role={}",
+            message.role.trim()
+        ));
+    }
+    Ok(OpenAiMessage {
+        role,
+        content: message.content.clone(),
     })
 }
 
