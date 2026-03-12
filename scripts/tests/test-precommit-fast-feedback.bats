@@ -35,6 +35,10 @@ EOF
 #!/usr/bin/env bash
 exit 0
 EOF
+  cat > scripts/check-doc-portability.sh <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
   cat > scripts/check-tasks-registry.sh <<'EOF'
 #!/usr/bin/env bash
 exit 0
@@ -49,6 +53,7 @@ exit 0
 EOF
   chmod +x scripts/check-changelog-staged.sh scripts/check-rust-policy.sh scripts/check-rust-tests.sh \
     scripts/check-sync-manifest.sh scripts/doc-lint.sh scripts/check-doc-terms.sh \
+    scripts/check-doc-portability.sh \
     scripts/check-tasks-registry.sh scripts/check-tasks-sync.sh scripts/check-mvp-matrix-map.sh
 }
 

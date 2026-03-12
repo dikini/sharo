@@ -49,7 +49,13 @@ This keeps task state deterministic and reduces stale registry entries.
 - Run daemon invariant checks: `scripts/check-daemon-invariants.sh`
 - Run deterministic conflict-policy checks: `scripts/check-conflict-determinism.sh`
 - Run durability warning-signal checks: `scripts/check-durability-signals.sh`
+- Run docs portability checks: `scripts/check-doc-portability.sh --changed`
+- Run blocking local pre-push replay: `scripts/check-prepush-policy.sh`
+- Run path-sensitive flaky daemon regression replay: `scripts/check-flaky-regressions.sh --changed`
 - Canonical task runner entrypoint: `just verify`
+- Just wrapper for blocking local pre-push replay: `just prepush-policy`
+- Just wrapper for docs portability checks: `just doc-portability`
+- Just wrapper for path-sensitive flaky daemon regression replay: `just flaky-regressions`
 - Initialize top-level starter files from templates: `scripts/init-repo.sh --apply`
 - Just wrapper for starter template initialization: `just init-repo`
 - Extract standalone reusable backbone directory: `scripts/extract-backbone.sh`
@@ -94,6 +100,8 @@ Current state: slices 000 through 005 are marked `done` in `docs/tasks/tasks.csv
 - `TASK-WORKFLOW-TOOL-GUIDES-PLAN-001`: implemented shell/workflow/rust-hygiene wrappers, CI gates, and operator docs.
 - `TASK-PROMPT-GUIDANCE-SPEC-001`: defined prompt-contract hardening for spec/plan templates and cross-model (GPT-5.3/GPT-5.4) compatibility guidance.
 - `TASK-PROMPT-GUIDANCE-PLAN-001`: implemented prompt-contract sections, lint enforcement, and template usage guidance updates.
+- `TASK-LOCAL-POLICY-REPLAY-SPEC-001`: defined blocking local pre-push replay, docs portability, and path-sensitive flaky daemon replay contracts.
+- `TASK-LOCAL-POLICY-REPLAY-PLAN-001`: implemented blocking pre-push replay scripts, docs portability gating, flaky replay wiring, and operator docs.
 
 ## Tool Usage Guide
 
@@ -101,6 +109,9 @@ Current state: slices 000 through 005 are marked `done` in `docs/tasks/tasks.csv
 - Use `scripts/check-workflows.sh` before changing `.github/workflows/*` to catch invalid actions syntax and expressions.
 - Use `scripts/check-rust-hygiene.sh --advisory --check all` during feature work for dependency hygiene signal without blocking iteration.
 - Use `scripts/check-rust-hygiene.sh --strict --check all` before dependency bumps or release preparation.
+- Use `scripts/check-doc-portability.sh --changed` before committing docs changes to catch workstation-specific and worktree-local references early.
+- Use `scripts/check-prepush-policy.sh` or `just prepush-policy` before manual pushes when you want the same blocking replay the `pre-push` hook will enforce.
+- Use `scripts/check-flaky-regressions.sh --changed` when daemon/runtime paths changed and you want an explicit replay of the known unstable regression set before pushing.
 - `cargo semver-checks` is scoped to `sharo-core` because that crate is the public library surface in this workspace.
 - Live OpenAI checks are opt-in only (cost/time sensitive); default hooks/fast-feedback remain non-network by default.
 - Default smoke coverage still validates daemon CLI path via deterministic and fake-daemon scenarios in `scripts/tests/test-openai-live-smoke.bats`.

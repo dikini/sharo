@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+push_spec_file="$(mktemp)"
+trap 'rm -f "$push_spec_file"' EXIT
+cat >"$push_spec_file"
+
+scripts/check-prepush-policy.sh \
+  --remote-name "${1:-}" \
+  --remote-url "${2:-}" \
+  --push-spec-file "$push_spec_file"

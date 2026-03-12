@@ -100,7 +100,12 @@ jobs:
         run: |
           set -euo pipefail
           range="${{ steps.range.outputs.range }}"
-          mapfile -t docs_files < <(git diff --name-only "$range" -- docs AGENTS.md | sed '/^$/d' | sort -u)
+          mapfile -t docs_files < <(
+            git diff --name-only "$range" -- README.md docs AGENTS.md \
+              | sed '/^$/d' \
+              | rg '(^README\.md$|^AGENTS\.md$|\.md$)' \
+              | sort -u
+          )
           if [[ "${#docs_files[@]}" -eq 0 ]]; then
             echo "doc-lint: no docs changed in range"
             exit 0
@@ -110,14 +115,17 @@ jobs:
             scripts/doc-lint.sh --path "$f" --strict-new
           done
 
+      - name: Run docs portability checks in range
+        run: scripts/check-doc-portability.sh --range "${{ steps.range.outputs.range }}"
+
       - name: Run docs terminology checks in range
         run: |
           set -euo pipefail
           range="${{ steps.range.outputs.range }}"
           mapfile -t docs_files < <(
-            git diff --name-only "$range" -- docs AGENTS.md \
+            git diff --name-only "$range" -- README.md docs AGENTS.md \
               | sed '/^$/d' \
-              | rg '(^AGENTS\.md$|\.md$)' \
+              | rg '(^README\.md$|^AGENTS\.md$|\.md$)' \
               | sort -u
           )
           if [[ "${#docs_files[@]}" -eq 0 ]]; then
@@ -165,6 +173,9 @@ jobs:
           fi
           echo "policy-check failed: CHANGELOG.md must be updated in this push/PR range." >&2
           exit 1
+
+      - name: Run flaky regression replay when daemon paths changed
+        run: scripts/check-flaky-regressions.sh --range "${{ steps.range.outputs.range }}"
 
       - name: Show sccache stats
         if: always()

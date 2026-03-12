@@ -86,12 +86,15 @@ fail() {
 
 is_in_scope_file() {
   local f="$1"
-  [[ "$f" == AGENTS.md || "$f" == docs/*.md || "$f" == docs/*/*.md || "$f" == docs/*/*/*.md || "$f" == docs/*/*/*/*.md ]]
+  [[ "$f" == README.md || "$f" == AGENTS.md || "$f" == docs/*.md || "$f" == docs/*/*.md || "$f" == docs/*/*/*.md || "$f" == docs/*/*/*/*.md ]]
 }
 
 collect_files_all() {
   local out=()
   while IFS= read -r f; do out+=("$f"); done < <(find docs -type f -name '*.md' | sort)
+  if [[ -f README.md ]]; then
+    out+=("README.md")
+  fi
   if [[ -f AGENTS.md ]]; then
     out+=("AGENTS.md")
   fi
@@ -100,9 +103,9 @@ collect_files_all() {
 
 collect_files_changed() {
   {
-    git diff --name-only -- docs AGENTS.md
-    git diff --cached --name-only -- docs AGENTS.md
-    git ls-files --others --exclude-standard -- docs AGENTS.md
+    git diff --name-only -- README.md docs AGENTS.md
+    git diff --cached --name-only -- README.md docs AGENTS.md
+    git ls-files --others --exclude-standard -- README.md docs AGENTS.md
   } | sed '/^$/d' | sort -u
 }
 
@@ -212,7 +215,7 @@ while IFS= read -r match; do
   if [[ ! -e "$target" ]]; then
     fail "broken local link in '$file' -> '$link'"
   fi
-done < <(rg -n -o '\[[^]]+\]\(([^)]+)\)' "${files[@]}")
+done < <(rg -H -n -o '\[[^]]+\]\(([^)]+)\)' "${files[@]}")
 
 # Strict TDD template profile checks.
 strict_files=()

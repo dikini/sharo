@@ -9,6 +9,11 @@ The format is based on Common Changelog:
 
 ### Added
 
+- Added local workflow hardening to catch policy-check failures before push by:
+  - adding a blocking `.githooks/pre-push` hook that delegates to `scripts/check-prepush-policy.sh`
+  - adding `scripts/check-doc-portability.sh` to reject machine-local and worktree-local references in canonical docs
+  - adding `scripts/check-flaky-regressions.sh` for path-sensitive replay of known high-risk daemon regressions
+  - adding `just prepush-policy`, `just doc-portability`, and `just flaky-regressions` plus canonical workflow docs/spec/plan coverage for the new local gate contract
 - Added daemon/TUI-first Hazel inspection and safe control tooling by:
   - extending the daemon protocol with Hazel status, cards, proposal-batch, sleep-job, preview, validation, submission, and cancel-job control-plane operations
   - persisting durable Hazel preview, validation, submission, proposal-batch, and sleep-job records in the daemon store
@@ -22,6 +27,7 @@ The format is based on Common Changelog:
 
 ### Fixed
 
+- Fixed `policy-checks` docs lint failures in the Docker runtime docs by replacing workstation-specific absolute Markdown links with repository-relative links that resolve correctly in GitHub Actions checkouts.
 - Fixed `policy-checks` dependency-security failures for the new TUI dependency path by:
   - allowing the transitive `Zlib` SPDX license required by `ratatui` in `deny.toml`
   - ignoring `RUSTSEC-2024-0436` for transitive `paste` until an upstream `ratatui` replacement path exists

@@ -34,7 +34,7 @@ just docker-smoke
 
 ## Dockerfile
 
-The canonical image definition is the root [`Dockerfile`](/home/dikini/Projects/sharo/Dockerfile).
+The canonical image definition is the root [`Dockerfile`](../Dockerfile).
 
 Build stages:
 
@@ -91,4 +91,4 @@ docker run --rm --entrypoint sharo-hazel-mcp sharo:local --help
 
 ## DevOps
 
-Operational procedures, upgrade guidance, and troubleshooting live in [`docs/devops/docker-runtime-operations.md`](/home/dikini/Projects/sharo/docs/devops/docker-runtime-operations.md).
+Operational procedures, upgrade guidance, and troubleshooting live in [`docs/devops/docker-runtime-operations.md`](devops/docker-runtime-operations.md).

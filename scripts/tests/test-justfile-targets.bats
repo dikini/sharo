@@ -20,13 +20,22 @@ setup() {
   run rg '^fast-feedback:\s*$' "$ROOT/justfile"
   [ "$status" -eq 0 ]
 
+  run rg '^prepush-policy:\s*$' "$ROOT/justfile"
+  [ "$status" -eq 0 ]
+
   run rg '^merge-gate:\s*$' "$ROOT/justfile"
   [ "$status" -eq 0 ]
 
   run rg '^daemon-invariants:\s*$' "$ROOT/justfile"
   [ "$status" -eq 0 ]
 
+  run rg '^flaky-regressions:\s*$' "$ROOT/justfile"
+  [ "$status" -eq 0 ]
+
   run rg '^shell-quality:\s*$' "$ROOT/justfile"
+  [ "$status" -eq 0 ]
+
+  run rg '^doc-portability:\s*$' "$ROOT/justfile"
   [ "$status" -eq 0 ]
 
   run rg '^workflow-lint:\s*$' "$ROOT/justfile"

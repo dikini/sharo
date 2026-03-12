@@ -18,14 +18,23 @@ verify:
 fast-feedback:
     scripts/check-fast-feedback.sh
 
+prepush-policy:
+    scripts/check-prepush-policy.sh
+
 merge-gate:
     scripts/check-merge-result.sh
 
 daemon-invariants:
     scripts/check-daemon-invariants.sh
 
+flaky-regressions:
+    scripts/check-flaky-regressions.sh --changed
+
 shell-quality:
     scripts/check-shell-quality.sh --all
+
+doc-portability:
+    scripts/check-doc-portability.sh --all
 
 workflow-lint:
     scripts/check-workflows.sh

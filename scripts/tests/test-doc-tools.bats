@@ -82,6 +82,22 @@ EOF
   [[ "$output" == *"--strict-filled"* ]]
 }
 
+@test "doc-lint --path resolves local markdown links relative to the file" {
+  mkdir -p docs/devops
+  touch Dockerfile
+  cat > docs/devops/runbook.md <<'EOF'
+# Runbook
+EOF
+  cat > docs/guide.md <<'EOF'
+# Guide
+
+See [`Dockerfile`](../Dockerfile) and [`runbook`](devops/runbook.md).
+EOF
+
+  run scripts/doc-lint.sh --path docs/guide.md
+  [ "$status" -eq 0 ]
+}
+
 @test "template README documents delimiter block guidance" {
   run rg '^## Delimiter Block Guidance$' "$ROOT/docs/templates/README.md"
   [ "$status" -eq 0 ]

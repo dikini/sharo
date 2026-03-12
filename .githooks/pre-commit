@@ -16,5 +16,6 @@ scripts/check-sync-manifest.sh --changed
 scripts/check-mvp-matrix-map.sh
 scripts/doc-lint.sh --changed --strict-new
 scripts/check-doc-terms.sh --changed
+scripts/check-doc-portability.sh --changed
 scripts/check-tasks-registry.sh
 scripts/check-tasks-sync.sh --changed

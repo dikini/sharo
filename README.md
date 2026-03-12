@@ -15,8 +15,8 @@ The repository includes a daemon-first multi-stage Docker image that builds on `
 
 - Build and test the image: `scripts/docker-build.sh --tag sharo:local`
 - Smoke-check the built image: `scripts/docker-smoke.sh --image sharo:local`
-- Read the operator procedure guide: [`docs/docker-runtime-image.md`](/home/dikini/Projects/sharo/docs/docker-runtime-image.md)
-- Read the devops runbook: [`docs/devops/docker-runtime-operations.md`](/home/dikini/Projects/sharo/docs/devops/docker-runtime-operations.md)
+- Read the operator procedure guide: [`docs/docker-runtime-image.md`](docs/docker-runtime-image.md)
+- Read the devops runbook: [`docs/devops/docker-runtime-operations.md`](docs/devops/docker-runtime-operations.md)
 
 ## Status
 
