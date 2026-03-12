@@ -36,9 +36,11 @@ This keeps task state deterministic and reduces stale registry entries.
 - Validate sync gating (changed files): `scripts/check-tasks-sync.sh --changed`
 - Run Rust workspace tests with `nextest` fallback: `scripts/check-tests.sh --workspace`
 - Run dependency governance/security checks: `scripts/check-dependencies-security.sh`
+- Run dependency governance/security checks for a commit range: `scripts/check-dependencies-security.sh --range <git-range>`
 - Run Knot diff check: `scripts/check-knot-diff.sh --mapping docs/tasks/knot-diff-mapping.csv`
 - Run research reference check: `scripts/check-research-references.sh --registry docs/tasks/research-reference-rules.csv`
 - Run shell tests (Bats): `scripts/run-shell-tests.sh --all`
+- Run shell tests (Bats) for a commit range: `scripts/run-shell-tests.sh --range <git-range>`
 - Run shell formatting/lint checks: `scripts/check-shell-quality.sh --all`
 - Run GitHub workflow lint checks: `scripts/check-workflows.sh`
 - Run Rust hygiene checks (advisory): `scripts/check-rust-hygiene.sh --advisory --check all`
@@ -107,11 +109,13 @@ Current state: slices 000 through 005 are marked `done` in `docs/tasks/tasks.csv
 
 - Use `scripts/check-shell-quality.sh --all` before changing shell scripts to catch formatting/lint issues early.
 - Use `scripts/check-workflows.sh` before changing `.github/workflows/*` to catch invalid actions syntax and expressions.
+- Workflow lint is local-first: fast-feedback and pre-push enforce `scripts/check-workflows.sh`, while `policy-checks` no longer runs a dedicated CI `actionlint` step.
 - Use `scripts/check-rust-hygiene.sh --advisory --check all` during feature work for dependency hygiene signal without blocking iteration.
 - Use `scripts/check-rust-hygiene.sh --strict --check all` before dependency bumps or release preparation.
 - Use `scripts/check-doc-portability.sh --changed` before committing docs changes to catch workstation-specific and worktree-local references early.
 - Use `scripts/check-prepush-policy.sh` or `just prepush-policy` before manual pushes when you want the same blocking replay the `pre-push` hook will enforce.
 - Use `scripts/check-flaky-regressions.sh --changed` when daemon/runtime paths changed and you want an explicit replay of the known unstable regression set before pushing.
+- `policy-checks` runs dependency-security and shell tests in range-sensitive mode, so docs-only and unrelated Rust/runtime changes skip those heavier CI lanes.
 - `cargo semver-checks` is scoped to `sharo-core` because that crate is the public library surface in this workspace.
 - Live OpenAI checks are opt-in only (cost/time sensitive); default hooks/fast-feedback remain non-network by default.
 - Default smoke coverage still validates daemon CLI path via deterministic and fake-daemon scenarios in `scripts/tests/test-openai-live-smoke.bats`.
@@ -133,6 +137,7 @@ Current state: slices 000 through 005 are marked `done` in `docs/tasks/tasks.csv
   - bootstrap supports SHA-256 verification via `sha256sum` or `shasum -a 256`.
   - upstream `actionlint` releases currently do not publish detached archive signatures (`.sig`/`.asc`), so bootstrap enforces checksum/digest integrity verification instead of signature verification.
   - run `scripts/bootstrap-dev.sh --apply` to install project-managed tools/hooks and execute full verification.
+  - local fast-feedback enforces workflow lint by default; CI `just verify` warns and skips only when `actionlint` is unavailable because workflow lint is intentionally local-only there.
 
 ## Tooling Inputs
 

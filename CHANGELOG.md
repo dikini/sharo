@@ -24,6 +24,19 @@ The format is based on Common Changelog:
   - shipping `sharo`, `sharo-daemon`, `sharo-tui`, and `sharo-hazel-mcp` in the runtime image
   - adding `scripts/docker-build.sh`, `scripts/docker-smoke.sh`, `just docker-build`, and `just docker-smoke` plus operator docs for local container workflows
   - documenting the canonical Dockerfile, the runtime process, and a dedicated devops runbook for build, smoke, release, and troubleshooting procedures
+- Added workflow CI latency hardening planning artifacts:
+  - `docs/specs/workflow-ci-latency-hardening.md`
+  - `docs/plans/2026-03-12-workflow-ci-latency-hardening-plan.md`
+  - task registry entries:
+    - `TASK-WORKFLOW-CI-LATENCY-SPEC-001`
+    - `TASK-WORKFLOW-CI-LATENCY-PLAN-001`
+  - timing-backed proposal to make workflow lint local-only via bootstrap-installed prebuilt `actionlint`
+  - timing-backed proposal to gate CI dependency-security and shell tests on range-relevant changes
+- Added workflow CI latency hardening implementation by:
+  - making workflow lint local-first through `scripts/check-workflows.sh` enforcement in fast-feedback and pre-push replay while allowing CI `just verify` to warn-skip missing `actionlint`
+  - removing the dedicated `actionlint` step from `policy-checks`
+  - switching `scripts/check-dependencies-security.sh` and `scripts/run-shell-tests.sh` to range-sensitive CI execution in `policy-checks`
+  - syncing the extracted backbone template workflow/tooling to the same local-first workflow-lint and range-sensitive CI behavior
 
 ### Fixed
 

@@ -33,11 +33,24 @@ jobs:
       - name: Make scripts executable
         run: chmod +x scripts/*.sh
 
+      - name: Resolve commit range
+        id: range
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            RANGE="origin/${{ github.base_ref }}...${{ github.sha }}"
+          else
+            BEFORE="${{ github.event.before }}"
+            if [[ "$BEFORE" == "0000000000000000000000000000000000000000" ]]; then
+              RANGE="${{ github.sha }}^!"
+            else
+              RANGE="$BEFORE...${{ github.sha }}"
+            fi
+          fi
+          echo "range=$RANGE" >> "$GITHUB_OUTPUT"
+          echo "Using range: $RANGE"
+
       - name: Run canonical verification entrypoint
         run: just verify
-
-      - name: Run workflow lint checks
-        uses: rhysd/actionlint@v1.7.11
 
       - name: Run shell quality checks
         run: scripts/check-shell-quality.sh --all
@@ -52,7 +65,7 @@ jobs:
         run: cargo install --locked cargo-deny cargo-audit
 
       - name: Run dependency and security checks
-        run: scripts/check-dependencies-security.sh
+        run: scripts/check-dependencies-security.sh --range "${{ steps.range.outputs.range }}"
 
       - name: Enforce Rust policy
         run: scripts/check-rust-policy.sh
@@ -78,23 +91,7 @@ jobs:
         run: scripts/check-mvp-matrix-map.sh
 
       - name: Run shell tests
-        run: scripts/run-shell-tests.sh --all
-
-      - name: Resolve commit range
-        id: range
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            RANGE="origin/${{ github.base_ref }}...${{ github.sha }}"
-          else
-            BEFORE="${{ github.event.before }}"
-            if [[ "$BEFORE" == "0000000000000000000000000000000000000000" ]]; then
-              RANGE="${{ github.sha }}^!"
-            else
-              RANGE="$BEFORE...${{ github.sha }}"
-            fi
-          fi
-          echo "range=$RANGE" >> "$GITHUB_OUTPUT"
-          echo "Using range: $RANGE"
+        run: scripts/run-shell-tests.sh --range "${{ steps.range.outputs.range }}"
 
       - name: Run docs lint (strict profile) in range
         run: |

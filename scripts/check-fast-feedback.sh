@@ -72,7 +72,11 @@ content_sha() {
 scripts/doc-lint.sh --changed --strict-new
 scripts/check-doc-terms.sh --changed
 scripts/check-doc-portability.sh --changed
-scripts/check-workflows.sh --warn-missing
+workflow_lint_args=()
+if [[ "${CI:-false}" == "true" ]]; then
+  workflow_lint_args+=(--warn-missing)
+fi
+scripts/check-workflows.sh "${workflow_lint_args[@]}"
 scripts/check-shell-quality.sh --changed --warn-missing
 scripts/check-tasks-registry.sh
 scripts/check-tasks-sync.sh --changed

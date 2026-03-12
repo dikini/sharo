@@ -49,3 +49,14 @@ setup() {
   run rg 'run: just verify' "$ROOT/.github/workflows/policy-checks.yml"
   [ "$status" -eq 0 ]
 }
+
+@test "policy checks workflow keeps dedicated range-based policy follow-ups" {
+  run rg 'Resolve commit range' "$ROOT/.github/workflows/policy-checks.yml"
+  [ "$status" -eq 0 ]
+
+  run rg 'scripts/check-dependencies-security\.sh --range "\$\{\{ steps\.range\.outputs\.range \}\}"' "$ROOT/.github/workflows/policy-checks.yml"
+  [ "$status" -eq 0 ]
+
+  run rg 'scripts/run-shell-tests\.sh --range "\$\{\{ steps\.range\.outputs\.range \}\}"' "$ROOT/.github/workflows/policy-checks.yml"
+  [ "$status" -eq 0 ]
+}

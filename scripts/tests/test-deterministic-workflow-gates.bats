@@ -37,6 +37,12 @@ setup() {
 }
 
 @test "fast feedback includes deterministic workflow hardening gates" {
+  run rg '^scripts/check-workflows\.sh "\$\{workflow_lint_args\[@\]\}"$' "$ROOT/scripts/check-fast-feedback.sh"
+  [ "$status" -eq 0 ]
+
+  run rg '\[\[ "\$\{CI:-false\}" == "true" \]\]' "$ROOT/scripts/check-fast-feedback.sh"
+  [ "$status" -eq 0 ]
+
   run rg '^scripts/check-conflict-determinism\.sh$' "$ROOT/scripts/check-fast-feedback.sh"
   [ "$status" -eq 0 ]
 

@@ -219,7 +219,11 @@ content_sha() {
 
 scripts/doc-lint.sh --changed --strict-new
 scripts/check-doc-terms.sh --changed
-scripts/check-workflows.sh --warn-missing
+workflow_lint_args=()
+if [[ "${CI:-false}" == "true" ]]; then
+  workflow_lint_args+=(--warn-missing)
+fi
+scripts/check-workflows.sh "${workflow_lint_args[@]}"
 scripts/check-shell-quality.sh --changed --warn-missing
 scripts/check-tasks-registry.sh
 scripts/check-tasks-sync.sh --changed
@@ -432,9 +436,6 @@ jobs:
       - name: Install just
         uses: taiki-e/install-action@just
 
-      - name: Install actionlint
-        uses: taiki-e/install-action@actionlint
-
       - name: Install shell quality tools
         run: |
           sudo apt-get update
@@ -442,42 +443,6 @@ jobs:
 
       - name: Make scripts executable
         run: chmod +x scripts/*.sh
-
-      - name: Run canonical verification entrypoint
-        run: just verify
-
-      - name: Run workflow lint checks
-        run: scripts/check-workflows.sh
-
-      - name: Run shell quality checks
-        run: scripts/check-shell-quality.sh --all
-
-      - name: Install dependency security tools
-        run: cargo install --locked cargo-deny cargo-audit
-
-      - name: Run dependency and security checks
-        run: scripts/check-dependencies-security.sh
-
-      - name: Enforce Rust policy
-        run: scripts/check-rust-policy.sh
-
-      - name: Run Rust workspace tests
-        run: scripts/check-rust-tests.sh --all
-
-      - name: Install bats-core
-        run: scripts/install-bats.sh >/dev/null
-
-      - name: Run shell tests
-        run: scripts/run-shell-tests.sh --all
-
-      - name: Run docs lint (strict profile)
-        run: scripts/doc-lint.sh --strict-new
-
-      - name: Run docs terminology checks
-        run: scripts/check-doc-terms.sh
-
-      - name: Validate task registry
-        run: scripts/check-tasks-registry.sh
 
       - name: Resolve commit range
         id: range
@@ -494,6 +459,39 @@ jobs:
           fi
           echo "range=$RANGE" >> "$GITHUB_OUTPUT"
           echo "Using range: $RANGE"
+
+      - name: Run canonical verification entrypoint
+        run: just verify
+
+      - name: Run shell quality checks
+        run: scripts/check-shell-quality.sh --all
+
+      - name: Install dependency security tools
+        run: cargo install --locked cargo-deny cargo-audit
+
+      - name: Run dependency and security checks
+        run: scripts/check-dependencies-security.sh --range "${{ steps.range.outputs.range }}"
+
+      - name: Enforce Rust policy
+        run: scripts/check-rust-policy.sh
+
+      - name: Run Rust workspace tests
+        run: scripts/check-rust-tests.sh --all
+
+      - name: Install bats-core
+        run: scripts/install-bats.sh >/dev/null
+
+      - name: Run shell tests
+        run: scripts/run-shell-tests.sh --range "${{ steps.range.outputs.range }}"
+
+      - name: Run docs lint (strict profile)
+        run: scripts/doc-lint.sh --strict-new
+
+      - name: Run docs terminology checks
+        run: scripts/check-doc-terms.sh
+
+      - name: Validate task registry
+        run: scripts/check-tasks-registry.sh
 
       - name: Enforce sync manifest policy in range
         run: scripts/check-sync-manifest.sh --range "${{ steps.range.outputs.range }}"

@@ -24,3 +24,8 @@ setup() {
   run rg 'run: scripts/check-shell-quality\.sh --all' "$ROOT/.github/workflows/policy-checks.yml"
   [ "$status" -eq 0 ]
 }
+
+@test "policy checks workflow runs shell tests in range mode" {
+  run rg 'run: scripts/run-shell-tests\.sh --range "\$\{\{ steps\.range\.outputs\.range \}\}"' "$ROOT/.github/workflows/policy-checks.yml"
+  [ "$status" -eq 0 ]
+}
