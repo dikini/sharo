@@ -33,7 +33,6 @@ The format is based on Common Changelog:
   - explicit header, body, status, and multiline composer regions
   - visible cursor placement derived from the composer buffer and cursor position
   - layout regression coverage for active-screen rendering and multiline cursor coordinates
-- Fixed `scripts/tests/test-fast-feedback-marker.bats` in the interaction-loop worktree to disable commit signing inside its temporary test repository so required fast-feedback shell tests do not depend on local GPG agent availability.
 - Fixed ratatui interaction-loop review findings by:
   - keeping the terminal cursor visible during the live TUI loop instead of hiding it for the entire session
   - counting trailing blank composer lines when sizing the multiline input region so buffers ending with `\n` do not clamp the cursor into the wrong row

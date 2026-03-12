@@ -10,7 +10,6 @@ setup() {
   git init -q
   git config user.name "Test User"
   git config user.email "test@example.com"
-  git config commit.gpgsign false
   echo "v1" > tracked.txt
   git add tracked.txt
   git commit -qm "init"
