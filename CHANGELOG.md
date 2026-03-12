@@ -53,6 +53,7 @@ The format is based on Common Changelog:
   - removing duplicate property and loom steps from `policy-checks` because those targets are already covered by the workspace Rust test lane
   - setting `CARGO_INCREMENTAL=0` in CI alongside `sccache` to reduce non-cacheable incremental compile work
   - syncing the extracted backbone template workflow/tooling to the same CI-smoke and nightly-fuzz split
+- Added the `nightly-fuzz` workflow badge to the top-level `README.md`.
 
 ### Fixed
 

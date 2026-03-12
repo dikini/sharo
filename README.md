@@ -1,5 +1,8 @@
 # sharo
 
+[![nightly-fuzz](https://github.com/dikini/sharo/actions/workflows/nightly-fuzz.yml/badge.svg)](https://github.com/dikini/sharo/actions/workflows/nightly-fuzz.yml)
+[![policy-checks](https://github.com/dikini/sharo/actions/workflows/policy-checks.yml/badge.svg)](https://github.com/dikini/sharo/actions/workflows/policy-checks.yml)
+
 `sharo` is a Rust workspace with six crates:
 
 - `sharo-core`: shared core logic and protocol/model connector surface.
