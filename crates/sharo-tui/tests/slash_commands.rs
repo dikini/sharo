@@ -1,39 +1,12 @@
+mod support;
+
 use std::fs;
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use sharo_tui::app::{App, DaemonClient};
 use sharo_tui::commands::{SlashCommand, parse_slash_command};
-
-fn temp_path(prefix: &str, suffix: &str) -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("time")
-        .as_nanos();
-    std::env::temp_dir().join(format!("{prefix}-{nanos}{suffix}"))
-}
-
-fn binary_path(name: &str) -> PathBuf {
-    let current = std::env::current_exe().expect("current exe");
-    let debug_dir = current
-        .parent()
-        .and_then(|path| path.parent())
-        .expect("target debug dir");
-    debug_dir.join(name)
-}
-
-fn wait_for_socket(socket: &PathBuf) {
-    for _ in 0..80 {
-        if UnixStream::connect(socket).is_ok() {
-            return;
-        }
-        thread::sleep(Duration::from_millis(15));
-    }
-    panic!("connect to daemon socket");
-}
+use support::{binary_path, temp_path, wait_for_socket};
 
 fn create_skill(root: &Path, skill_id: &str, markdown: &str) {
     let skill_dir = root.join(skill_id);

@@ -21,6 +21,22 @@ The format is based on Common Changelog:
   - escaping daemon/model/session text before rendering it to the terminal so control sequences and multiline payloads cannot inject terminal state
   - making chat submission materialize a session automatically when no active session is selected, matching the session-first TUI contract
   - replacing a vacuous transcript-isolation property test with an invariant that actually checks active-session transcript selection
+- Tightened the interactive `sharo-tui` event loop by:
+  - merging worker results back into the live app without clobbering local screen focus
+  - sanitizing refresh-failure status messages before rendering them to the terminal
+  - reducing loop poll latency while background work is pending so completed worker results surface promptly
+- Extended the interactive `sharo-tui` composer by:
+  - adding multiline editing with cursor-aware insert, backspace, delete, and line navigation behavior
+  - changing `Enter` to insert a newline and `Ctrl-Enter` to submit the current buffer
+  - keeping the interaction model composer-first while preserving global screen and session shortcuts
+- Converted the interactive `sharo-tui` redraw path from plain terminal writes to `ratatui` frame rendering with:
+  - explicit header, body, status, and multiline composer regions
+  - visible cursor placement derived from the composer buffer and cursor position
+  - layout regression coverage for active-screen rendering and multiline cursor coordinates
+- Fixed `scripts/tests/test-fast-feedback-marker.bats` in the interaction-loop worktree to disable commit signing inside its temporary test repository so required fast-feedback shell tests do not depend on local GPG agent availability.
+- Fixed ratatui interaction-loop review findings by:
+  - keeping the terminal cursor visible during the live TUI loop instead of hiding it for the entire session
+  - counting trailing blank composer lines when sizing the multiline input region so buffers ending with `\n` do not clamp the cursor into the wrong row
 - Tightened slash-command operator behavior by:
   - refreshing cached runtime status after MCP enable/disable commands so shell connectivity and warning state do not drift behind daemon truth
   - replacing Rust `Debug` formatting in `/mcp` output with stable operator-facing status labels
@@ -84,6 +100,7 @@ The format is based on Common Changelog:
 
 ### Added
 
+- Added interaction-loop design and implementation planning artifacts for the next `sharo-tui` slice covering a single-threaded UI event loop, live composer input, keybindings, periodic refresh, and the explicit boundary that daemon/kernel execution remains concurrent.
 - Added exact-inspection and settings surfaces to `sharo-tui`:
   - new settings rendering for model profile, warnings, session-scoped skills, and MCP server status
   - new trace/artifacts rendering backed by exact daemon record ids and summaries

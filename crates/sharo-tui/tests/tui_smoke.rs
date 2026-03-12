@@ -1,17 +1,9 @@
+mod support;
+
 use std::fs;
-use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-fn temp_path(prefix: &str, suffix: &str) -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("time")
-        .as_nanos();
-    std::env::temp_dir().join(format!("{prefix}-{nanos}{suffix}"))
-}
+use support::{binary_path, temp_path, wait_for_socket};
 
 fn write_deterministic_config(prefix: &str) -> PathBuf {
     let config = temp_path(prefix, ".toml");
@@ -25,25 +17,6 @@ timeout_ms = 1000
     )
     .expect("write deterministic config");
     config
-}
-
-fn binary_path(name: &str) -> PathBuf {
-    let current = std::env::current_exe().expect("current exe");
-    let debug_dir = current
-        .parent()
-        .and_then(|path| path.parent())
-        .expect("target debug dir");
-    debug_dir.join(name)
-}
-
-fn wait_for_socket(socket: &PathBuf) {
-    for _ in 0..80 {
-        if UnixStream::connect(socket).is_ok() {
-            return;
-        }
-        thread::sleep(Duration::from_millis(15));
-    }
-    panic!("connect to daemon socket");
 }
 
 #[test]
