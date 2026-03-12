@@ -1,6 +1,6 @@
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -303,8 +303,9 @@ fn start_counting_response_server(
 
 fn start_observed_request_server(
     delay: Duration,
-    accept_window: Duration,
+    idle_window: Duration,
 ) -> (String, Arc<AtomicUsize>, thread::JoinHandle<()>) {
+    const STARTUP_WAIT: Duration = Duration::from_secs(3);
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind observed response server");
     listener
         .set_nonblocking(true)
@@ -313,12 +314,21 @@ fn start_observed_request_server(
     let observed = Arc::new(AtomicUsize::new(0));
     let observed_for_thread = Arc::clone(&observed);
     let handle = thread::spawn(move || {
-        let deadline = std::time::Instant::now() + accept_window;
+        let startup_deadline = std::time::Instant::now() + STARTUP_WAIT;
+        let mut idle_deadline = None;
         let mut workers = Vec::new();
-        while std::time::Instant::now() < deadline {
+        loop {
+            let now = std::time::Instant::now();
+            if idle_deadline.is_some_and(|deadline| now >= deadline) {
+                break;
+            }
+            if idle_deadline.is_none() && now >= startup_deadline {
+                break;
+            }
             match listener.accept() {
                 Ok((mut stream, _)) => {
                     observed_for_thread.fetch_add(1, Ordering::SeqCst);
+                    idle_deadline = Some(std::time::Instant::now() + idle_window);
                     workers.push(thread::spawn(move || {
                         let cloned = stream.try_clone().expect("clone observed response stream");
                         let mut reader = BufReader::new(cloned);
@@ -361,8 +371,9 @@ fn start_observed_request_server(
 fn start_observed_status_server(
     status_line: &str,
     delay: Duration,
-    accept_window: Duration,
+    idle_window: Duration,
 ) -> (String, Arc<AtomicUsize>, thread::JoinHandle<()>) {
+    const STARTUP_WAIT: Duration = Duration::from_secs(3);
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind observed status server");
     listener
         .set_nonblocking(true)
@@ -372,12 +383,21 @@ fn start_observed_status_server(
     let observed_for_thread = Arc::clone(&observed);
     let status_line = status_line.to_string();
     let handle = thread::spawn(move || {
-        let deadline = std::time::Instant::now() + accept_window;
+        let startup_deadline = std::time::Instant::now() + STARTUP_WAIT;
+        let mut idle_deadline = None;
         let mut workers = Vec::new();
-        while std::time::Instant::now() < deadline {
+        loop {
+            let now = std::time::Instant::now();
+            if idle_deadline.is_some_and(|deadline| now >= deadline) {
+                break;
+            }
+            if idle_deadline.is_none() && now >= startup_deadline {
+                break;
+            }
             match listener.accept() {
                 Ok((mut stream, _)) => {
                     observed_for_thread.fetch_add(1, Ordering::SeqCst);
+                    idle_deadline = Some(std::time::Instant::now() + idle_window);
                     let status_line = status_line.clone();
                     workers.push(thread::spawn(move || {
                         let cloned = stream.try_clone().expect("clone observed status stream");
@@ -416,6 +436,46 @@ fn start_observed_status_server(
     });
 
     (address, observed, handle)
+}
+
+#[test]
+fn observed_request_server_waits_for_first_late_connection() {
+    let (base_url, observed_requests, server_thread) = start_observed_request_server(
+        Duration::from_millis(10),
+        Duration::from_millis(50),
+    );
+    let address = base_url
+        .strip_prefix("http://")
+        .expect("base url host:port")
+        .to_string();
+
+    thread::sleep(Duration::from_millis(120));
+
+    let mut stream = TcpStream::connect(address).expect("connect observed request server");
+    write!(
+        stream,
+        "POST /v1/responses HTTP/1.1\r\nhost: local\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{{}}"
+    )
+    .expect("write observed request");
+    stream.flush().expect("flush observed request");
+
+    let cloned = stream.try_clone().expect("clone observed response stream");
+    let mut reader = BufReader::new(cloned);
+    let mut status_line = String::new();
+    reader
+        .read_line(&mut status_line)
+        .expect("read observed response status");
+    assert!(
+        status_line.starts_with("HTTP/1.1 200 OK"),
+        "unexpected response status: {status_line:?}",
+    );
+
+    server_thread.join().expect("join observed server");
+    assert_eq!(
+        observed_requests.load(Ordering::SeqCst),
+        1,
+        "observed request server should keep listening until the first request arrives",
+    );
 }
 
 fn send_request_on_stream(stream: UnixStream, request: &DaemonRequest) -> DaemonResponse {

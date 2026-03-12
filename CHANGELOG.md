@@ -21,6 +21,7 @@ The format is based on Common Changelog:
   - allowing the transitive `Zlib` SPDX license required by `ratatui` in `deny.toml`
   - ignoring `RUSTSEC-2024-0436` for transitive `paste` until an upstream `ratatui` replacement path exists
 - Fixed flaky CI-parity daemon scenario coverage by accepting equivalent fail-closed terminal save errors when the store directory is removed mid-write during `same_process_retry_after_terminal_save_failure_is_not_stuck_in_progress`.
+- Fixed flaky daemon scenario mock-provider listeners by giving observed test servers a bounded startup wait before they switch into duplicate-request idle-window tracking, which keeps duplicate-submit coverage stable on slower CI runners.
 - Removed generated fuzz `corpus/` files from tracked branch history for the chat-first TUI worktree and ignored local fuzz `corpus/` output in per-crate fuzz `.gitignore` files.
 - Fixed Task 8 TUI consistency gaps by:
   - making failed session switches leave the active session id and cached chat/artifact views unchanged
