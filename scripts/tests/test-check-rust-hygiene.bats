@@ -16,8 +16,11 @@ setup() {
   run rg 'cargo \+nightly udeps' "$ROOT/scripts/check-rust-hygiene.sh"
   [ "$status" -eq 0 ]
 
-  run rg 'cargo msrv verify' "$ROOT/scripts/check-rust-hygiene.sh"
+  run rg -- '--rust-version "\$workspace_msrv" -- cargo check --workspace --all-targets' "$ROOT/scripts/check-rust-hygiene.sh"
   [ "$status" -eq 0 ]
+
+  run rg 'cargo msrv verify --workspace' "$ROOT/scripts/check-rust-hygiene.sh"
+  [ "$status" -ne 0 ]
 
   run rg 'cargo semver-checks check-release' "$ROOT/scripts/check-rust-hygiene.sh"
   [ "$status" -eq 0 ]

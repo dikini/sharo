@@ -9,6 +9,7 @@ jobs:
   fuzz:
     runs-on: ubuntu-latest
     env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: "true"
       SCCACHE_CACHE_SIZE: 2G

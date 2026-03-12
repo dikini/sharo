@@ -7,6 +7,7 @@ cd "$ROOT"
 strict_mode=false
 check_target="all"
 baseline_ref="origin/main"
+workspace_msrv="1.93"
 
 usage() {
   cat <<'USAGE'
@@ -87,7 +88,9 @@ run_msrv() {
     warn_or_fail "cargo-msrv missing (cargo install --locked cargo-msrv)"
     return 0
   fi
-  run_with_mode "cargo msrv verify" cargo msrv verify --workspace -- cargo check --workspace --all-targets
+  run_with_mode \
+    "cargo msrv verify" \
+    cargo msrv verify --path . --rust-version "$workspace_msrv" -- cargo check --workspace --all-targets
 }
 
 run_semver() {

@@ -62,6 +62,9 @@ The format is based on Common Changelog:
 
 ### Fixed
 
+- Fixed scheduled `rust-hygiene` workflow failures by correcting `scripts/check-rust-hygiene.sh` to call `cargo msrv verify` with workspace flags passed through the custom check command instead of as unsupported top-level `cargo-msrv` arguments.
+- Fixed nightly fuzz workflow execution by correcting `scripts/check-fuzz.sh` fuzz-crate discovery to match the workspace `crates/<crate>/fuzz/Cargo.toml` layout, so nightly smoke runs no longer skip with `no fuzz crates discovered`.
+- Fixed nightly fuzz GitHub Actions Node runtime warnings by opting the workflow into Node 24 for `mozilla-actions/sccache-action@v0.0.9`.
 - Fixed `policy-checks` docs lint failures in the Docker runtime docs by replacing workstation-specific absolute Markdown links with repository-relative links that resolve correctly in GitHub Actions checkouts.
 - Fixed `policy-checks` dependency-security failures for the new TUI dependency path by:
   - allowing the transitive `Zlib` SPDX license required by `ratatui` in `deny.toml`

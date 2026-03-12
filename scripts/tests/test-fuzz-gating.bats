@@ -56,3 +56,15 @@ setup() {
   run rg -- '-seed=1' "$ROOT/scripts/check-fuzz.sh"
   [ "$status" -ne 0 ]
 }
+
+@test "check-fuzz discovers workspace fuzz crates" {
+  run bash -lc '
+    ROOT="'"$ROOT"'"
+    eval "$(sed -n '\''/^discover_fuzz_crates()/,/^}/p'\'' "$ROOT/scripts/check-fuzz.sh")"
+    discover_fuzz_crates
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"crates/sharo-core"* ]]
+  [[ "$output" == *"crates/sharo-hazel-mcp"* ]]
+  [[ "$output" == *"crates/sharo-tui"* ]]
+}

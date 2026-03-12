@@ -70,7 +70,7 @@ collect_changed_files() {
 }
 
 discover_fuzz_crates() {
-  find crates -mindepth 2 -maxdepth 2 -type f -path '*/fuzz/Cargo.toml' |
+  find crates -mindepth 3 -maxdepth 3 -type f -path '*/fuzz/Cargo.toml' |
     sed 's#/fuzz/Cargo.toml$##' |
     sort -u
 }

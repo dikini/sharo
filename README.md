@@ -1,7 +1,8 @@
 # sharo
 
-[![nightly-fuzz](https://github.com/dikini/sharo/actions/workflows/nightly-fuzz.yml/badge.svg)](https://github.com/dikini/sharo/actions/workflows/nightly-fuzz.yml)
-[![policy-checks](https://github.com/dikini/sharo/actions/workflows/policy-checks.yml/badge.svg)](https://github.com/dikini/sharo/actions/workflows/policy-checks.yml)
+[![fuzzing](https://github.com/dikini/sharo/actions/workflows/nightly-fuzz.yml/badge.svg)](https://github.com/dikini/sharo/actions/workflows/nightly-fuzz.yml)
+[![testing](https://github.com/dikini/sharo/actions/workflows/policy-checks.yml/badge.svg)](https://github.com/dikini/sharo/actions/workflows/policy-checks.yml)
+[![hygiene](https://github.com/dikini/sharo/actions/workflows/rust-hygiene.yml/badge.svg)](https://github.com/dikini/sharo/actions/workflows/rust-hygiene.yml)
 
 `sharo` is a Rust workspace with six crates:
 
