@@ -12,6 +12,7 @@ jobs:
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: "true"
       SCCACHE_CACHE_SIZE: 2G
+      CARGO_INCREMENTAL: "0"
 
     steps:
       - name: Checkout
@@ -49,22 +50,30 @@ jobs:
           echo "range=$RANGE" >> "$GITHUB_OUTPUT"
           echo "Using range: $RANGE"
 
+      - name: Classify CI scope
+        id: scope
+        run: |
+          set -euo pipefail
+          range="${{ steps.range.outputs.range }}"
+          cargo_inputs_changed=false
+          if git diff --name-only "$range" | rg -n '(^Cargo\.lock$|(^|/)Cargo\.toml$)' >/dev/null 2>&1; then
+            cargo_inputs_changed=true
+          fi
+          echo "cargo_inputs_changed=$cargo_inputs_changed" >> "$GITHUB_OUTPUT"
+          echo "cargo_inputs_changed=$cargo_inputs_changed"
+
       - name: Run canonical verification entrypoint
-        run: just verify
+        run: just verify-ci
 
       - name: Run shell quality checks
         run: scripts/check-shell-quality.sh --all
 
-      - name: Install cargo-fuzz
-        run: cargo install --locked cargo-fuzz
-
-      - name: Install nightly toolchain for fuzzing
-        run: rustup toolchain install nightly --profile minimal --component llvm-tools-preview
-
       - name: Install dependency security tools
+        if: steps.scope.outputs.cargo_inputs_changed == 'true'
         run: cargo install --locked cargo-deny cargo-audit
 
       - name: Run dependency and security checks
+        if: steps.scope.outputs.cargo_inputs_changed == 'true'
         run: scripts/check-dependencies-security.sh --range "${{ steps.range.outputs.range }}"
 
       - name: Enforce Rust policy
@@ -72,17 +81,6 @@ jobs:
 
       - name: Run Rust workspace tests
         run: scripts/check-rust-tests.sh --all
-
-      - name: Run fuzz smoke checks
-        env:
-          RUSTUP_TOOLCHAIN: nightly
-        run: scripts/check-fuzz.sh --smoke --all
-
-      - name: Run property test profile
-        run: cargo test -p sharo-core --test protocol_tests prop_protocol_roundtrip_preserves_task_summary_fields
-
-      - name: Run loom model checks
-        run: cargo test -p sharo-daemon --test loom_submit_shutdown -- --nocapture
 
       - name: Install bats-core
         run: scripts/install-bats.sh >/dev/null

@@ -37,6 +37,22 @@ The format is based on Common Changelog:
   - removing the dedicated `actionlint` step from `policy-checks`
   - switching `scripts/check-dependencies-security.sh` and `scripts/run-shell-tests.sh` to range-sensitive CI execution in `policy-checks`
   - syncing the extracted backbone template workflow/tooling to the same local-first workflow-lint and range-sensitive CI behavior
+- Added workflow CI runtime optimization planning artifacts:
+  - `docs/specs/workflow-ci-runtime-optimization.md`
+  - `docs/plans/2026-03-12-workflow-ci-runtime-optimization-plan.md`
+  - task registry entries:
+    - `TASK-WORKFLOW-CI-RUNTIME-SPEC-001`
+    - `TASK-WORKFLOW-CI-RUNTIME-PLAN-001`
+  - timing-backed proposal to gate heavy CI installs before installation, not only before execution
+  - timing-backed proposal to move nightly toolchain and fuzz work into a dedicated nightly workflow
+  - timing-backed proposal to remove duplicated property and loom coverage from per-push `policy-checks`
+- Added workflow CI runtime optimization implementation by:
+  - adding `scripts/check-ci-smoke.sh` and `just verify-ci` so per-push CI can run a policy/docs/task smoke gate without rerunning Rust test surfaces already covered later in the workflow
+  - gating dependency-security tool installation in `policy-checks` before `cargo install` using range classification
+  - moving nightly toolchain and `cargo-fuzz` installation plus fuzz smoke coverage into `.github/workflows/nightly-fuzz.yml`
+  - removing duplicate property and loom steps from `policy-checks` because those targets are already covered by the workspace Rust test lane
+  - setting `CARGO_INCREMENTAL=0` in CI alongside `sccache` to reduce non-cacheable incremental compile work
+  - syncing the extracted backbone template workflow/tooling to the same CI-smoke and nightly-fuzz split
 
 ### Fixed
 

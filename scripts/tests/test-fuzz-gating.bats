@@ -12,11 +12,34 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "policy checks workflow enforces fuzz smoke gate" {
+@test "policy checks workflow no longer owns nightly fuzz installation" {
   run rg 'Install cargo-fuzz' "$ROOT/.github/workflows/policy-checks.yml"
+  [ "$status" -ne 0 ]
+
+  run rg 'Install nightly toolchain for fuzzing' "$ROOT/.github/workflows/policy-checks.yml"
+  [ "$status" -ne 0 ]
+
+  run rg 'scripts/check-fuzz\.sh' "$ROOT/.github/workflows/policy-checks.yml"
+  [ "$status" -ne 0 ]
+}
+
+@test "nightly fuzz workflow installs nightly toolchain and cargo-fuzz" {
+  run rg '^name: nightly-fuzz$' "$ROOT/.github/workflows/nightly-fuzz.yml"
   [ "$status" -eq 0 ]
 
-  run rg 'scripts/check-fuzz\.sh --smoke --all' "$ROOT/.github/workflows/policy-checks.yml"
+  run rg '^  schedule:$' "$ROOT/.github/workflows/nightly-fuzz.yml"
+  [ "$status" -eq 0 ]
+
+  run rg '^  workflow_dispatch:$' "$ROOT/.github/workflows/nightly-fuzz.yml"
+  [ "$status" -eq 0 ]
+
+  run rg 'Install cargo-fuzz' "$ROOT/.github/workflows/nightly-fuzz.yml"
+  [ "$status" -eq 0 ]
+
+  run rg 'Install nightly toolchain for fuzzing' "$ROOT/.github/workflows/nightly-fuzz.yml"
+  [ "$status" -eq 0 ]
+
+  run rg 'scripts/check-fuzz\.sh --smoke --all' "$ROOT/.github/workflows/nightly-fuzz.yml"
   [ "$status" -eq 0 ]
 }
 

@@ -43,6 +43,7 @@ This keeps task state deterministic and reduces stale registry entries.
 - Run shell tests (Bats) for a commit range: `scripts/run-shell-tests.sh --range <git-range>`
 - Run shell formatting/lint checks: `scripts/check-shell-quality.sh --all`
 - Run GitHub workflow lint checks: `scripts/check-workflows.sh`
+- Run CI-smoke verification locally: `scripts/check-ci-smoke.sh`
 - Run Rust hygiene checks (advisory): `scripts/check-rust-hygiene.sh --advisory --check all`
 - Run Rust hygiene checks (strict): `scripts/check-rust-hygiene.sh --strict --check all`
 - Run MVP matrix map quality gate: `scripts/check-mvp-matrix-map.sh`
@@ -55,6 +56,7 @@ This keeps task state deterministic and reduces stale registry entries.
 - Run blocking local pre-push replay: `scripts/check-prepush-policy.sh`
 - Run path-sensitive flaky daemon regression replay: `scripts/check-flaky-regressions.sh --changed`
 - Canonical task runner entrypoint: `just verify`
+- Canonical CI-smoke task runner entrypoint: `just verify-ci`
 - Just wrapper for blocking local pre-push replay: `just prepush-policy`
 - Just wrapper for docs portability checks: `just doc-portability`
 - Just wrapper for path-sensitive flaky daemon regression replay: `just flaky-regressions`
@@ -116,6 +118,7 @@ Current state: slices 000 through 005 are marked `done` in `docs/tasks/tasks.csv
 - Use `scripts/check-prepush-policy.sh` or `just prepush-policy` before manual pushes when you want the same blocking replay the `pre-push` hook will enforce.
 - Use `scripts/check-flaky-regressions.sh --changed` when daemon/runtime paths changed and you want an explicit replay of the known unstable regression set before pushing.
 - `policy-checks` runs dependency-security and shell tests in range-sensitive mode, so docs-only and unrelated Rust/runtime changes skip those heavier CI lanes.
+- `policy-checks` now also avoids nightly toolchain and fuzz installation entirely; nightly fuzz/toolchain coverage lives in `.github/workflows/nightly-fuzz.yml`.
 - `cargo semver-checks` is scoped to `sharo-core` because that crate is the public library surface in this workspace.
 - Live OpenAI checks are opt-in only (cost/time sensitive); default hooks/fast-feedback remain non-network by default.
 - Default smoke coverage still validates daemon CLI path via deterministic and fake-daemon scenarios in `scripts/tests/test-openai-live-smoke.bats`.
@@ -138,6 +141,7 @@ Current state: slices 000 through 005 are marked `done` in `docs/tasks/tasks.csv
   - upstream `actionlint` releases currently do not publish detached archive signatures (`.sig`/`.asc`), so bootstrap enforces checksum/digest integrity verification instead of signature verification.
   - run `scripts/bootstrap-dev.sh --apply` to install project-managed tools/hooks and execute full verification.
   - local fast-feedback enforces workflow lint by default; CI `just verify` warns and skips only when `actionlint` is unavailable because workflow lint is intentionally local-only there.
+  - per-push CI uses `just verify-ci` as a smoke gate and leaves nightly/fuzz-only work to the nightly workflow.
 
 ## Tooling Inputs
 

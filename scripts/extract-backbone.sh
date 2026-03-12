@@ -71,6 +71,7 @@ copy_files \
   .githooks/commit-msg \
   scripts/bootstrap-dev.sh \
   scripts/check-changelog-staged.sh \
+  scripts/check-ci-smoke.sh \
   scripts/check-conventional-commit.sh \
   scripts/check-dependencies-security.sh \
   scripts/check-doc-terms.sh \
@@ -94,6 +95,7 @@ copy_files \
   scripts/sync-check.sh \
   scripts/tasks.sh \
   scripts/tests/test-bootstrap-dev.bats \
+  scripts/tests/test-check-ci-smoke.bats \
   scripts/tests/test-check-dependencies-security.bats \
   scripts/tests/test-check-merge-result.bats \
   scripts/tests/test-check-rust-hygiene.bats \
@@ -400,6 +402,9 @@ init-repo:
 verify:
     scripts/check-fast-feedback.sh
 
+verify-ci:
+    scripts/check-ci-smoke.sh
+
 fast-feedback:
     scripts/check-fast-feedback.sh
 
@@ -426,6 +431,8 @@ on:
 jobs:
   policy:
     runs-on: ubuntu-latest
+    env:
+      CARGO_INCREMENTAL: "0"
 
     steps:
       - name: Checkout
@@ -439,7 +446,7 @@ jobs:
       - name: Install shell quality tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y shellcheck shfmt
+          sudo apt-get install -y shellcheck shfmt ripgrep
 
       - name: Make scripts executable
         run: chmod +x scripts/*.sh
@@ -460,16 +467,30 @@ jobs:
           echo "range=$RANGE" >> "$GITHUB_OUTPUT"
           echo "Using range: $RANGE"
 
+      - name: Classify CI scope
+        id: scope
+        run: |
+          set -euo pipefail
+          range="${{ steps.range.outputs.range }}"
+          cargo_inputs_changed=false
+          if git diff --name-only "$range" | rg -n '(^Cargo\.lock$|(^|/)Cargo\.toml$)' >/dev/null 2>&1; then
+            cargo_inputs_changed=true
+          fi
+          echo "cargo_inputs_changed=$cargo_inputs_changed" >> "$GITHUB_OUTPUT"
+          echo "cargo_inputs_changed=$cargo_inputs_changed"
+
       - name: Run canonical verification entrypoint
-        run: just verify
+        run: just verify-ci
 
       - name: Run shell quality checks
         run: scripts/check-shell-quality.sh --all
 
       - name: Install dependency security tools
+        if: steps.scope.outputs.cargo_inputs_changed == 'true'
         run: cargo install --locked cargo-deny cargo-audit
 
       - name: Run dependency and security checks
+        if: steps.scope.outputs.cargo_inputs_changed == 'true'
         run: scripts/check-dependencies-security.sh --range "${{ steps.range.outputs.range }}"
 
       - name: Enforce Rust policy
@@ -499,6 +520,8 @@ jobs:
       - name: Enforce task registry sync in range
         run: scripts/check-tasks-sync.sh --range "${{ steps.range.outputs.range }}"
 EOF
+
+copy_file .github/workflows/nightly-fuzz.yml .github/workflows/nightly-fuzz.yml
 
 copy_file .github/workflows/merge-result-gate.yml .github/workflows/merge-result-gate.yml
 copy_file .github/workflows/rust-hygiene.yml .github/workflows/rust-hygiene.yml
@@ -560,8 +583,8 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "policy checks workflow uses just verify entrypoint" {
-  run rg 'run: just verify' "$ROOT/.github/workflows/policy-checks.yml"
+@test "policy checks workflow uses just verify-ci entrypoint" {
+  run rg 'run: just verify-ci' "$ROOT/.github/workflows/policy-checks.yml"
   [ "$status" -eq 0 ]
 }
 EOF

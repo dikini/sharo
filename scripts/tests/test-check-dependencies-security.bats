@@ -33,3 +33,11 @@ setup() {
   run rg 'git diff --name-only "\$range" \| rg -n '\''\(\^Cargo\\\.lock\$\\|\(\^\|/\)Cargo\\\.toml\$\)'\''' "$ROOT/scripts/check-dependencies-security.sh"
   [ "$status" -eq 0 ]
 }
+
+@test "policy checks installs dependency tools only for cargo-impacting ranges" {
+  run rg 'cargo_inputs_changed=true' "$ROOT/.github/workflows/policy-checks.yml"
+  [ "$status" -eq 0 ]
+
+  run rg 'if: steps\.scope\.outputs\.cargo_inputs_changed == '\''true'\''' "$ROOT/.github/workflows/policy-checks.yml"
+  [ "$status" -eq 0 ]
+}

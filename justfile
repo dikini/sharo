@@ -15,6 +15,9 @@ init-backbone-repo dest project='':
 verify:
     scripts/check-fast-feedback.sh
 
+verify-ci:
+    scripts/check-ci-smoke.sh
+
 fast-feedback:
     scripts/check-fast-feedback.sh
 
