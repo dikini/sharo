@@ -35,13 +35,19 @@ jobs:
             local asset="$3"
             local binary="$4"
             local tmp_dir
+            local extracted_binary
             tmp_dir="$(mktemp -d)"
             trap 'rm -rf "$tmp_dir"' RETURN
             curl -fsSL \
               "https://github.com/${repo}/releases/download/v${version}/${asset}" \
               -o "$tmp_dir/$asset"
             tar -xzf "$tmp_dir/$asset" -C "$tmp_dir"
-            install -m 0755 "$tmp_dir/$binary" "$HOME/.cargo/bin/$binary"
+            extracted_binary="$(find "$tmp_dir" -type f -name "$binary" -perm -u+x | head -n 1)"
+            if [[ -z "$extracted_binary" ]]; then
+              echo "rust-hygiene: failed to locate extracted binary '$binary' in $asset" >&2
+              exit 1
+            fi
+            install -m 0755 "$extracted_binary" "$HOME/.cargo/bin/$binary"
             rm -rf "$tmp_dir"
             trap - RETURN
           }

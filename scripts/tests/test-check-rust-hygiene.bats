@@ -53,6 +53,9 @@ setup() {
   run rg 'cargo-semver-checks-x86_64-unknown-linux-gnu\.tar\.gz' "$ROOT/.github/workflows/rust-hygiene.yml"
   [ "$status" -eq 0 ]
 
+  run rg 'find "\$tmp_dir" -type f -name "\$binary" -perm -u\+x' "$ROOT/.github/workflows/rust-hygiene.yml"
+  [ "$status" -eq 0 ]
+
   run rg 'taiki-e/install-action@v2' "$ROOT/.github/workflows/rust-hygiene.yml"
   [ "$status" -ne 0 ]
 
